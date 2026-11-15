@@ -46,6 +46,8 @@ pub enum EventTopic {
     AgentStateChanged,
     /// `task.status_changed`
     TaskStatusChanged,
+    /// `task.dispatched`（任务落库后请求派发 TaskAssignment）
+    TaskDispatched,
     /// `organization.changed`
     OrganizationChanged,
     /// `email.inbound.message`
@@ -77,6 +79,7 @@ impl EventTopic {
         EventTopic::AgentToolExecuted,
         EventTopic::AgentStateChanged,
         EventTopic::TaskStatusChanged,
+        EventTopic::TaskDispatched,
         EventTopic::OrganizationChanged,
         EventTopic::EmailInboundMessage,
         EventTopic::LarkInboundMessage,
@@ -101,6 +104,7 @@ impl EventTopic {
             EventTopic::AgentToolExecuted => "agent.tool.executed",
             EventTopic::AgentStateChanged => "agent.state.changed",
             EventTopic::TaskStatusChanged => "task.status_changed",
+            EventTopic::TaskDispatched => "task.dispatched",
             EventTopic::OrganizationChanged => "organization.changed",
             EventTopic::EmailInboundMessage => "email.inbound.message",
             EventTopic::LarkInboundMessage => "lark.inbound.message",
@@ -126,6 +130,7 @@ impl EventTopic {
             "agent.tool.executed" => Some(EventTopic::AgentToolExecuted),
             "agent.state.changed" => Some(EventTopic::AgentStateChanged),
             "task.status_changed" => Some(EventTopic::TaskStatusChanged),
+            "task.dispatched" => Some(EventTopic::TaskDispatched),
             "organization.changed" => Some(EventTopic::OrganizationChanged),
             "email.inbound.message" => Some(EventTopic::EmailInboundMessage),
             "lark.inbound.message" => Some(EventTopic::LarkInboundMessage),

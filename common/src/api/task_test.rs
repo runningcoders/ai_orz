@@ -19,6 +19,7 @@ fn task_requests_and_responses_serialize_contract() {
         project_id: Some("project-1".to_string()),
         due_at: Some(10),
         dependencies: Some(vec!["task-0".to_string()]),
+        acceptance_criteria: Some("交付一份可运行的说明文档".to_string()),
     };
 
     let json = serde_json::to_string(&create).unwrap();
@@ -48,6 +49,18 @@ fn task_requests_and_responses_serialize_contract() {
     let response: ApiResponse<Vec<TaskListItem>> = ApiResponse::success(vec![list_item]);
     assert!(response.is_success());
     assert_eq!(response.data.unwrap()[0].status, TaskStatus::Pending as i32);
+}
+
+#[test]
+fn pending_review_status_keeps_legacy_discriminants_stable() {
+    // ⚠️ 新增第 6 态必须追加而非插入：0..=4 是 DB 存量值与前端硬编码的契约。
+    assert_eq!(TaskStatus::Cancelled as i32, 0);
+    assert_eq!(TaskStatus::Pending as i32, 1);
+    assert_eq!(TaskStatus::InProgress as i32, 2);
+    assert_eq!(TaskStatus::Completed as i32, 3);
+    assert_eq!(TaskStatus::Archived as i32, 4);
+    assert_eq!(TaskStatus::PendingReview as i32, 5);
+    assert_eq!(TaskStatus::from_i32(5), TaskStatus::PendingReview);
 }
 
 #[test]
@@ -92,6 +105,7 @@ fn update_task_status_response_uses_task_detail_contract() {
         model_call_stats: None,
         execution_plan: None,
         execution_result: None,
+        acceptance_criteria: String::new(),
         artifacts: None,
     });
 
@@ -114,6 +128,7 @@ fn update_task_request_allows_partial_fields() {
         execution_plan: None,
         execution_result: None,
         project_id: None,
+        acceptance_criteria: Some("交付可运行的说明文档".to_string()),
     };
 
     let json = serde_json::to_string(&request).unwrap();
@@ -122,4 +137,17 @@ fn update_task_request_allows_partial_fields() {
     assert_eq!(decoded.title.as_deref(), Some("Renamed"));
     assert_eq!(decoded.tags, Some(vec!["updated".to_string()]));
     assert_eq!(decoded.dependencies, Some(vec!["task-0".to_string()]));
+    assert_eq!(
+        decoded.acceptance_criteria.as_deref(),
+        Some("交付可运行的说明文档")
+    );
+}
+
+/// DoD 是「不传不修改」：老客户端 / Agent 工具不传该字段时不得写空覆盖已有标准
+#[test]
+fn update_task_request_without_dod_leaves_it_untouched() {
+    let decoded: UpdateTaskRequest =
+        serde_json::from_str(r#"{"id":"task-1","title":"Renamed"}"#).unwrap();
+    assert_eq!(decoded.acceptance_criteria, None);
+    assert_eq!(decoded.execution_result, None);
 }

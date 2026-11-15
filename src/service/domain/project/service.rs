@@ -337,6 +337,89 @@ impl super::ProjectManage for ProjectDomainImpl {
         Ok(project)
     }
 
+    /// 交接项目负责人
+    ///
+    /// 负责人是「验收权 + 完成知会收件人」的归属，不是普通字段：
+    /// - 目标 Agent 必须存在（否则会在验收时表现为「允许集合里挂了一个不存在的
+    ///   责任人」，任务永远没人能确认）；
+    /// - 空串 = 解除负责人，项目转为无主（验收回退到发起者 / 无责任人自动确认）；
+    /// - 目标与当前一致时幂等短路，不刷 `updated_at`、不重复记事件。
+    async fn transfer_owner(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+        owner_agent_id: String,
+        note: Option<String>,
+        modified_by: String,
+    ) -> Result<Project> {
+        let Some(mut project) = self.project_dal.find_by_id(ctx.clone(), project_id).await? else {
+            bail_err!(NotFound, "Project not found: {}", project_id);
+        };
+
+        let ctx = enrich_ctx!(&ctx, &project);
+
+        let target = owner_agent_id.trim().to_string();
+        let current = project.po.owner_agent_id.clone().unwrap_or_default();
+        if target == current {
+            return Ok(project);
+        }
+
+        if !target.is_empty() {
+            let agent = crate::service::domain::hr::domain()
+                .agent_manage()
+                .get_agent(
+                    ctx.clone(),
+                    &target,
+                    crate::service::dal::agent::AgentFetchOptions::default(),
+                )
+                .await?;
+            if agent.is_none() {
+                bail_err!(NotFound, "接手的 Agent 不存在: {}", target);
+            }
+        }
+
+        project.po.owner_agent_id = if target.is_empty() {
+            None
+        } else {
+            Some(target.clone())
+        };
+        if let Some(note) = note.filter(|n| !n.trim().is_empty()) {
+            let prev = project.po.execution_result.clone().unwrap_or_default();
+            project.po.execution_result = Some(if prev.is_empty() {
+                format!("【负责人交接】{note}")
+            } else {
+                format!("{prev}\n\n【负责人交接】{note}")
+            });
+        }
+        project.po.modified_by = modified_by;
+
+        self.project_dal.update(ctx.clone(), &project).await?;
+
+        let _ = record_event!(
+            ctx.clone(),
+            ProjectEvent {
+                project_id: project.po.id.clone(),
+                event_type: "owner_transferred".to_string(),
+                organization_id: ctx.organization_id.clone(),
+                root_user_id: Some(project.po.root_user_id.clone()),
+                operator_type: Some(ctx.caller_type().as_str().to_string()),
+                operator_id: ctx.caller_id(),
+                owner_type: Some("agent".to_string()),
+                // 解除负责人时留空，事件里用 None 表达「当前无主」。
+                owner_id: project.po.owner_agent_id.clone(),
+                // `project_events` 没有「前/后负责人」专列，本事件类型复用
+                // from/to 承载交接双方（按 event_type 查询时语义自明），
+                // 避免为一次权限变更再加列。
+                from_status: Some(current),
+                to_status: Some(target),
+                duration_ms: None,
+                priority: project.po.priority,
+            }
+        );
+
+        Ok(project)
+    }
+
     /// 统一项目状态流转
     async fn transition_status(
         &self,

@@ -911,9 +911,14 @@ async fn try_build_vector_params_for_search(
 /// - `update_status()`（DAL 单点改状态，如取消）
 /// - `update()`（domain 层 `start` / `complete` / `transition_status` 的实际路径）
 ///
-/// 事件是「任务完成 → 通知项目 Owner」（`TaskEventConsumer`）与「后继依赖补发」
-/// 两条链路的唯一触发源；发送方不阻塞（AOP 异步消费），发布失败仅丢失通知，
-/// 因此吞掉错误 —— 状态写入已经是事实，不该因通知链路失败而回滚。
+/// 事件是「任务完成 → 交付分发 / 通知项目 Owner」（`TaskEventConsumer`）与
+/// 「后继依赖补发」两条链路的唯一触发源；发送方不阻塞（AOP 异步消费），
+/// 发布失败仅丢失通知，因此吞掉错误 —— 状态写入已经是事实，不该因通知链路
+/// 失败而回滚。
+///
+/// ⚠️ 交付身份（归属用户 / 发起者 / 消息链锚点）在**这里**随事件快照带上，
+/// 不让消费者事后反查：Async 消费与落库之间存在时间窗，反查可能拿到被改过
+/// 的行，派生消息会挂错链。
 async fn publish_status_changed(
     ctx: &RequestContext,
     task: &TaskPo,
@@ -930,6 +935,9 @@ async fn publish_status_changed(
             old_status,
             new_status,
             task.progress,
+            &task.root_user_id,
+            &task.initiator_agent_id,
+            &task.trigger_message_id,
         ),
     )
     .await;

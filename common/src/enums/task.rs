@@ -22,6 +22,12 @@ pub enum TaskStatus {
     Completed = 3,
     /// Archived (archived to history after summary)
     Archived = 4,
+    /// 执行人已提交、等待项目 Owner 验收（2026-11-15 补齐设计稿既有第 6 态）
+    ///
+    /// ⚠️ 判别值**追加为 5，禁止插入中间**：DB 存量值、serde 变体名与前端
+    /// `3 => 已完成` 一类硬编码都依赖 `0..=4` 稳定。此态不是终态：只有
+    /// `Completed` 才会触发交付消息与 DAG 后继补发。
+    PendingReview = 5,
 }
 
 impl TaskStatus {
@@ -33,6 +39,7 @@ impl TaskStatus {
             2 => Self::InProgress,
             3 => Self::Completed,
             4 => Self::Archived,
+            5 => Self::PendingReview,
             _ => Self::default(),
         }
     }

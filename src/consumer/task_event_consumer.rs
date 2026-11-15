@@ -1,16 +1,25 @@
 //! Task event consumer (AOP async)
 //!
-//! 订阅 `task.status_changed` 事件，对 `TaskStatus::Completed` 的状态变更做两件事：
-//! 1. **后继就绪补发**：给依赖本任务且前置已全量就绪的后继任务补发 `TaskAssignment`
-//! 2. 项目 Owner Agent 通知（`TaskDispatchNotification`），驱动 Agent Loop Engine
-//!    的 Layer 2 补偿机制
+//! 订阅 `task.status_changed` 事件，对 `TaskStatus::Completed` 的状态变更只做一件事：
+//! **后继就绪补发**：给依赖本任务且前置已全量就绪的后继任务补发 `TaskAssignment`
+//! （DAG 依赖是项目内概念，游离任务跳过）。
+//!
+//! ⚠️ 【2026-11-15 职责收窄】完成交付与知会已迁至 `TaskCompletionConsumer`（Sync）：
+//! 交付消息必须在 `publish` 返回时落库，不能押在 Async 内存队列上；两条链路合并
+//! 会重复投递。下方「Owner 通知」相关历史注释描述的是迁移前形态，其门禁与去重
+//! 已随知会一并迁出，本消费者不再发任何完成通知。
 //!
 //! 设计要点：
 //! - `ConsumeMode::Async`：异步消费，发送方（DAL 层 update_status）不阻塞
 //! - 仅处理 `TaskStatus::Completed` 事件（其他状态变更暂不通知）
+//! - **交付身份优先取事件快照**：`root_user_id` / `initiator_agent_id` /
+//!   `trigger_message_id` 由 `publish_status_changed` 在发布时写入；仅旧格式事件
+//!   缺快照时才回退反查项目行（升级兼容，不是主路径）
+//! - **有无 project_id 只决定多一层项目 owner，不是处理前提**：旧实现在这里
+//!   直接 return，游离任务完成后整条链路无人推进
 //! - **① 后继补发无条件执行**：`dispatch_ready_successors` 是 DAG 的机械推进责任方，放在所有门禁**之前**，绝不因 Owner 通知被跳过而停摆
-//! - **Owner 通知唯一门禁**：⑤ **同一项目内**已有「跟进类」未处理通知（`TaskDispatchNotification` / `ProjectFollowupNotification`）→ 跳过（跨类型统一去重，作用域是项目而非 Owner —— 按 Agent 去重会让多项目 Owner 被先挂上 Pending 的项目永久占门，口径见 message domain）
-//! - 消息内容使用 `build_task_dispatch_content` 构建意图指令
+//! - 【已迁出】Owner 通知门禁与调度文案随完成知会一并迁至 `TaskCompletionConsumer`；
+//!   本消费者不再有任何通知门禁，后继补发无条件执行
 //! - 消息填充 `project_id` + `task_id` 上下文字段，MessageConsumer 自动补充上下文
 //!
 //! # 为什么必须在这里补发后继任务
@@ -47,7 +56,7 @@
 //! 由 `scheduler::handle_pending_notification_redelivery` 定时重投兜底。
 
 use async_trait::async_trait;
-use common::enums::message::{MessageRole, MessageType};
+use common::enums::message::MessageType;
 use common::enums::task::TaskStatus;
 use common::enums::{AssigneeType, EventTopic};
 use common::error::Result;
@@ -57,7 +66,7 @@ use crate::models::events::TaskStatusChangedEvent;
 use crate::models::task::Task;
 use crate::pkg::RequestContext;
 use crate::pkg::aop::{ConsumeMode, Consumer, Subscription};
-use crate::service::domain::message::{SendTaskAssignmentCommand, SendToAgentCommand};
+use crate::service::domain::message::SendTaskAssignmentCommand;
 
 pub struct TaskEventConsumer;
 
@@ -100,39 +109,54 @@ impl Consumer for TaskEventConsumer {
             return Ok(());
         }
 
-        // 项目级通知：必须有 project_id 才能定位 Owner Agent
-        let Some(project_id) = &event.project_id else {
-            return Ok(());
+        // 【分层交付】有无 project_id 只决定「多一层项目 owner」，不是处理前提。
+        // 旧实现在这里直接 return，游离任务完成后整条链路无人推进。
+        let project_id = event.project_id.as_deref();
+
+        // 项目行只查一次，同时承担两个用途：owner（项目层知会对象）+ 旧事件
+        // 缺快照时的归属用户回退。查询失败不当作「无项目」—— 那样会把知会
+        // 静默吃掉，只打日志并继续用事件快照。
+        let project = match project_id {
+            Some(pid) => match crate::service::domain::project::domain()
+                .project_manage()
+                .get(ctx.clone(), pid)
+                .await
+            {
+                Ok(p) => p,
+                Err(e) => {
+                    log_warn!(
+                        &ctx,
+                        "task_dispatch",
+                        project_id = %pid,
+                        error = ?e,
+                        "查询项目失败，完成知会改用事件快照身份"
+                    );
+                    None
+                }
+            },
+            None => None,
         };
-
-        // ctx 已由框架从事件 carrier 还原（保留 log_id 等链路标识）
-
-        // 查询项目的 Owner Agent
-        let project = crate::service::domain::project::domain()
-            .project_manage()
-            .get(ctx.clone(), project_id)
-            .await?;
-
-        let Some(project) = project else {
-            return Ok(());
-        };
-
-        // 补齐组织上下文（系统触发链路 ctx 无组织绑定，见 mod.rs helper 说明）
-        // 提前到两路投递之前：后继补发与 Owner 通知共用同一份身份与组织上下文
-        let ctx =
-            crate::consumer::enrich_org_from_project_user(&ctx, &project.po.root_user_id).await;
-
-        // 【身份分层模型】触发器按「被触达事项的归属」选择发送方身份：
-        // - 项目归属用户非空 → **以用户身份中继**（from_role=User）：任务是用户发起的，
-        //   调度结论用户需要感知；Agent 的 Final 自动回复会回到该用户（消息链自然
-        //   路由，无需白名单特判），也不涉及伪造——这是上下文中继。
-        // - 无归属用户（如 A2A 项目）→ 万不得已落 System：Final 无人可投递自然丢弃。
-        //   二者都不会把回复路由回 Agent 自身 → 无自唤醒循环。
-        let (from_id, from_role) = if project.po.root_user_id.is_empty() {
-            ("system", MessageRole::System)
+        // ⚠️ 归属用户优先取**发布时快照**：Async 队列里动作落库与消费之间有
+        // 时间窗，反查可能拿到被改过的行，把结果送给错的人。
+        // 快照为空只可能是旧格式事件（滚动升级时内存队列残留 / 手工构造），
+        // 这时退回项目行补齐，避免误落 System 身份导致 Final 无人可投递。
+        let root_user_id = if event.root_user_id.is_empty() {
+            project
+                .as_ref()
+                .map(|p| p.po.root_user_id.as_str())
+                .unwrap_or_default()
         } else {
-            (project.po.root_user_id.as_str(), MessageRole::User)
+            event.root_user_id.as_str()
         };
+
+        let ctx = crate::consumer::enrich_org_from_project_user(&ctx, root_user_id).await;
+
+        // 【身份三分解】派发者 / 接收者 / 所属用户各就各位，不再做「用户身份中继」：
+        // - 派发者按**每个被触达任务**的 `initiator_agent_id` 推导（见
+        //   `consumer::task_sender_identity`），管理面直建才退回用户；
+        // - 所属用户 `root_user_id` 独立落在消息行，供被唤醒 Agent 取工具凭据；
+        // - 因此执行者 Agent 的 Final 天然回到它自己的发起者（Peer），不需要
+        //   `TaskHandoffToInitiator` 这条改道补丁（已删除）。
 
         // ① 后继就绪补发：门闩（wake_gate_policy::dependency_unmet）跳过的
         // 「前置还没跑完」的任务，在这里于前置完成时重新投递。失败只记日志 ——
@@ -140,8 +164,9 @@ impl Consumer for TaskEventConsumer {
         //
         // ⚠️ 无条件执行：这是 DAG 机械推进的责任方，必须排在下方所有 Owner 通知
         // 门禁**之前**；门禁只决定「是否唤醒 Owner」，绝不决定「是否推进 DAG」。
-        if let Err(e) =
-            dispatch_ready_successors(&ctx, project_id, &event.task_id, from_id, from_role).await
+        if let Some(project_id) = project_id
+            && let Err(e) =
+                dispatch_ready_successors(&ctx, project_id, &event.task_id, root_user_id).await
         {
             log_warn!(
                 &ctx,
@@ -153,72 +178,9 @@ impl Consumer for TaskEventConsumer {
             );
         }
 
-        // ② 项目 Owner Agent 通知（Layer 2 补偿，驱动 Owner 审视全局编排）
-        //
-        // 只保留 ⑤ 这一道确定性去重：同一项目已有跟进类通知在途 → 确有第二条也无意义。
-        // 「项目内有 Agent 在忙」「Owner 不可用」都不再作为跳过理由 —— 那是在用
-        // 「可能有人处理过」的猜测替代「确实没处理」，会把兜底通知静默吃掉。
-        // 详细论证见文件头「为什么不再用『谁在忙』来决定是否通知」。
-        let Some(owner_agent_id) = &project.po.owner_agent_id else {
-            return Ok(());
-        };
-
-        // ⑤ 跨类型去重：**该项目**已有「跟进类」的未处理通知
-        // （TaskDispatchNotification 或 ProjectFollowupNotification）→ 本次不再重复投递，
-        // 避免同一项目各来一条。类型清单收敛在 message domain 单点，见 trait 文档。
-        //
-        // ⚠️ 作用域是项目不是 Owner：Owner 同时带多个项目时，按 Agent 去重会让先挂上
-        // Pending 的那个项目一直占着门，其余项目的完成通知被永久饿死。
-        let message_domain = crate::service::domain::message::domain();
-
-        if message_domain
-            .has_pending_followup_for_project(ctx.clone(), project_id)
-            .await?
-        {
-            log_debug!(
-                &ctx,
-                "task_dispatch",
-                agent_id = %owner_agent_id,
-                task_id = %event.task_id,
-                "已有 Pending 的跟进类消息，跳过本次通知"
-            );
-            return Ok(());
-        }
-
-        // 构建消息内容（意图指令嵌入消息本体）
-        let content = crate::service::domain::message::builder::build_task_dispatch_content(
-            &event.task_title,
-            event.new_status,
-            event.progress,
-        );
-
-        // 发送消息（填充 project_id + task_id，MessageConsumer 自动补充上下文）
-        let cmd = SendToAgentCommand {
-            from_id,
-            from_role,
-            to_agent_id: owner_agent_id,
-            content: &content,
-            project_id: Some(project_id),
-            task_id: Some(&event.task_id),
-            reply_to_id: None,
-            external: Default::default(),
-            attachment_ids: None,
-            message_type: MessageType::TaskDispatchNotification,
-        };
-
-        let log_ctx = ctx.clone();
-        if let Err(e) = message_domain.delivery().send_to_agent(ctx, cmd).await {
-            log_warn!(
-                &log_ctx,
-                "task_dispatch",
-                task_id = %event.task_id,
-                project_id = %project_id,
-                agent_id = %owner_agent_id,
-                error = ?e,
-                "发送任务调度通知失败"
-            );
-        }
-
+        // 【2026-11-15】完成交付与 Agent 知会已全部迁至 TaskCompletionConsumer(Sync)。
+        // 这里不再发任何完成通知：两条链路并存会造成同一完成事实两次出站，且
+        // Async 内存队列承载交付有丢件窗口。DAG 补发保持异步即可（它不是交付）。
         Ok(())
     }
 }
@@ -237,8 +199,7 @@ async fn dispatch_ready_successors(
     ctx: &RequestContext,
     project_id: &str,
     finished_task_id: &str,
-    from_id: &str,
-    from_role: MessageRole,
+    fallback_root_user_id: &str,
 ) -> Result<()> {
     let tasks = crate::service::domain::project::domain()
         .task_manage()
@@ -293,6 +254,16 @@ async fn dispatch_ready_successors(
             continue;
         }
 
+        // 派发者 = 这条后继任务自己的发起者（层层摘要的上一跳）；
+        // 归属用户优先用任务行快照，缺失才回落事件里的项目归属。
+        let root_user_id = if task.po.root_user_id.is_empty() {
+            fallback_root_user_id
+        } else {
+            task.po.root_user_id.as_str()
+        };
+        let (from_id, from_role) =
+            crate::consumer::task_sender_identity(&task.po.initiator_agent_id, root_user_id);
+
         let cmd = SendTaskAssignmentCommand {
             task_id: &task.po.id,
             task_title: &task.po.title,
@@ -300,7 +271,12 @@ async fn dispatch_ready_successors(
             from_id,
             from_role,
             to_agent_id: &task.po.assignee_id,
+            root_user_id,
             project_id: Some(project_id),
+            // DAG 后继补发是事件驱动、拿不到本轮入口消息，但任务行已把
+            // 「这条任务诞生于哪条消息」持久化下来，直接沿它挂回同一条链。
+            reply_to_id: (!task.po.trigger_message_id.is_empty())
+                .then_some(task.po.trigger_message_id.as_str()),
         };
 
         if let Err(e) = message_domain

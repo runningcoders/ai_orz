@@ -24,6 +24,23 @@
 //! - 来源角色 / 知会类型是枚举等值（Metrics 侧以数值承载）
 //! - 自触发是双键等值（`from_id == agent_id`），通用 FieldEqualsPolicy 只支持
 //!   「单键 == 常量」，跨键比较属路由特有形态
+//!
+//! # 双通道隔离（2026-11-15）
+//!
+//! 对话通道与任务通道各管各的，**唯一合法判据是「入口消息是什么」**：
+//! `from_role` / `from_id` / `message_type` / `raw_output` 属于对话组，规则只
+//! 按这些入口事实判定；按「本轮做了什么动作」（是否调了 `mark_done`）判定的
+//! 规则一律越界 —— 那会把任务侧事实塞进对话路由，用户针对某任务直接发一句
+//! 指导也会被吞掉 Final。任务状态机、验收、交付、DAG 全在 AOP 消费者里
+//! 确定性执行，不经过本表。
+//!
+//! # 三身份模型（2026-11-15）
+//!
+//! 消息的派发者（`from_id`/`from_role`）、接收者（`to_id`）、所属用户
+//! （`MessagePo::root_user_id`）三权分立，**派发者不再是「用户身份中继」**：
+//! - 任务派单的 `from_id` 是真实发起者 Agent ⇒ Final 按 `Peer` 天然回到它，
+//!   不需要「按 initiator 改道」的特例；
+//! - 所属用户只用于工具凭据 / 用户画像 / 交付终点，由 `DeliverToRootUser` 消费。
 
 use std::sync::OnceLock;
 
@@ -127,11 +144,21 @@ impl ReplyObligation {
         if from_role != MessageRole::Agent || from_id == agent_id {
             return None;
         }
-        Some(if message_type == MessageType::AgentNotify {
-            Self::NotifyOnly
-        } else {
-            Self::Expected
-        })
+        // 任务完成知会与交付回执都是**框架已产出交付**的动作伴生消息：
+        // 对端收件 Agent 不该被提示「请回复」，否则提示词与下方静态 Discard
+        // 规则话术分裂（红线：文案必须与路由行为逐条对应）。
+        Some(
+            if matches!(
+                message_type,
+                MessageType::AgentNotify
+                    | MessageType::TaskCompleted
+                    | MessageType::TaskPendingReview
+            ) {
+                Self::NotifyOnly
+            } else {
+                Self::Expected
+            },
+        )
     }
 
     /// 注入提示词的回复仲裁区块（与 [`NO_REPLY_SENTINEL`] 的协议成对维护）
@@ -190,6 +217,13 @@ pub fn classify_reply_decision(raw_output: &str) -> ReplyDecision {
 /// - `CloseChainAsNotify`  → 硬墙收口：把 Final 作为**知会**投给来源方（信息不丢）
 ///   并通知归属用户；知会语义保证对端不会再自动回发，链在此终止
 /// - `SilentClose`         → 静默收口：对端**零发送**（连知会都不发），只通知归属用户
+/// - `DeliverToRootUser`   → 把 Final 交给**所属用户**（`MessagePo::root_user_id`）：
+///   用于「系统触发的巡检 / 编排通知」与「自派任务」这类**没有可回的对等方、
+///   但结论必须交给人**的场景，链在此终止
+///
+/// 注意这里**没有**「回任务发起者」这一档：三身份模型下派单的 `from_id` 就是
+/// 发起者，`Peer` 已经等价。历史实现靠「用户身份中继」把用户写进 from 位，
+/// 才需要一条改道规则把它掰回发起者。
 ///
 /// 硬墙不采用「直接丢弃」：那样既不通知归属方，也让最后一轮结论白白消失；
 /// 也不采用「照常回发」，那只会把乒乓推高一跳。收口成知会是唯一既完成
@@ -212,6 +246,8 @@ pub enum AutoReplyRoute {
     SilentClose {
         reason: &'static str,
     },
+    /// 交给所属用户（`root_user_id`），链在此终止
+    DeliverToRootUser,
 }
 
 /// 静态路由判定的输入（consumer 从 Message / 唤醒结果解析后填充）
@@ -237,9 +273,26 @@ enum RouteMatcher {
     RoleEquals(MessageRole),
     /// 双键等值：`from_id == agent_id`（自触发守卫）
     SelfTrigger,
-    /// 消息类型等值（知会声明）
+    /// 消息类型等值（知会声明 / 交付回执）
     MessageTypeEquals(MessageType),
+    /// 自派任务：`TaskAssignment` 且 `from_id == agent_id`
+    ///
+    /// 执行者给自己建任务时三个身份重合，`Peer` 会回给自己造成自唤醒循环，
+    /// 但结论仍要交给人 ⇒ 走 `DeliverToRootUser`。
+    TaskSelfAssignment,
+    /// 巡检 / 编排类通知（系统触发、没有对等回复方，结论交给归属用户）
+    OwnerBriefing,
 }
+
+/// 巡检 / 编排类通知：系统触发，收件人是 Owner Agent，
+/// 产出（工具动作或结论）应交给项目归属用户，而不是回给「system」。
+///
+/// `TaskDispatchNotification(10)` 现无生产发送点（完成回执已改用
+/// `TaskCompleted(14)`），列在这里只为兜存量消息。
+const OWNER_BRIEFING_MESSAGE_TYPES: &[MessageType] = &[
+    MessageType::ProjectFollowupNotification,
+    MessageType::TaskDispatchNotification,
+];
 
 impl RouteMatcher {
     fn matches(&self, metrics: &Metrics) -> bool {
@@ -255,6 +308,19 @@ impl RouteMatcher {
             }
             RouteMatcher::MessageTypeEquals(message_type) => {
                 metrics.get_u64(keys::MESSAGE_TYPE) == Some(message_type.to_i32() as u64)
+            }
+            RouteMatcher::TaskSelfAssignment => {
+                metrics.get_u64(keys::MESSAGE_TYPE)
+                    == Some(MessageType::TaskAssignment.to_i32() as u64)
+                    && metrics.get_str(keys::FROM_ID) == metrics.get_str(keys::AGENT_ID)
+            }
+            RouteMatcher::OwnerBriefing => {
+                let Some(value) = metrics.get_u64(keys::MESSAGE_TYPE) else {
+                    return false;
+                };
+                OWNER_BRIEFING_MESSAGE_TYPES
+                    .iter()
+                    .any(|t| t.to_i32() as u64 == value)
             }
         }
     }
@@ -293,6 +359,12 @@ impl Policy for StaticRoutePolicy {
                 vec![keys::FROM_ID.to_string(), keys::AGENT_ID.to_string()]
             }
             RouteMatcher::MessageTypeEquals(_) => vec![keys::MESSAGE_TYPE.to_string()],
+            RouteMatcher::TaskSelfAssignment => vec![
+                keys::MESSAGE_TYPE.to_string(),
+                keys::FROM_ID.to_string(),
+                keys::AGENT_ID.to_string(),
+            ],
+            RouteMatcher::OwnerBriefing => vec![keys::MESSAGE_TYPE.to_string()],
         }
     }
 
@@ -317,7 +389,66 @@ static STATIC_ROUTE_DEFS: &[StaticRoutePolicy] = &[
             reason: SENTINEL_HIT_REASON,
         },
     },
-    // 用户来源 → Peer：用户身份中继后 Final 自然回到该用户
+    // 任务完成回执 / 完成知会 → Discard：框架已同步产出交付，收件 Agent
+    // 不应再回发。Final 被丢弃不等于本轮无产出：Agent 仍可调工具推进编排。
+    StaticRoutePolicy {
+        id: "task_completed_notify",
+        name: "任务完成回执 / 知会",
+        condition_desc: "message_type == TaskCompleted",
+        matcher: RouteMatcher::MessageTypeEquals(MessageType::TaskCompleted),
+        outcome: AutoReplyRoute::Discard {
+            reason: "task completion delivery is produced by the framework; Final must not duplicate it",
+        },
+    },
+    // 任务待验收知会 → Discard：Owner 的产出是 confirm_task / reject_task 工具调用，
+    // 框架随后按工具结果发交付或驳回消息；Final 再回发只会是空洞转发。
+    // ⚠️ 按**入口消息类型**判定（合法的对侧规则），与本轮做了什么动作无关。
+    StaticRoutePolicy {
+        id: "task_pending_review_notify",
+        name: "任务待验收知会",
+        condition_desc: "message_type == TaskPendingReview",
+        matcher: RouteMatcher::MessageTypeEquals(MessageType::TaskPendingReview),
+        outcome: AutoReplyRoute::Discard {
+            reason: "review verdict is produced by confirm_task/reject_task tools, not by Final",
+        },
+    },
+    // 自派任务 → 交给归属用户（必须排在 task_assignment_delivery 之前）：
+    // 执行者给自己建任务时 `from_id == to_id == agent_id` 三者重合，
+    // `Peer` 会投回自己造成自唤醒循环，`self_trigger` 会把结论静默丢掉；
+    // 任务是有业务归属的工单，Final 该交给所属用户。
+    StaticRoutePolicy {
+        id: "task_self_assignment",
+        name: "自派任务的交付回执",
+        condition_desc: "message_type == TaskAssignment 且 from_id == agent_id",
+        matcher: RouteMatcher::TaskSelfAssignment,
+        outcome: AutoReplyRoute::DeliverToRootUser,
+    },
+    // 任务派单 → Peer：三身份模型下 `from_id` 就是真实派发者（发起者 Agent，
+    // 管理面直建时是用户），交付回执按对等回复天然回到它。
+    // 声明在 user_origin 之前只是为了让「用户派的单」两条规则结论一致可读，
+    // 不再需要「按 initiator 改道」的特例。
+    StaticRoutePolicy {
+        id: "task_assignment_delivery",
+        name: "任务派单交付回执",
+        condition_desc: "message_type == TaskAssignment",
+        matcher: RouteMatcher::MessageTypeEquals(MessageType::TaskAssignment),
+        outcome: AutoReplyRoute::Peer,
+    },
+    // 巡检 / 编排通知 → 交给归属用户：这类消息由系统触发（from=system），
+    // 没有对等回复方；若落 `system_origin` 会把 Owner 的巡检结论直接丢掉。
+    //
+    // ⚠️ 命中的两个类型里，`TaskDispatchNotification(10)` 自 2026-11-15 起**已无
+    // 生产发送点**（完成回执统一改发 `TaskCompleted(14)`，由上面的
+    // `task_completed_notify` 拦截；10 保留为「项目层调度指令」的语义位）。
+    // 保留这条匹配只为兜住库里可能残留的存量消息，不要据此认为 10 仍在生产。
+    StaticRoutePolicy {
+        id: "owner_briefing",
+        name: "巡检/编排通知结论上交",
+        condition_desc: "message_type ∈ {ProjectFollowupNotification, TaskDispatchNotification}",
+        matcher: RouteMatcher::OwnerBriefing,
+        outcome: AutoReplyRoute::DeliverToRootUser,
+    },
+    // 用户来源 → Peer：用户发来的消息，Final 回到这个用户
     StaticRoutePolicy {
         id: "user_origin",
         name: "用户来源",
@@ -378,10 +509,9 @@ pub const AGENT_NOTIFY_REASON: &str = "agent-notify message (sender declared no 
 ///
 /// **哨兵必须声明在最前**（`STATIC_ROUTE_DEFS[0]`）：哨兵是保留协议字
 /// （归一化后全等才命中），任何来源的 Final 命中即 Discard。若排在
-/// `user_origin` 之后，任务派发经「用户身份中继」后 from_role=User，
-/// 会被 Peer 短路，把哨兵原文当回复发给用户——2026-10-16 实证：全库 29 条
-/// 泄漏、25+ 条直达用户。保留字不存在「合法正文」歧义，优先级高于一切
-/// 来源角色规则。
+/// `user_origin` 之后，任何来源角色规则都会把哨兵原文当回复投递出去
+/// ——2026-10-16 实证：全库 29 条泄漏、25+ 条直达用户。保留字不存在
+/// 「合法正文」歧义，优先级高于一切来源角色规则。
 fn static_ruleset() -> &'static dyn Policy {
     static RULESET: OnceLock<Box<dyn Policy>> = OnceLock::new();
     RULESET
@@ -417,8 +547,14 @@ fn static_outcome(policy_id: &str) -> AutoReplyRoute {
 ///
 /// | 场景 | 规则 | 路由 | 理由 |
 /// |------|------|------|------|
-/// | 无需回复哨兵（**任何来源，优先级最高**） | `no_reply_sentinel`（领域 matcher） | Discard | Agent 自判后续工作与来源方无关，回发只会制造乒乓；判定是归一化后全等的**封闭词表**（含模型自造的「未回复」等中文写法），保留字先于下表所有来源规则判定，用户身份中继的任务派发同样生效 |
-/// | 用户消息 | `user_origin` | Peer | 用户身份中继后 Final 自然回到该用户 |
+/// | 无需回复哨兵（**任何来源，优先级最高**） | `no_reply_sentinel`（领域 matcher） | Discard | Agent 自判后续工作与来源方无关，回发只会制造乒乓；判定是归一化后全等的**封闭词表**（含模型自造的「未回复」等中文写法），保留字先于下表所有来源规则判定 |
+/// | 任务完成回执 / 知会 | `task_completed_notify` | Discard | 框架已产出交付；拦在收尾规则之前，避免向用户转发一份空洞内容 |
+/// | 任务待验收知会 | `task_pending_review_notify` | Discard | 验收结论由 `confirm_task` / `reject_task` 工具产出，Final 不承载结论 |
+/// | 自派任务（`TaskAssignment` 且 `from == agent`） | `task_self_assignment` | `DeliverToRootUser` | 三者身份重合，`Peer` 会自唤醒、`self_trigger` 会丢结论；工单结论交给所属用户 |
+/// | 任务派单（其余） | `task_assignment_delivery` | Peer | 三身份下 `from_id` 即真实派发者，交付回执按对等回复天然回到它 |
+/// | 巡检 / 编排通知 | `owner_briefing` | `DeliverToRootUser` | 系统触发、无对等回复方，结论交给项目归属用户（其中 `TaskDispatchNotification(10)` 已无生产发送点，仅兜存量） |
+/// | 带 `task_id` 的普通 Text 对话 | 不命中任务规则 → `user_origin` | Peer | 双通道隔离：用户针对某任务直接指导时，Final 回本轮触发者 |
+/// | 用户消息 | `user_origin` | Peer | 用户发来的消息，Final 回到这个用户 |
 /// | System 来源 | `system_origin` | Discard | 触发器消息（纯系统指令、无归属用户的 A2A 触达）没有对等回复对象 |
 /// | Agent 自触发 | `self_trigger` | Discard | 触发器以 Owner Agent 名义发给自己的消息，回给自己会无限自唤醒循环 |
 /// | 知会消息 | `agent_notify` | Discard | 发送方已声明无需回复；仅 Agent 来源生效，用户对话主干不受影响 |

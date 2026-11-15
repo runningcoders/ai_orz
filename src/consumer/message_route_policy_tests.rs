@@ -23,6 +23,201 @@ fn input<'a>(
     }
 }
 
+/// 任务派单输入：显式指定派发者与被唤醒的 Agent
+///
+/// 三身份模型下 `from_id` 就是真实派发者（发起者 Agent / 用户），
+/// 不再有「任务行 initiator」这个路由输入。
+fn assignment_input<'a>(
+    from_role: MessageRole,
+    from_id: &'a str,
+    agent_id: &'a str,
+    raw_output: &'a str,
+) -> RouteInput<'a> {
+    RouteInput {
+        from_role,
+        from_id,
+        agent_id,
+        message_type: MessageType::TaskAssignment,
+        raw_output,
+    }
+}
+
+/// 派单的交付回执必须回到派发者：三身份下 `from_id` 已是发起者 Agent，
+/// `Peer` 天然正确，不需要任何「按 initiator 改道」的特例。
+#[test]
+fn task_assignment_peers_back_to_sender() {
+    assert_eq!(
+        judge_static_reply_route(assignment_input(
+            MessageRole::Agent,
+            "agent-reception",
+            "agent-worker",
+            "任务已完成"
+        )),
+        Some(AutoReplyRoute::Peer)
+    );
+}
+
+/// 管理面直建的任务（派发者是用户）同样走 Peer —— 结论回到用户，
+/// 行为与三身份改造前一致，不因派发者角色不同而分叉。
+#[test]
+fn task_assignment_from_user_peers_back_to_that_user() {
+    assert_eq!(
+        judge_static_reply_route(assignment_input(
+            MessageRole::User,
+            "user-1",
+            "agent-worker",
+            "任务已完成"
+        )),
+        Some(AutoReplyRoute::Peer)
+    );
+}
+
+/// 自派任务：`from_id == to_id == agent_id` 三者重合。
+/// `Peer` 会投回自己（自唤醒循环）、`self_trigger` 会丢结论，
+/// 因此必须显式交给归属用户。⚠️ 声明顺序在 `task_assignment_delivery` 之前。
+#[test]
+fn self_assigned_task_delivers_to_root_user_instead_of_looping() {
+    assert_eq!(
+        judge_static_reply_route(assignment_input(
+            MessageRole::Agent,
+            "agent-1",
+            "agent-1",
+            "子任务已完成"
+        )),
+        Some(AutoReplyRoute::DeliverToRootUser),
+        "自派任务的 Final 必须向上交给归属用户，不能 Peer 回自己"
+    );
+}
+
+/// 巡检 / 编排通知：系统触发、无对等回复方，结论交给项目归属用户。
+/// 若落 `system_origin` 会被 Discard，Owner 的巡检结论直接消失。
+#[test]
+fn owner_briefing_delivers_to_root_user() {
+    for message_type in [
+        MessageType::ProjectFollowupNotification,
+        MessageType::TaskDispatchNotification,
+    ] {
+        let mut route_input = input(MessageRole::System, "system", message_type, "巡检结论");
+        route_input.agent_id = "agent-owner";
+        assert_eq!(
+            judge_static_reply_route(route_input),
+            Some(AutoReplyRoute::DeliverToRootUser),
+            "{message_type:?} 的结论必须交给归属用户，不能 Discard"
+        );
+    }
+}
+
+/// 反向护栏：哨兵优先级仍高于任务派单规则。
+/// 任务链上输出 NO_REPLY 不得被当成回执投给派发者（历史 29 条泄漏回归点）。
+#[test]
+fn sentinel_still_wins_over_task_assignment_delivery() {
+    assert_eq!(
+        judge_static_reply_route(assignment_input(
+            MessageRole::Agent,
+            "agent-reception",
+            "agent-worker",
+            "NO_REPLY"
+        )),
+        Some(AutoReplyRoute::Discard {
+            reason: SENTINEL_HIT_REASON
+        })
+    );
+}
+
+/// 任务完成状态知会（`TaskCompleted`）不承载执行结果，必须拦在任务规则之前：
+/// 否则会先给用户一条只有「已完成 / 进度」的空洞答复，随后又收到真结果。
+#[test]
+fn task_completed_notice_does_not_trigger_empty_closing() {
+    let mut route_input = assignment_input(
+        MessageRole::Agent,
+        "agent-worker",
+        "agent-reception",
+        "任务已完成",
+    );
+    route_input.message_type = MessageType::TaskCompleted;
+
+    assert!(
+        matches!(
+            judge_static_reply_route(route_input),
+            Some(AutoReplyRoute::Discard { .. })
+        ),
+        "TaskCompleted 状态知会必须 Discard，不能走 DeliverToRootUser"
+    );
+}
+
+/// 双通道隔离护栏（2026-11-15）：用户针对某任务**直接发一句指导**时，消息带
+/// `task_id`，但入口类型是普通 `Text`。Final 必须按对话通道回本轮触发者
+/// （Peer），不能被任务规则拐走，更不能因为「本轮恰好调了 mark_done」被 Discard。
+#[test]
+fn text_dialogue_with_task_id_is_not_rerouted_or_suppressed() {
+    let mut route_input = assignment_input(
+        MessageRole::User,
+        "user-1",
+        "agent-reception",
+        "收到，按你说的调整排期",
+    );
+    route_input.message_type = MessageType::Text;
+    assert_eq!(
+        judge_static_reply_route(route_input),
+        Some(AutoReplyRoute::Peer),
+        "普通 Text 对话必须回落 user_origin，任务组规则不得越界"
+    );
+}
+
+/// 反事实：巡检类通知（白名单内）必须向上交给归属用户 —— 双通道隔离不是把
+/// 任务通道一起关掉，只是让两条通道各自只消费自己那一组事实。
+#[test]
+fn project_followup_still_closes_to_root_user() {
+    let mut route_input = input(
+        MessageRole::System,
+        "system",
+        MessageType::ProjectFollowupNotification,
+        "项目巡检结论",
+    );
+    route_input.agent_id = "agent-owner";
+    assert_eq!(
+        judge_static_reply_route(route_input),
+        Some(AutoReplyRoute::DeliverToRootUser)
+    );
+}
+
+/// 提示词与路由成对：完成回执 / 知会的收件 Agent 必须是 NotifyOnly，
+/// 否则模型被提示「请回复」，静态规则却把 Final Discard，话术分裂。
+#[test]
+fn task_completed_notice_is_notify_only() {
+    assert_eq!(
+        ReplyObligation::of(
+            MessageRole::Agent,
+            "agent-worker",
+            "agent-reception",
+            MessageType::TaskCompleted
+        ),
+        Some(ReplyObligation::NotifyOnly)
+    );
+}
+
+/// 待验收知会（15）按入口类型 Discard：验收结论由 `confirm_task` /
+/// `reject_task` 工具产出，Final 不承载结论。⚠️ 判据是入口消息类型，
+/// 不是「本轮做了什么动作」。
+#[test]
+fn task_pending_review_notice_is_discarded() {
+    let mut route_input = assignment_input(
+        MessageRole::Agent,
+        "agent-worker",
+        "agent-owner",
+        "已阅读验收工作单",
+    );
+    route_input.message_type = MessageType::TaskPendingReview;
+
+    assert!(
+        matches!(
+            judge_static_reply_route(route_input),
+            Some(AutoReplyRoute::Discard { .. })
+        ),
+        "待验收知会的 Final 必须 Discard，否则会抢在任务规则之前发一份空洞转发"
+    );
+}
+
 /// System 来源消息恒走 Discard（无对等回复对象）
 #[test]
 fn static_route_discards_system_origin() {
@@ -67,7 +262,7 @@ fn static_route_discards_agent_self_trigger() {
     );
 }
 
-/// 用户消息恒走对等回复（用户身份中继后 Final 自然回到该用户）
+/// 用户消息恒走对等回复（用户发来的消息，Final 回到这个用户）
 #[test]
 fn static_route_peers_user_origin() {
     assert_eq!(
@@ -151,10 +346,10 @@ fn static_route_sentinel_wins_over_domain_rules() {
     );
 }
 
-/// 回归（2026-10-16）：用户身份中继的任务派发 from_role=User，Agent Final
-/// 输出 NO_REPLY 时若 user_origin 先命中，会把哨兵原文当回复发给用户
-/// （全库实证 29 条泄漏、25+ 条直达用户）。哨兵优先级最高，任何来源
-/// 全等即 Discard
+/// 回归（2026-10-16，历史形态：任务派发经用户身份中继后 from_role=User）：
+/// Agent Final 输出 NO_REPLY 时若 user_origin 先命中，会把哨兵原文当回复发给
+/// 用户（全库实证 29 条泄漏、25+ 条直达用户）。哨兵优先级最高，任何来源
+/// 全等即 Discard。
 #[test]
 fn static_route_discards_no_reply_sentinel_for_user_origin() {
     assert_eq!(
@@ -234,7 +429,8 @@ fn static_route_discards_no_reply_sentinel_variants() {
             }),
             "哨兵写法 {variant:?} 必须命中"
         );
-        // 用户身份中继的任务派发同样受词表约束（from_role=User 不得短路）
+        // 历史上「用户身份中继」的派单同样受词表约束（user_origin 不得短路），
+        // 这条断言在 from 改为真实派发者后仍然成立。
         assert_eq!(
             judge_static_reply_route(input(
                 MessageRole::User,

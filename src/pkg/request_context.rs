@@ -70,6 +70,17 @@ pub struct RequestContext {
     #[log_field]
     pub tool_call_id: Option<String>,
 
+    /// 本次唤醒的入口消息 ID（消息链锚点）
+    ///
+    /// 【归属】与 `tool_call_id` 不同，这是**链上下文**而非单次调用级标识：
+    /// 由 `MessageConsumer::rebuild_context` 从 `message.po.id` 注入，供同一轮
+    /// 唤醒里的工具把「任务派单」等衍生消息挂回发起任务的那条消息链
+    /// （`reply_to_id` 指向它、`root_id` 现场反查继承）。
+    /// ❌ **不随 [`ContextCarrier`] 传播**：下游消费者 / 事件唤醒出的 Agent 必须
+    /// 有自己的入口消息，继承上游锚点会把整条链挂到别人名下。`to_carrier`
+    /// 显式列字段，本字段不在其中。
+    pub trigger_message_id: Option<String>,
+
     /// 统一存储门面（SQLite + Vector）
     storage: Storage,
 }
@@ -107,6 +118,7 @@ pub struct RequestContextBuilder {
     model_provider_id: Option<String>,
     model_name: Option<String>,
     tool_call_id: Option<String>,
+    trigger_message_id: Option<String>,
     storage: Option<Storage>,
 }
 
@@ -126,6 +138,7 @@ impl RequestContextBuilder {
             model_provider_id: None,
             model_name: None,
             tool_call_id: None,
+            trigger_message_id: None,
             storage: None,
         }
     }
@@ -196,6 +209,12 @@ impl RequestContextBuilder {
 
     pub fn tool_call_id(mut self, tool_call_id: impl Into<String>) -> Self {
         self.tool_call_id = Some(tool_call_id.into());
+        self
+    }
+
+    /// 设置本次唤醒的入口消息 ID（消息链锚点，见字段说明）
+    pub fn trigger_message_id(mut self, message_id: impl Into<String>) -> Self {
+        self.trigger_message_id = Some(message_id.into());
         self
     }
 
@@ -299,6 +318,7 @@ impl RequestContextBuilder {
             model_provider_id: self.model_provider_id,
             model_name: self.model_name,
             tool_call_id: self.tool_call_id,
+            trigger_message_id: self.trigger_message_id,
             storage: self.storage.unwrap_or_else(|| storage::get().clone()),
         }
     }
@@ -332,6 +352,7 @@ impl RequestContext {
             model_provider_id: self.model_provider_id.clone(),
             model_name: self.model_name.clone(),
             tool_call_id: self.tool_call_id.clone(),
+            trigger_message_id: self.trigger_message_id.clone(),
             storage: Some(self.storage.clone()),
         }
     }
@@ -463,6 +484,11 @@ impl RequestContext {
     /// 获取当前 Agent ID
     pub fn agent_id(&self) -> Option<&String> {
         self.agent_id.as_ref()
+    }
+
+    /// 获取本次唤醒的入口消息 ID（消息链锚点）
+    pub fn trigger_message_id(&self) -> Option<&String> {
+        self.trigger_message_id.as_ref()
     }
 
     /// 获取当前 Task ID

@@ -1,13 +1,20 @@
 //! 消息内容构建器
 //!
 //! 为 Agent Loop Engine 的系统通知场景构建结构化消息内容：
-//! - 任务调度通知（场景 2：任务状态变更触发）
+//! - 任务完成交付回执 / 完成知会（动作伴生消息，见 `TaskCompletionConsumer`）
 //! - 项目跟进通知（场景 3：定时补偿触发）
+//! - 项目收尾检查通知（场景 3 变体）
+//! - 任务调度指令（当前无生产调用点，保留给项目级编排复用）
 
+use common::api::artifact::ArtifactDetail;
 use common::enums::task::TaskStatus;
 use common::models::ProjectProgressSummary;
 
-/// 构建任务调度通知消息内容（场景 2：任务状态变更触发）
+/// 构建任务调度通知消息内容（**当前无生产调用点**）
+///
+/// ⚠️ 2026-11-15 起任务完成不再由 `TaskEventConsumer` 发这条调度指令：交付
+/// 改由 `TaskCompletionConsumer`(Sync) 以带字段/结果/产物的回执直达归属用户。
+/// 本函数保留作项目级编排文案的现成模板（项目完成事件阶段可能复用）。
 ///
 /// **这是一条机械性兜底通知，不是「第一次告知」**：同一次任务完成可能已经通过
 /// 其他路径（Agent 自主汇报、上一轮编排）驱动过进展，触发时也没有任何「是否已处理」
@@ -44,14 +51,251 @@ pub fn build_task_dispatch_content(
     )
 }
 
+/// 任务完成交付消息的拼装入参（2026-11-15 拍板：交付信息以任务维度为准）
+///
+/// ⚠️ 两类字段来源不同，不可混为一谈：
+/// - **身份类**（`root_user_id` / `initiator_agent_id` / `assignee_id`）取
+///   `TaskStatusChangedEvent` 的**发布时快照**，防止 Async 时间窗内被改过的行
+///   把结果送给错的人。
+/// - **内容类**（`execution_result` / `artifacts`）必须由消费者按 `task_id`
+///   **现取**：`mark_done` 那一刻 Agent 可能还没写执行结果、还没落产物，随事件
+///   快照会拿到空值，交付消息就退化成一条空洞通知。
+pub struct TaskCompletionView<'a> {
+    pub task_id: &'a str,
+    pub task_title: &'a str,
+    pub project_id: Option<&'a str>,
+    pub assignee_id: &'a str,
+    pub root_user_id: &'a str,
+    pub initiator_agent_id: &'a str,
+    pub status: TaskStatus,
+    pub progress: i32,
+    pub execution_result: Option<&'a str>,
+    pub artifacts: &'a [ArtifactDetail],
+}
+
+/// `execution_result` 注入上限：任务详情是全文权威，消息只做高效通知
+const COMPLETION_RESULT_LIMIT: usize = 4000;
+const ARTIFACT_DESC_LIMIT: usize = 120;
+
+/// 构建任务完成**交付消息**正文（直达归属用户）
+///
+/// 与 [`build_task_dispatch_content`] 的区别是本质性的：后者是给项目 Owner Agent
+/// 的兜底调度指令（只有标题 / 状态 / 进度），本函数是给用户看的**交付载体** ——
+/// 任务存在的意义是交付产物，所以正文必须带齐任务维度关键字段、执行结果摘要与
+/// 关联产物清单；任何一类为空都要显式降级说明，不能静默留白。
+///
+/// 产物引用复用现成的 `[名称](artifact:<id>)` 协议，前端会渲染成可打开的 chip，
+/// 不需要新增表字段或下载链接。
+pub fn build_task_completion_content(v: &TaskCompletionView<'_>) -> String {
+    let mut out = format!("## 任务完成回执：{}\n\n", v.task_title);
+
+    out.push_str("| 字段 | 值 |\n| --- | --- |\n");
+    out.push_str(&format!("| 任务 ID | `{}` |\n", v.task_id));
+    out.push_str(&format!(
+        "| 状态 | {}（进度 {}%） |\n",
+        task_status_label(v.status),
+        v.progress
+    ));
+    out.push_str(&format!(
+        "| 所属项目 | {} |\n",
+        v.project_id
+            .filter(|s| !s.is_empty())
+            .unwrap_or("无（游离任务）")
+    ));
+    out.push_str(&format!(
+        "| 执行 Agent | {} |\n",
+        if v.assignee_id.is_empty() {
+            "未指派"
+        } else {
+            v.assignee_id
+        }
+    ));
+    out.push_str(&format!(
+        "| 任务发起者 | {} |\n",
+        if v.initiator_agent_id.is_empty() {
+            "无"
+        } else {
+            v.initiator_agent_id
+        }
+    ));
+    out.push_str(&format!(
+        "| 归属用户 | {} |\n",
+        if v.root_user_id.is_empty() {
+            "未指定"
+        } else {
+            v.root_user_id
+        }
+    ));
+
+    // 执行结果：全文可能很长，任务详情页是全文权威，消息里带摘要 + 截断标记
+    out.push_str("\n### 执行结果\n\n");
+    match v.execution_result.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(result) => {
+            out.push_str(&truncate_chars(result, COMPLETION_RESULT_LIMIT));
+            out.push('\n');
+        }
+        None => out.push_str(
+            "本任务未登记执行结果。完整进展可在任务详情页查看；若结果已通过其他消息送达，请以那条为准。\n",
+        ),
+    }
+
+    // 交付产物：产物是任务交付的主要载体，逐条给可点开的引用
+    out.push_str(&format!("\n### 交付产物（{} 项）\n\n", v.artifacts.len()));
+    if v.artifacts.is_empty() {
+        if v.project_id.is_some() {
+            out.push_str("本任务未关联产物，交付内容以上方执行结果为准。\n");
+        } else {
+            // ⚠️ artifacts.project_id NOT NULL，游离任务不可能有产物 ——
+            // 这不是异常，必须写明白，否则用户会以为交付丢了。
+            out.push_str("无项目任务不落产物（产物硬绑定项目），交付内容以上方执行结果为准。\n");
+        }
+    } else {
+        for a in v.artifacts {
+            let desc = if a.description.trim().is_empty() {
+                "—".to_string()
+            } else {
+                truncate_chars(a.description.trim(), ARTIFACT_DESC_LIMIT)
+            };
+            out.push_str(&format!("- [{}](artifact:{}) — {}\n", a.name, a.id, desc));
+        }
+        out.push_str("\n点击产物可在侧栏预览或下载原件。\n");
+    }
+
+    out
+}
+
+/// 给发起者 / 项目 owner 的完成知会（NotifyOnly，不承载结果复述）
+///
+/// ⚠️ 明确告诉收件方「交付已直达归属用户」：否则它会按老习惯再产一封 Final
+/// 转发给用户，把刚收敛的唯一交付载体重新拆成两份。
+pub fn build_task_completion_notice(
+    task_title: &str,
+    task_id: &str,
+    artifact_count: usize,
+) -> String {
+    format!(
+        "【任务完成知会】任务「{title}」（`{id}`）已完成。\
+         交付回执（关键字段 / 执行结果 / {count} 项产物）已由框架**直接送达归属用户**，\
+         无需再转发、无需再调用 send_message 通知用户。\
+         请只在本轮内处理你职责范围内的编排事项（如检查后继任务、推进项目收尾）；\
+         若没有需要推进的事项，直接结束本轮即可。",
+        title = task_title,
+        id = task_id,
+        count = artifact_count,
+    )
+}
+
+/// 待验收通知的拼装入参（2026-11-15：任务视角的「提交」动作伴生消息）
+///
+/// 与 [`TaskCompletionView`] 的区别：这是给**验收人**看的工作单，不是给用户的
+/// 交付回执。因此正文必须把「事先约定的标准」和「事后交出的东西」并列摆出来，
+/// 让 Owner 能逐条核对，而不是凭一句「我完成了」做判断。
+pub struct TaskReviewView<'a> {
+    pub task_id: &'a str,
+    pub task_title: &'a str,
+    pub project_id: Option<&'a str>,
+    pub assignee_id: &'a str,
+    pub root_user_id: &'a str,
+    pub acceptance_criteria: &'a str,
+    pub execution_result: Option<&'a str>,
+    pub artifacts: &'a [ArtifactDetail],
+}
+
+/// 构建「请验收」通知正文（发给项目 Owner → 发起者 fallback）
+pub fn build_task_pending_review_content(v: &TaskReviewView<'_>) -> String {
+    let mut out = format!("## 待验收：{}\n\n", v.task_title);
+
+    out.push_str("| 字段 | 值 |\n| --- | --- |\n");
+    out.push_str(&format!("| 任务 ID | `{}` |\n", v.task_id));
+    out.push_str(&format!(
+        "| 所属项目 | {} |\n",
+        v.project_id
+            .filter(|s| !s.is_empty())
+            .unwrap_or("无（游离任务）")
+    ));
+    out.push_str(&format!(
+        "| 执行 Agent | {} |\n",
+        if v.assignee_id.is_empty() {
+            "未指派"
+        } else {
+            v.assignee_id
+        }
+    ));
+    out.push_str(&format!(
+        "| 归属用户 | {} |\n",
+        if v.root_user_id.is_empty() {
+            "未指定"
+        } else {
+            v.root_user_id
+        }
+    ));
+    out.push_str("| 当前状态 | 待验收（未计入完成，后继任务未解锁） |\n");
+
+    out.push_str("\n### 验收标准（派单时约定）\n\n");
+    let criteria = v.acceptance_criteria.trim();
+    if criteria.is_empty() {
+        out.push_str(
+            "本任务未登记验收标准。请按任务描述、执行结果与下方产物自行判断是否达标；建议后续补标准。\n",
+        );
+    } else {
+        out.push_str(&format!("{criteria}\n"));
+    }
+
+    out.push_str("\n### 执行人提交说明\n\n");
+    match v.execution_result.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(result) => {
+            out.push_str(&truncate_chars(result, COMPLETION_RESULT_LIMIT));
+            out.push('\n');
+        }
+        None => out.push_str(
+            "执行人未填写提交说明。请用 get_task(with_artifacts=true) 核对任务详情与产物后再决定。\n",
+        ),
+    }
+
+    out.push_str(&format!("\n### 交付产物（{} 项）\n\n", v.artifacts.len()));
+    if v.artifacts.is_empty() {
+        out.push_str("本任务未关联产物，交付内容以上方提交说明为准。\n");
+    } else {
+        for a in v.artifacts {
+            let desc = if a.description.trim().is_empty() {
+                "—".to_string()
+            } else {
+                truncate_chars(a.description.trim(), ARTIFACT_DESC_LIMIT)
+            };
+            out.push_str(&format!("- [{}](artifact:{}) — {}\n", a.name, a.id, desc));
+        }
+        out.push_str("\n点击产物可在侧栏预览或下载原件。\n");
+    }
+
+    out.push_str(&format!(
+        "\n### 请执行验收\n\n\
+         - 达标：调用 `confirm_task(task_id=\"{}\", note=\"验收结论\")`。\n\
+         - 不达标：调用 `reject_task(task_id=\"{}\", reason=\"具体待补事项\")`，任务会打回进行中并通知执行人返工。\n\n\
+         ⚠️ 确认通过后，框架会**直接**把带字段/结果/产物的交付回执送达归属用户并解锁 DAG 后继；\
+         无需自行转发，也不要调用 send_message 通知用户。",
+        v.task_id, v.task_id,
+    ));
+
+    out
+}
+
+fn truncate_chars(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(max).collect();
+    out.push_str("\n\n…（内容过长已截断，完整内容见任务详情页）");
+    out
+}
+
 /// 构建项目跟进通知消息内容（场景 3：定时补偿触发）
 ///
 /// `progress` 为消费侧预取的进度汇总（省去 Agent 的一跳查询，也让通知更具体）；
 /// 传 `None` 时不注入快照块（保持正文与历史一致）。
 ///
-/// 触发器以**项目归属用户身份中继**本通知（from_role=User），Agent 的 Final
-/// 自动回复会送达该用户——因此正文把「通知用户」收敛为「最终回复的写法要求」，
-/// 不再要求调 send_message（那会造成双重通知）。
+/// 触发器以**系统**身份发出本通知（`from_role=System`），路由规则
+/// `owner_briefing` 把 Agent 的 Final 交给项目归属用户——因此正文把「通知用户」
+/// 收敛为「最终回复的写法要求」，不再要求调 send_message（那会造成双重通知）。
 ///
 /// **推进优先原则**：巡检的目的不是产出一份进度汇报，而是推进进度。正文必须
 /// 明确区分「无需用户确认、立即执行的动作」（按既定 execution_plan 调度 / 催办 /
@@ -138,122 +382,9 @@ fn task_status_label(status: TaskStatus) -> &'static str {
         TaskStatus::InProgress => "进行中",
         TaskStatus::Completed => "已完成",
         TaskStatus::Archived => "已归档",
+        TaskStatus::PendingReview => "待验收",
     }
 }
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_build_task_dispatch_content() {
-        let content = build_task_dispatch_content("搭建脚手架", TaskStatus::Completed, 100);
-        assert!(content.contains("任务调度通知"));
-        assert!(content.contains("搭建脚手架"));
-        assert!(content.contains("已完成"));
-        assert!(content.contains("get_project"));
-        // 该场景 Final 由消费者兜底投递，正文需说明「最终回复即送达」以免重复 send_message
-        assert!(content.contains("自动送达"));
-        assert!(content.contains("无需"));
-        // 机械性兜底通知：必须让 Agent 先自证「是否已处理」，否则它会重复派发/重复通知
-        assert!(content.contains("兜底通知"), "正文必须自证这是兜底触发");
-        assert!(
-            content.contains("不要重复派发") && content.contains("不要重复通知"),
-            "正文必须明确「已处理则不要重复动作」"
-        );
-    }
-
-    #[test]
-    fn test_build_project_followup_content() {
-        let content = build_project_followup_content("AI 助手开发", None);
-        assert!(content.contains("项目进度定期检查"));
-        assert!(content.contains("AI 助手开发"));
-        assert!(content.contains("识别可推进点"));
-        // 推进优先：明确要求无需用户确认立即推进，而不是只汇报现状
-        assert!(content.contains("立即推进"));
-        assert!(content.contains("无需用户确认"));
-        assert!(content.contains("send_task_assignment_message"));
-        // 巡检以归属用户身份中继，Final 自动送达 → 无需（也不该）再 send_message
-        assert!(content.contains("自动送达"));
-        assert!(content.contains("无需"));
-        // 需要用户决策的动作只上报「阻塞点 + 建议选项」，不擅自执行
-        assert!(content.contains("需要用户决策"));
-        // 无任何可推进点才回一行确认，避免每小时噪音
-        assert!(content.contains("一行简短确认"));
-        // 未传进度时不注入快照块
-        assert!(!content.contains("当前进度快照"));
-    }
-
-    /// 传入进度汇总时正文追加「当前进度快照」块（消费侧预取，省去 Agent 一跳查询）
-    #[test]
-    fn test_build_project_followup_content_with_progress_snapshot() {
-        let progress = ProjectProgressSummary {
-            total_tasks: 5,
-            completed: 2,
-            in_progress: 1,
-            pending: 1,
-            blocked: 0,
-            cancelled: 1,
-            overall_percent: 42,
-        };
-        let content = build_project_followup_content("AI 助手开发", Some(&progress));
-        assert!(content.contains("当前进度快照"));
-        assert!(content.contains("共 5 个任务"));
-        assert!(content.contains("已完成 2"));
-        assert!(content.contains("进行中 1"));
-        assert!(content.contains("待启动 1"));
-        assert!(content.contains("已取消 1"));
-        assert!(content.contains("整体进度 42%"));
-    }
-
-    /// 收尾文案：全部任务终态时的跟进通知应切换为「二选一收尾」语义
-    #[test]
-    fn test_build_project_finalize_content() {
-        let progress = ProjectProgressSummary {
-            total_tasks: 3,
-            completed: 2,
-            in_progress: 0,
-            pending: 0,
-            blocked: 0,
-            cancelled: 1,
-            overall_percent: 100,
-        };
-        let content = build_project_finalize_content("数据迁移项目", &progress);
-        assert!(content.contains("项目收尾检查"));
-        assert!(content.contains("数据迁移项目"));
-        assert!(content.contains("共 3 个任务"));
-        assert!(content.contains("已完成 2"));
-        assert!(content.contains("已取消 1"));
-        // 二选一指令：默认关闭项目 + 汇报；确有后续工作则建新任务
-        assert!(content.contains("update_project_status(Completed)"));
-        assert!(content.contains("create_task"));
-        // 巡检以归属用户身份中继，Final 自动送达 → 无需再 send_message
-        assert!(content.contains("自动送达"));
-        assert!(content.contains("无需"));
-    }
-
-    /// `all_tasks_terminal` 判定边界：有活跃任务/空项目不算，终态组合（含取消）算
-    #[test]
-    fn test_progress_summary_all_tasks_terminal() {
-        let mk =
-            |total: usize, completed: usize, in_prog: usize, pending: usize, cancelled: usize| {
-                ProjectProgressSummary {
-                    total_tasks: total,
-                    completed,
-                    in_progress: in_prog,
-                    pending,
-                    blocked: 0,
-                    cancelled,
-                    overall_percent: 0,
-                }
-            };
-        // 空项目：从未建过任务 → 不算收尾
-        assert!(!mk(0, 0, 0, 0, 0).all_tasks_terminal());
-        // 有活跃任务 → 不算
-        assert!(!mk(3, 1, 1, 1, 0).all_tasks_terminal());
-        assert!(!mk(2, 1, 0, 1, 0).all_tasks_terminal());
-        // 全部终态（完成 + 取消混合）→ 算
-        assert!(mk(3, 2, 0, 0, 1).all_tasks_terminal());
-        assert!(mk(1, 1, 0, 0, 0).all_tasks_terminal());
-    }
-}
+#[path = "builder_tests.rs"]
+mod tests;

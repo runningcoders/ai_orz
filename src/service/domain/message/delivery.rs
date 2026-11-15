@@ -298,6 +298,9 @@ impl MessageDelivery for MessageDomainImpl {
         );
         // 外部渠道消息键（渠道入站消息才有，供跨渠道消息链反查）
         po.external_key = cmd.external.external_key.clone();
+        // 所属用户（三身份之一）：用户发来的消息归属发送者本人；Agent 发给
+        // Agent 时归属由上下文携带（入口消息的 root_user_id 已还原进 ctx）。
+        po.root_user_id = sender_root_user_id(&ctx, cmd.from_role, cmd.from_id);
         // 外部渠道话题键：优先用入站事件携带的 thread_id；链式回复回退继承父消息话题
         po.thread_id = cmd.external.thread_id.clone().or(inherited_thread_id);
         // 外部渠道会话键（群聊/私聊均有）：入站事件直接带入；链式回复回退继承父消息
@@ -316,6 +319,16 @@ impl MessageDelivery for MessageDomainImpl {
         &self,
         ctx: RequestContext,
         cmd: SendToUserCommand<'_>,
+    ) -> Result<Message> {
+        self.send_to_user_with_type(ctx, cmd, MessageType::Text)
+            .await
+    }
+
+    async fn send_to_user_with_type(
+        &self,
+        ctx: RequestContext,
+        cmd: SendToUserCommand<'_>,
+        message_type: MessageType,
     ) -> Result<Message> {
         // 收件人角色门闩：`to_role` 在此硬编码为 User，而 Agent 常把自己同伴的 ID
         // 当 `to_user_id` 传进来 → 必产生投递必失败的死信。这里直接报错并给出正确工具。
@@ -358,7 +371,7 @@ impl MessageDelivery for MessageDomainImpl {
             cmd.to_user_id.to_string(),
             MessageRole::Agent,
             MessageRole::User,
-            MessageType::Text,
+            message_type,
             cmd.content.to_string(),
             None,
             Default::default(),
@@ -371,6 +384,8 @@ impl MessageDelivery for MessageDomainImpl {
         po.thread_id = inherited_thread_id;
         // 出站消息继承父消息群会话 ID，供出站时按群回复/直发
         po.chat_id = inherited_chat_id;
+        // 所属用户 = 收件用户：Agent 给用户发消息时，这条消息归属收到的那个用户。
+        po.root_user_id = cmd.to_user_id.to_string();
 
         let message = Message::from_po(po);
         let ctx = enrich_ctx!(&ctx, &message);
@@ -415,7 +430,7 @@ impl MessageDelivery for MessageDomainImpl {
         let content = serde_json::to_string(&payload)
             .map_err(|e| err!(Internal, "failed to serialize tool call request").with_source(e))?;
 
-        let po = MessagePo::new(
+        let mut po = MessagePo::new(
             id.clone(),
             payload.project_id.clone(),
             payload.task_id.clone(),
@@ -432,6 +447,8 @@ impl MessageDelivery for MessageDomainImpl {
             ctx.organization_id().cloned(),
             payload.from_id.clone(),
         );
+        // 工具调用是 Agent 的内部动作：归属仍是它正在服务的用户。
+        po.root_user_id = ctx.user_id().cloned().unwrap_or_default();
 
         let message = Message::from_po(po);
         let ctx = enrich_ctx!(&ctx, &message);
@@ -476,7 +493,7 @@ impl MessageDelivery for MessageDomainImpl {
             .map_err(|e| err!(Internal, "failed to serialize tool call result").with_source(e))?;
 
         let id = generate_id();
-        let po = MessagePo::new(
+        let mut po = MessagePo::new(
             id.clone(),
             result_payload.project_id.clone(),
             result_payload.task_id.clone(),
@@ -493,6 +510,12 @@ impl MessageDelivery for MessageDomainImpl {
             cmd.request_message.po.organization_id.clone(),
             result_payload.from_id.clone(),
         );
+        // 归属沿请求消息继承（请求已按当轮 ctx 落定），再回落当轮 ctx。
+        po.root_user_id = if cmd.request_message.po.root_user_id.is_empty() {
+            ctx.user_id().cloned().unwrap_or_default()
+        } else {
+            cmd.request_message.po.root_user_id.clone()
+        };
 
         let message = Message::from_po(po);
         let ctx = enrich_ctx!(&ctx, &message);
@@ -529,7 +552,47 @@ impl MessageDelivery for MessageDomainImpl {
             err!(Internal, "failed to serialize task assignment message").with_source(e)
         })?;
 
-        let po = MessagePo::new(
+        // 任务派单是「发起任务那条消息」的衍生消息：现场反查一次父消息，
+        // 继承链根 / 外部话题 / 会话坐标，使派单 → 回执 → 收尾与用户原始提问
+        // 同处一条链。旧实现 reply_to_id=None + root_id=自身，等于每次派单都
+        // 另起新链，链路信息在落库那一刻就断了。
+        // 父消息查不到 / 无锚点（系统触发、存量任务）时退回自身为链根，
+        // 与 send_to_agent / send_to_user 的 fallback 口径一致。
+        let (chain_root_id, inherited_thread_id, inherited_chat_id) = match cmd.reply_to_id {
+            Some(parent_id) => match self.message_dal.find_by_id(ctx.clone(), parent_id).await {
+                Ok(Some(parent)) => (
+                    parent.po.root_id.unwrap_or_else(|| parent_id.to_string()),
+                    parent.po.thread_id,
+                    parent.po.chat_id,
+                ),
+                // ⚠️ 「父消息不存在」与「查询失败」都降级为自成链根，但必须留痕：
+                // 链锚点丢失后派单 / 回执 / 收尾各自独立，排障时看不到任何声明。
+                Ok(None) => {
+                    log_warn!(
+                        ctx,
+                        "send_task_assignment",
+                        parent_message_id = %parent_id,
+                        task_id = %cmd.task_id,
+                        "派单父消息不存在，链根退回派单自身（链路锚点丢失）"
+                    );
+                    (id.clone(), None, None)
+                }
+                Err(e) => {
+                    log_warn!(
+                        ctx,
+                        "send_task_assignment",
+                        parent_message_id = %parent_id,
+                        task_id = %cmd.task_id,
+                        error = ?e,
+                        "派单父消息查询失败，链根退回派单自身（链路锚点丢失）"
+                    );
+                    (id.clone(), None, None)
+                }
+            },
+            None => (id.clone(), None, None),
+        };
+
+        let mut po = MessagePo::new(
             id.clone(),
             project_id,
             Some(cmd.task_id.to_string()),
@@ -541,11 +604,20 @@ impl MessageDelivery for MessageDomainImpl {
             content,
             None,
             Default::default(),
-            None,
-            Some(id),
+            cmd.reply_to_id.map(str::to_string),
+            Some(chain_root_id),
             ctx.organization_id().cloned(),
             cmd.from_id.to_string(),
         );
+        po.thread_id = inherited_thread_id;
+        po.chat_id = inherited_chat_id;
+        // 所属用户：派单动作发布时快照（任务行的 root_user_id），缺失回落当轮 ctx。
+        // ⚠️ 不能从 `from_id` 推导：from 现在是真实派发者 Agent，不代表归属。
+        po.root_user_id = if cmd.root_user_id.is_empty() {
+            ctx.user_id().cloned().unwrap_or_default()
+        } else {
+            cmd.root_user_id.to_string()
+        };
 
         let message = Message::from_po(po);
         let ctx = enrich_ctx!(&ctx, &message);
@@ -669,5 +741,22 @@ impl MessageDelivery for MessageDomainImpl {
             .unsubscribe_sse(ctx, connection_id)
             .await;
         Ok(())
+    }
+}
+
+/// 投递侧「所属用户」推导（消息三身份之一，见 `MessagePo::root_user_id`）
+///
+/// - 发送方本身就是用户 → 用它自己：用户发来的消息，归属就是发件人，
+///   此刻 `ctx.user_id` 反而是不相关的调用方上下文；
+/// - Agent / System 发送 → 取当轮 `ctx.user_id()`：Agent 的所属用户由入口
+///   消息的 `root_user_id` 还原（`consumer::message::rebuild_context`），
+///   这正是工具凭据与用户画像的同一份来源。
+///
+/// 空串表示无归属（A2A、纯系统触发），消费侧不会凭空造用户。
+fn sender_root_user_id(ctx: &RequestContext, from_role: MessageRole, from_id: &str) -> String {
+    if from_role == MessageRole::User {
+        from_id.to_string()
+    } else {
+        ctx.user_id().cloned().unwrap_or_default()
     }
 }

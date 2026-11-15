@@ -640,18 +640,57 @@ pub struct SendToolCallMessageResponse {
     pub status: String,
 }
 
-/// 标记完成请求参数。
+/// 提交验收请求参数（原「标记完成」，2026-11-15 改为提交待验收）。
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct MarkDoneParams {
     /// 任务 ID。
     pub task_id: String,
-    /// 完成摘要。
+    /// 提交说明：写进 `execution_result`，随待验收通知交给 Owner 核对。
     pub summary: Option<String>,
 }
 
-/// 标记完成响应。
+/// 提交验收响应。
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct MarkDoneResponse {
+    /// 任务 ID。
+    pub task_id: String,
+    /// 任务状态（pending_review = 已提交、等待项目 Owner 验收）。
+    pub status: String,
+}
+
+/// 确认验收通过请求参数（项目 Owner / 发起者专用）。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ConfirmTaskParams {
+    /// 任务 ID。HTTP 路径 `PUT /tasks/{task_id}/confirm` 携带；工具调用走 JSON 参数。
+    #[param(source = "path")]
+    pub task_id: String,
+    /// 验收结论（可选），随状态事件留痕。
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+/// 确认验收通过响应。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct ConfirmTaskResponse {
+    /// 任务 ID。
+    pub task_id: String,
+    /// 任务状态。
+    pub status: String,
+}
+
+/// 驳回任务请求参数（项目 Owner / 发起者专用）。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct RejectTaskParams {
+    /// 任务 ID。HTTP 路径 `PUT /tasks/{task_id}/reject` 携带；工具调用走 JSON 参数。
+    #[param(source = "path")]
+    pub task_id: String,
+    /// 驳回原因（必填）：写进 `execution_result` 供执行人返工对照。
+    pub reason: String,
+}
+
+/// 驳回任务响应。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct RejectTaskResponse {
     /// 任务 ID。
     pub task_id: String,
     /// 任务状态。

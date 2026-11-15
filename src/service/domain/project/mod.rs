@@ -229,6 +229,23 @@ pub trait ProjectManage: Send + Sync {
         modified_by: String,
     ) -> Result<Project>;
 
+    /// 交接项目负责人（`owner_agent_id`）
+    ///
+    /// ⚠️ 与 [`Self::update_basic`] 严格区分：负责人不是普通字段，而是**验收权 +
+    /// 完成知会收件人**的归属（`review_guard::ensure_reviewer` 与
+    /// `task_completion_consumer` 都按它判定）。所以交接走独立方法，便于单独守卫
+    /// 与审计，不给「改个描述」顺手换人的机会。
+    ///
+    /// `owner_agent_id` 传空串表示解除负责人；目标与当前一致时按幂等短路。
+    async fn transfer_owner(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+        owner_agent_id: String,
+        note: Option<String>,
+        modified_by: String,
+    ) -> Result<Project>;
+
     /// 统一项目状态流转
     async fn transition_status(
         &self,
@@ -294,6 +311,7 @@ pub trait TaskManage: Send + Sync {
         due_at: Option<i64>,
         dependencies: Vec<String>,
         created_by: String,
+        acceptance_criteria: String,
     ) -> Result<Task>;
 
     /// 根据 ID 获取任务
@@ -361,6 +379,7 @@ pub trait TaskManage: Send + Sync {
         dependencies: Option<Vec<String>>,
         execution_plan: Option<String>,
         execution_result: Option<String>,
+        acceptance_criteria: Option<String>,
     ) -> Result<Task>;
 
     /// 将未挂载项目的任务绑定到指定项目
@@ -379,9 +398,20 @@ pub trait TaskManage: Send + Sync {
     /// 开始任务
     async fn start(&self, ctx: RequestContext, task_id: &str, modified_by: String) -> Result<()>;
 
-    /// 完成任务
-    async fn complete(&self, ctx: RequestContext, task_id: &str, modified_by: String)
-    -> Result<()>;
+    /// 提交验收：执行人声明完成，状态推进到 `PendingReview`
+    ///
+    /// ⚠️ 这是任务侧**唯一的**「执行人收尾」入口：不写进度/结束时间、不触发
+    /// 完成交付，只有 Owner 随后确认才会转 `Completed`。重复提交按幂等短路。
+    /// 曾经并列存在一个 `complete()`，能从任意状态直推 `Completed` 并发放交付，
+    /// 等于绕过验收层，已删除——不要以任何名义加回来（DAG 解锁/完成交付都必须
+    /// 发生在验收通过之后）。
+    async fn submit_for_review(
+        &self,
+        ctx: RequestContext,
+        task_id: &str,
+        modified_by: String,
+        summary: Option<String>,
+    ) -> Result<()>;
 
     /// 取消任务
     async fn cancel(&self, ctx: RequestContext, task_id: &str, modified_by: String) -> Result<()>;

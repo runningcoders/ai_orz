@@ -71,6 +71,7 @@ impl super::TaskManage for ProjectDomainImpl {
             None,
             Vec::new(),
             created_by,
+            String::new(),
         )
         .await
     }
@@ -90,6 +91,7 @@ impl super::TaskManage for ProjectDomainImpl {
         due_at: Option<i64>,
         dependencies: Vec<String>,
         created_by: String,
+        acceptance_criteria: String,
     ) -> Result<Task> {
         let task_id = Uuid::now_v7().to_string();
 
@@ -108,7 +110,15 @@ impl super::TaskManage for ProjectDomainImpl {
             assignee_id,
             project_id,
             created_by,
-        );
+        )
+        // 交付责任链：发起者 = 本轮被唤醒的 Agent（前台接待），触发消息 = 这条
+        // 唤醒的入口消息。用户从管理面直接建任务时两者皆空 ⇒ 退回「无发起者」的
+        // 既有路由，不凭空造一个交付责任人。
+        .with_initiator(
+            ctx.agent_id().cloned().unwrap_or_default(),
+            ctx.trigger_message_id().cloned().unwrap_or_default(),
+        )
+        .with_acceptance_criteria(acceptance_criteria);
 
         self.task_dal.create(ctx.clone(), &task).await?;
 
@@ -264,6 +274,7 @@ impl super::TaskManage for ProjectDomainImpl {
         dependencies: Option<Vec<String>>,
         execution_plan: Option<String>,
         execution_result: Option<String>,
+        acceptance_criteria: Option<String>,
     ) -> Result<Task> {
         let Some(mut task) = self.task_dal.find_by_id(ctx.clone(), task_id).await? else {
             bail_err!(NotFound, "Task not found: {}", task_id);
@@ -298,6 +309,9 @@ impl super::TaskManage for ProjectDomainImpl {
         }
         if let Some(execution_result) = execution_result {
             task.po.execution_result = Some(execution_result);
+        }
+        if let Some(acceptance_criteria) = acceptance_criteria {
+            task.po.acceptance_criteria = acceptance_criteria;
         }
         task.po.modified_by = ctx.uid();
 
@@ -378,12 +392,16 @@ impl super::TaskManage for ProjectDomainImpl {
         Ok(())
     }
 
-    /// 完成任务
-    async fn complete(
+    /// 提交验收：执行人声明「我做完了」，把任务推进到 `PendingReview`
+    ///
+    /// 这是动作侧唯一的提交点。状态事件由 `TaskDal::update` 统一发布，
+    /// 「给 Owner 发待验收通知」由订阅该事件的 Sync 消费者承担。
+    async fn submit_for_review(
         &self,
         ctx: RequestContext,
         task_id: &str,
         modified_by: String,
+        summary: Option<String>,
     ) -> Result<()> {
         let Some(mut task) = self.task_dal.find_by_id(ctx.clone(), task_id).await? else {
             bail_err!(NotFound, "Task not found: {}", task_id);
@@ -391,8 +409,33 @@ impl super::TaskManage for ProjectDomainImpl {
 
         let ctx = enrich_ctx!(&ctx, &task);
 
+        // 幂等：重复提交不再发第二次状态事件，避免 Owner 收到多份待验收通知。
+        // ⚠️ 但执行人**补交 / 修正说明要生效**：命中幂等时若带了新的 summary，
+        // 只更新 `execution_result`、不重发事件 —— Owner 验收时读的是任务行，
+        // 不是通知里的快照，静默丢弃会让「补一句说明」变成空操作。
+        if task.po.status == TaskStatus::PendingReview {
+            if let Some(s) = summary.filter(|s| !s.trim().is_empty())
+                && task.po.execution_result.as_deref() != Some(s.as_str())
+            {
+                task.po.execution_result = Some(s);
+                task.po.modified_by = modified_by;
+                self.task_dal.update(ctx, &task).await?;
+            }
+            return Ok(());
+        }
+        if task.po.status != TaskStatus::InProgress {
+            bail_err!(
+                InvalidRequest,
+                "只有进行中的任务可以提交验收，当前状态：{:?}",
+                task.po.status
+            );
+        }
+
         let from_status = format!("{:?}", task.po.status);
-        task.complete();
+        if let Some(s) = summary.filter(|s| !s.trim().is_empty()) {
+            task.po.execution_result = Some(s);
+        }
+        task.submit_for_review();
         task.po.modified_by = modified_by;
         self.task_dal.update(ctx.clone(), &task).await?;
 
@@ -401,7 +444,7 @@ impl super::TaskManage for ProjectDomainImpl {
             TaskEvent {
                 task_id: task.po.id.clone(),
                 project_id: task.po.project_id.clone(),
-                event_type: "completed".to_string(),
+                event_type: "submitted_for_review".to_string(),
                 organization_id: ctx.organization_id.clone(),
                 operator_type: Some(ctx.caller_type().as_str().to_string()),
                 operator_id: ctx.caller_id(),
@@ -415,9 +458,6 @@ impl super::TaskManage for ProjectDomainImpl {
                 priority: task.po.priority,
             }
         );
-
-        // 任务收尾：Agent 工作区 checkpoint 兜底提交（best-effort）
-        checkpoint_agent_workspace(&task).await;
 
         Ok(())
     }
@@ -484,6 +524,13 @@ impl super::TaskManage for ProjectDomainImpl {
             (TaskStatus::InProgress, TaskStatus::Completed) => true,
             (TaskStatus::InProgress, TaskStatus::Archived) => true,
             (TaskStatus::Completed, TaskStatus::Archived) => true,
+            // 验收闭环（2026-11-15）：执行人提交 → 待验收 → Owner 确认/驳回。
+            // ⚠️ 保留 InProgress→Completed 是给 A2A 回调等无需人工验收的系统路径；
+            // Agent 工具面由 update_task_status handler 拦下，必须走 mark_done + confirm_task。
+            (TaskStatus::InProgress, TaskStatus::PendingReview) => true,
+            (TaskStatus::PendingReview, TaskStatus::Completed) => true,
+            (TaskStatus::PendingReview, TaskStatus::InProgress) => true,
+            (TaskStatus::PendingReview, TaskStatus::Archived) => true,
             _ => false,
         };
 
@@ -511,7 +558,13 @@ impl super::TaskManage for ProjectDomainImpl {
             }
             TaskStatus::Completed => {
                 task.po.status = TaskStatus::Completed;
+                // 提交阶段不再写进度/结束时间（见 Task::submit_for_review），
+                // 因此 100% 只在这里、即「验收通过」这一刻生效。
+                task.po.progress = 100;
                 task.po.end_at = Some(utils::current_timestamp_ms());
+            }
+            TaskStatus::PendingReview => {
+                task.po.status = TaskStatus::PendingReview;
             }
             TaskStatus::Pending | TaskStatus::Archived => {
                 task.po.status = target_status;

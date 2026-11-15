@@ -220,14 +220,44 @@ impl MessageDomain for MessageDomainImpl {
         Ok(false)
     }
 
+    async fn has_unfinished_notice_to_agent(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+        agent_id: &str,
+        message_type: common::enums::message::MessageType,
+    ) -> Result<bool> {
+        // ⚠️ 宽口径 `unfinished`（`Pending | Processing`）：已派发但还没消费完的通知
+        // 同样会让接收方重跑一轮，见 `MessageStatus::is_unfinished` 的双用途说明。
+        let pending = self
+            .message_dal
+            .count(
+                ctx,
+                MessageQuery {
+                    project_id: Some(project_id.to_string()),
+                    to_id: Some(agent_id.to_string()),
+                    message_type: Some(message_type),
+                    status_in: Some(vec![MessageStatus::Pending, MessageStatus::Processing]),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(pending > 0)
+    }
+
     async fn list_stale_pending_notifications(
         &self,
         ctx: RequestContext,
         older_than_ms: i64,
         limit: usize,
     ) -> Result<Vec<Message>> {
-        // 两种跟进类型各查一次：`MessageQuery::message_type` 是单值，且不能不带它 ——
+        // 三种跟进类型各查一次：`MessageQuery::message_type` 是单值，且不能不带它 ——
         // 否则普通对话会把 `limit` 占满，真正要救的通知永远排不进来。
+        //
+        // ⚠️ `TaskPendingReview`（15）必须在这里：它是「请 Owner 验收」的工作单，
+        // 一旦投递丢失，任务会**永久停在待验收**且没有任何报错（DAG 与交付都只
+        // 认 Completed）。这里只**重发知会**让 Owner 再有机会验收，绝不替它自动
+        // 确认 —— 那会经状态事件连带产出交付与 DAG 补发，等于系统宣布完成。
         //
         // `created_before` 取「创建时间早于 now - older_than_ms」：这个时间窗是
         // 幂等前提 —— 只有「早就该处理却还停在 Pending」的才算滞留；刚创建的消息
@@ -238,6 +268,7 @@ impl MessageDomain for MessageDomainImpl {
         for message_type in [
             common::enums::message::MessageType::TaskDispatchNotification,
             common::enums::message::MessageType::ProjectFollowupNotification,
+            common::enums::message::MessageType::TaskPendingReview,
         ] {
             let rows = self
                 .message_dal
@@ -396,8 +427,20 @@ pub struct SendTaskAssignmentCommand<'a> {
     pub from_role: MessageRole,
     /// 接收 Agent ID
     pub to_agent_id: &'a str,
+    /// 所属用户：这条派单为谁而发（工具凭据 / 交付终点）；空串 = 无归属
+    ///
+    /// 与 `from_id` 正交：派发者可能是 Agent（此时 `from_id` 是那个 Agent），
+    /// 但凭据与用户画像必须取归属用户，不能从派发者推导。
+    pub root_user_id: &'a str,
     /// 关联项目 ID（可选）
     pub project_id: Option<&'a str>,
+    /// 引用的父消息 ID（任务派单是「发起任务那条消息」的衍生消息）
+    ///
+    /// ⚠️ 旧实现恒为 `None` 且 `root_id=自身`，派单一发出就与用户对话链割裂，
+    /// 导致后续回执/收尾无法归到同一条链。传入后由 `send_task_assignment`
+    /// 现场反查父消息继承 `root_id` / `thread_id` / `chat_id`。
+    /// 拿不到锚点的系统触发链路（cron / 存量任务）仍传 `None` 另起新链。
+    pub reply_to_id: Option<&'a str>,
 }
 
 /// 投递出口开关
@@ -506,6 +549,25 @@ pub trait MessageDomain: Send + Sync {
         project_id: &str,
     ) -> Result<bool>;
 
+    /// 检查「同一项目 + 同一接收 Agent + 同一类型」是否已有**在途**（未完成）的那一条
+    ///
+    /// 用于**同类型通知的项目级合并**：一个项目连续完成多个任务时，Owner 只需要
+    /// 「有人交付了，去核对项目状态」这一条信号；不合并则 N 次完成 = N 轮完整思考
+    ///（`Discard` 拦的是回复，不拦唤醒，token 成本是实打实的）。
+    ///
+    /// 与 [`has_pending_followup_for_project`] 的差别是**多带接收方**：完成交付消息
+    /// 与完成知会共用 `MessageType::TaskCompleted`，前者投给归属用户、后者投给 Owner，
+    /// 不带 `to_id` 时用户侧那条未读回执会把 Owner 知会一并压住。
+    ///
+    /// ⚠️ 作用域仍必须是**项目**：按 Agent 全局去重会让多项目 Owner 的其它项目饿死。
+    async fn has_unfinished_notice_to_agent(
+        &self,
+        ctx: RequestContext,
+        project_id: &str,
+        agent_id: &str,
+        message_type: common::enums::message::MessageType,
+    ) -> Result<bool>;
+
     /// 列出「滞留 Pending」的跟进类通知（定时兜底重投用）
     ///
     /// 「滞留」判据只有两条：状态仍是 `Pending`、创建时间早于 `now - older_than_ms`。
@@ -518,9 +580,10 @@ pub trait MessageDomain: Send + Sync {
     /// 时间窗同样是必需的：消息在消费完成前也是 `Pending`，只有过了窗口还停着，
     /// 才能断定「这条的唤醒被吃掉了」。
     ///
-    /// 为什么要这个兜底：Owner 通知一旦投递时恰逢接收方不可用（沉淀 Resting /
-    /// 被别的链路占用），AOP 的重投会在退避若干次后 `Discard`，消息就永久停在
-    /// `Pending` 再无人问津。定时扫描 + `MessageDal::republish_created` 是这条链路
+    /// 为什么要这个兜底：Owner 通知（含任务待验收知会）一旦投递时恰逢接收方
+    /// 不可用（沉淀 Resting / 被别的链路占用），AOP 的重投会在退避若干次后
+    /// `Discard`，消息就永久停在 `Pending` 再无人问津 —— 待验收任务更是会连带
+    /// 卡死交付与 DAG。定时扫描 + `MessageDal::republish_created` 是这条链路
     /// 最后的确定性兜底 —— 消息表是权威待办，队列只是加速器。
     async fn list_stale_pending_notifications(
         &self,
@@ -559,11 +622,23 @@ pub trait MessageDelivery: Send + Sync {
         cmd: SendToAgentCommand<'_>,
     ) -> Result<Message>;
 
-    /// 发送消息给用户
+    /// 发送消息给用户（默认 `MessageType::Text`）
     async fn send_to_user(
         &self,
         ctx: RequestContext,
         cmd: SendToUserCommand<'_>,
+    ) -> Result<Message>;
+
+    /// 发送消息给用户并指定消息类型
+    ///
+    /// 仅给**框架派发的动作伴生消息**使用：任务完成交付需要标 `TaskCompleted`
+    /// 才能按消息类型追溯与分发。普通 Agent 主动发消息一律走 [`Self::send_to_user`]
+    /// （恒 `Text`），避免把类型契约扩散到 20+ 个既有调用点。
+    async fn send_to_user_with_type(
+        &self,
+        ctx: RequestContext,
+        cmd: SendToUserCommand<'_>,
+        message_type: common::enums::message::MessageType,
     ) -> Result<Message>;
 
     /// 发送工具调用请求消息

@@ -14,7 +14,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "update_task",
     name = "Update Task",
-    description = "Partially update a task's basic info: title, description, priority, tags, due date, dependency task IDs, execution plan, and execution result; only provided fields change. If project_id is provided and the task is not yet bound to any project, the task is also bound to that project; if the task already has a project, the project_id parameter is ignored. This does not change status or progress — use update_task_status or update_task_progress for those.",
+    description = "Partially update a task's basic info: title, description, priority, tags, due date, dependency task IDs, execution plan, execution result, and acceptance criteria (DoD); only provided fields change. If project_id is provided and the task is not yet bound to any project, the task is also bound to that project; if the task already has a project, the project_id parameter is ignored. This does not change status or progress — use update_task_status or update_task_progress for those.",
     params = "common::api::UpdateTaskRequest",
     tags = "project_management"
 )]
@@ -47,6 +47,7 @@ pub async fn update_task(
             params.dependencies,
             params.execution_plan,
             params.execution_result,
+            params.acceptance_criteria,
         )
         .await?;
 

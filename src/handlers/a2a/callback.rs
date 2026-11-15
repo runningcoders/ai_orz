@@ -145,6 +145,7 @@ pub async fn handle_a2a_callback(
                 None,
                 None,
                 None,
+                None,
             )
             .await
         {

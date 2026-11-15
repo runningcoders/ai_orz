@@ -218,6 +218,8 @@ async fn test_send_to_agent_and_send_to_user(pool: SqlitePool) {
     assert_eq!(sent_to_agent.po.project_id, Some(project_id.clone()));
     assert_eq!(sent_to_agent.po.task_id, Some(task_id.clone()));
     assert_eq!(sent_to_agent.po.status, MessageStatus::Pending);
+    // 三身份：用户发来的消息，所属用户就是发送者本人
+    assert_eq!(sent_to_agent.po.root_user_id, "user-1");
 
     // Agent 发送给用户
     let sent_to_user = domain
@@ -242,6 +244,8 @@ async fn test_send_to_agent_and_send_to_user(pool: SqlitePool) {
     assert_eq!(sent_to_user.po.to_role, MessageRole::User);
     assert_eq!(sent_to_user.po.content, "Agent reply to user");
     assert_eq!(sent_to_user.po.status, MessageStatus::Pending);
+    // 三身份：Agent 发给用户时，所属用户是收件人（不是 from 的 Agent）
+    assert_eq!(sent_to_user.po.root_user_id, "user-1");
 }
 
 #[sqlx::test]
@@ -1236,7 +1240,9 @@ async fn test_send_task_assignment(pool: SqlitePool) {
                 from_id: "agent-manager",
                 from_role: MessageRole::Agent,
                 to_agent_id: "agent-worker",
+                root_user_id: "user-owner",
                 project_id: Some("project-001"),
+                reply_to_id: None,
             },
         )
         .await
@@ -1250,6 +1256,8 @@ async fn test_send_task_assignment(pool: SqlitePool) {
     assert_eq!(task_message.po.project_id.as_deref(), Some("project-001"));
     assert_eq!(task_message.po.task_id.as_deref(), Some("task-001"));
     assert_eq!(task_message.po.status, MessageStatus::Pending);
+    // 三身份：派发者是 Agent，所属用户独立落列（工具凭据 / 交付终点都读它）
+    assert_eq!(task_message.po.root_user_id, "user-owner");
 
     let payload: TaskAssignmentMessage = serde_json::from_str(&task_message.po.content).unwrap();
     assert_eq!(payload.task_id, "task-001");
@@ -1285,7 +1293,9 @@ async fn test_send_task_assignment_from_user(pool: SqlitePool) {
                 from_id: "user-admin",
                 from_role: MessageRole::User,
                 to_agent_id: "agent-worker",
+                root_user_id: "user-admin",
                 project_id: None,
+                reply_to_id: None,
             },
         )
         .await
@@ -1468,7 +1478,9 @@ async fn test_send_task_assignment_rejects_user_id(pool: SqlitePool) {
                 from_id: "agent-sender",
                 from_role: MessageRole::Agent,
                 to_agent_id: "user-assignee",
+                root_user_id: "user-assignee",
                 project_id: None,
+                reply_to_id: None,
             },
         )
         .await

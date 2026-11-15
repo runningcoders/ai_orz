@@ -37,7 +37,21 @@ pub struct TaskPo {
     /// 前置任务 ID 列表（JSON 数组字符串），可为空表示无依赖
     pub dependencies: Option<String>,
     /// 根用户 ID：这个任务最终为哪个用户服务，所有派生任务继承此字段
+    ///
+    /// ⚠️ 与 [`Self::initiator_agent_id`] 严格正交：这里回答「结果最终关联给谁」，
+    /// 发起者回答「谁派发、谁对交付收尾负责」。旧实现把两者压成同一个 id，
+    /// 导致任务回执绕过发起者直接落到用户身上。
     pub root_user_id: String,
+    /// 任务发起者 Agent ID：谁把用户诉求转成这个任务、并负责汇总回执给用户
+    ///
+    /// 空串 = 无发起者（用户直接建任务 / A2A / 存量任务），路由退回既有口径。
+    /// ⚠️ 不含在 `UpdateTaskRequest` 里：发起者与消息锚点一旦落定即不可变，
+    /// 否则任务转手后链路会指向另一个人。
+    pub initiator_agent_id: String,
+    /// 触发本任务诞生的消息 ID：派生消息（派单 / 回执 / 收尾）挂回这条链
+    ///
+    /// 空串 = 无消息链可用（系统触发 / 存量任务），此时派单消息另起新链。
+    pub trigger_message_id: String,
     /// 分配对象类型
     pub assignee_type: AssigneeType,
     /// 分配对象 ID
@@ -60,6 +74,11 @@ pub struct TaskPo {
     pub execution_plan: Option<String>,
     /// 执行结果（Agent Loop 执行阶段产出）
     pub execution_result: Option<String>,
+    /// 验收标准（DoD）：派单时随任务下发，Owner 验收时对照核对
+    ///
+    /// 空串 = 未指定。⚠️ 与 `execution_result` 严格分开：前者是「事先约定
+    /// 做到什么算完成」，后者是「事后交付了什么」。
+    pub acceptance_criteria: String,
 }
 
 /// Task 业务实体
@@ -90,6 +109,30 @@ impl Task {
             model_call_stats: None,
             artifacts: None,
         }
+    }
+
+    /// 补齐任务的交付责任链（Domain 层在落库前一次性写入）
+    ///
+    /// 单独成方法而不是塞进 `Task::new` 的参数列表：发起者与消息锚点来自
+    /// 唤醒上下文而非业务入参，且构造夹具遍布全仓，加参数只会把「无链路」
+    /// 的默认值散落到每个调用点。
+    pub fn with_initiator(
+        mut self,
+        initiator_agent_id: impl Into<String>,
+        trigger_message_id: impl Into<String>,
+    ) -> Self {
+        self.po.initiator_agent_id = initiator_agent_id.into();
+        self.po.trigger_message_id = trigger_message_id.into();
+        self
+    }
+
+    /// 补齐验收标准（Domain 层落库前写入）
+    ///
+    /// 与 `with_initiator` 同理：不去动 `Task::new` 的参数列表，避免把
+    /// 「无验收标准」的默认值散落到全仓构造夹具。
+    pub fn with_acceptance_criteria(mut self, criteria: impl Into<String>) -> Self {
+        self.po.acceptance_criteria = criteria.into();
+        self
     }
 
     /// 创建新的 Task
@@ -175,11 +218,19 @@ impl Task {
         self.po.start_at = Some(utils::current_timestamp_ms());
     }
 
-    /// 完成任务
+    /// 完成任务（仅用于「已验收通过」或无需验收的系统路径）
     pub fn complete(&mut self) {
         self.po.status = TaskStatus::Completed;
         self.po.progress = 100;
         self.po.end_at = Some(utils::current_timestamp_ms());
+    }
+
+    /// 提交验收：执行人声明「我做完了」，把状态推进到 `PendingReview`
+    ///
+    /// ⚠️ 刻意**不**设 `progress = 100`、不写 `end_at`：进度与结束时间只在
+    /// Owner 确认（`Completed`）后才生效，否则看板会把未经确认的工作算成完成。
+    pub fn submit_for_review(&mut self) {
+        self.po.status = TaskStatus::PendingReview;
     }
 
     /// 取消任务
@@ -226,12 +277,25 @@ impl Task {
         if !self.po.description.is_empty() {
             s.push_str(&format!("- 任务描述: {}\n", self.po.description));
         }
+        if !self.po.acceptance_criteria.is_empty() {
+            s.push_str(&format!(
+                "- 验收标准: {}（提交前请逐条自检，并在执行结果中说明达成情况）\n",
+                self.po.acceptance_criteria
+            ));
+        }
         s.push_str(&format!("- 任务状态: {:?}\n", self.po.status));
         s.push_str(&format!(
             "- 分配给: {:?}({})\n",
             self.po.assignee_type, self.po.assignee_id
         ));
         s.push_str(&format!("- 任务进度: {}%\n", self.po.progress));
+        s.push_str(&format!("- 归属用户: {}\n", self.po.root_user_id));
+        if !self.po.initiator_agent_id.is_empty() {
+            s.push_str(&format!(
+                "- 任务发起者: {}（任务归属信息。⚠️ Final 属于对话通道，投递对象由**本条入口消息**决定，与任务状态推进互不影响；任务的状态变更、验收与交付由框架自动完成，不要自行向归属用户转发结果）\n",
+                self.po.initiator_agent_id
+            ));
+        }
         let deps = self.po.get_dependencies();
         if !deps.is_empty() {
             s.push_str(&format!("- 前置依赖任务: {}\n", deps.join(", ")));
@@ -281,6 +345,9 @@ impl TaskPo {
             end_at,
             dependencies: dependencies_json,
             root_user_id,
+            // 交付责任链由 Domain 层用 `Task::with_initiator` 补齐，这里先留空
+            initiator_agent_id: String::new(),
+            trigger_message_id: String::new(),
             assignee_type,
             assignee_id,
             project_id,
@@ -292,6 +359,7 @@ impl TaskPo {
             updated_at: now,
             execution_plan: None,
             execution_result: None,
+            acceptance_criteria: String::new(),
         }
     }
 

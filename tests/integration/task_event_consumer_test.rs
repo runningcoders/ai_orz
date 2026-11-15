@@ -1,14 +1,14 @@
 //! Integration test for `TaskEventConsumer` (AOP async `task.status_changed`).
 //!
 //! Owner 通知的语义：**机械性兜底，只做确定性去重，不做「谁在忙」的猜测**。
-//! - **baseline**: owner idle、项目无人忙、无 Pending 跟进 → 恰好一条 `TaskDispatchNotification`。
+//! - **baseline**: owner idle、项目无人忙、无 Pending 跟进 → 恰好一条 `TaskCompleted`（完成知会）。
 //! - **别人忙**: 项目内有 Busy 的第三方 Agent → **仍然通知**（旧门禁 ② 已删除）。
 //! - **assignee 自抑制回归**: 唯一 Busy 者就是事件 assignee（`ConsumeMode::Async`
 //!   的常态窗口）→ 仍然通知。
 //! - **owner 不可用**: Owner 自身 Busy → **仍然落库**（旧门禁 ③ 已删除，
 //!   改由滞留重投等它空闲）。
 //! - **⑤**: 该项目已有 Pending 的 `ProjectFollowupNotification` → 不再发
-//!   `TaskDispatchNotification`（跨类型去重，唯一保留的门禁）。
+//!   `TaskCompleted` 知会（同项目同收件人在途即合并，唯一保留的门禁）。
 //! - **滞留重投**: 早该处理却仍 `Pending` 的跟进通知能被扫出并重投；
 //!   已被处理的（`Processed`）不会再投；队列里还有它的事件时也不重复投递。
 //! - **Processing 双口径**: 已派发的消息 —— 去重**算它在途**，重投**捞不到它**。
@@ -25,6 +25,7 @@ mod common;
 extern crate common as common_ext;
 
 use crate::common::TestApp;
+use ai_orz::consumer::task_completion_consumer::TaskCompletionConsumer;
 use ai_orz::consumer::task_event_consumer::TaskEventConsumer;
 use ai_orz::pkg::RequestContext;
 use ai_orz::pkg::agent_runtime_state::AgentRuntimeStateManager;
@@ -95,8 +96,12 @@ async fn create_project_with_owner(
         .to_string()
 }
 
-/// 统计该项目内、发往指定 owner 的 `TaskDispatchNotification` 条数。
-async fn count_dispatch_notifications(
+/// 统计该项目内、发往指定 Agent 的任务完成知会（`TaskCompleted`）条数。
+///
+/// ⚠️ 2026-11-15：完成交付/知会已迁至 `TaskCompletionConsumer`(Sync)，类型统一为
+/// `TaskCompleted`；旧的 `TaskDispatchNotification` 是项目调度指令，不再是完成回执。
+/// helper 按 `to_id` 过滤，所以给 `root_user_id` 的交付消息不会被算进来。
+async fn count_completion_notices(
     ctx: RequestContext,
     project_id: &str,
     owner_agent_id: &str,
@@ -108,15 +113,12 @@ async fn count_dispatch_notifications(
         .expect("list_by_project_id should succeed");
     messages
         .iter()
-        .filter(|m| {
-            m.po.to_id == owner_agent_id
-                && m.po.message_type == MessageType::TaskDispatchNotification
-        })
+        .filter(|m| m.po.to_id == owner_agent_id && m.po.message_type == MessageType::TaskCompleted)
         .count()
 }
 
 /// baseline：owner idle、项目内无 Busy Agent、无 Pending 跟进通知 →
-/// 项目 Owner Agent 收到一条 `TaskDispatchNotification`。
+/// 项目 Owner Agent 收到一条 `TaskCompleted` 知会。
 #[sqlx::test]
 async fn test_task_completed_notifies_owner_baseline(pool: SqlitePool) {
     // 串行化临界区：见文件顶部 SERIAL 说明
@@ -148,15 +150,15 @@ async fn test_task_completed_notifies_owner_baseline(pool: SqlitePool) {
     let task_id = format!("task-{}", uuid::Uuid::now_v7());
     let event = build_completed_event(&task_id, "已完成的任务", &project_id, &owner_agent_id);
 
-    TaskEventConsumer::new()
+    TaskCompletionConsumer::new()
         .on_event(RequestContext::new_system(), event)
         .await
         .expect("on_event should succeed");
 
-    let count = count_dispatch_notifications(ctx.clone(), &project_id, &owner_agent_id).await;
+    let count = count_completion_notices(ctx.clone(), &project_id, &owner_agent_id).await;
     assert_eq!(
         count, 1,
-        "baseline：owner 应收到一条 TaskDispatchNotification（实际 {} 条）",
+        "baseline：owner 应收到一条 TaskCompleted 知会（实际 {} 条）",
         count
     );
 }
@@ -214,12 +216,12 @@ async fn test_task_completed_notifies_owner_when_other_agent_busy(pool: SqlitePo
     let task_id = format!("task-{}", uuid::Uuid::now_v7());
     let event = build_completed_event(&task_id, "已完成的任务", &project_id, &owner_agent_id);
 
-    TaskEventConsumer::new()
+    TaskCompletionConsumer::new()
         .on_event(RequestContext::new_system(), event)
         .await
         .expect("on_event should succeed");
 
-    let count = count_dispatch_notifications(ctx.clone(), &project_id, &owner_agent_id).await;
+    let count = count_completion_notices(ctx.clone(), &project_id, &owner_agent_id).await;
     assert_eq!(
         count, 1,
         "项目内有除 assignee 外的 Busy Agent，也不应抑制 Owner 兜底通知（实际 {} 条）",
@@ -274,12 +276,12 @@ async fn test_task_completed_notifies_owner_when_only_assignee_busy(pool: Sqlite
     let task_id = format!("task-{}", uuid::Uuid::now_v7());
     let event = build_completed_event(&task_id, "已完成的任务", &project_id, &assignee_agent_id);
 
-    TaskEventConsumer::new()
+    TaskCompletionConsumer::new()
         .on_event(RequestContext::new_system(), event)
         .await
         .expect("on_event should succeed");
 
-    let count = count_dispatch_notifications(ctx.clone(), &project_id, &owner_agent_id).await;
+    let count = count_completion_notices(ctx.clone(), &project_id, &owner_agent_id).await;
     assert_eq!(
         count, 1,
         "唯一 Busy 者就是事件 assignee，通知仍应发出（实际 {} 条）",
@@ -329,12 +331,12 @@ async fn test_task_completed_notifies_owner_even_when_owner_unavailable(pool: Sq
     let task_id = format!("task-{}", uuid::Uuid::now_v7());
     let event = build_completed_event(&task_id, "已完成的任务", &project_id, &owner_agent_id);
 
-    TaskEventConsumer::new()
+    TaskCompletionConsumer::new()
         .on_event(RequestContext::new_system(), event)
         .await
         .expect("on_event should succeed");
 
-    let count = count_dispatch_notifications(ctx.clone(), &project_id, &owner_agent_id).await;
+    let count = count_completion_notices(ctx.clone(), &project_id, &owner_agent_id).await;
     assert_eq!(
         count, 1,
         "Owner 运行态不可用也必须落库通知（改由滞留重投兜底），实际 {} 条",
@@ -345,9 +347,9 @@ async fn test_task_completed_notifies_owner_even_when_owner_unavailable(pool: Sq
 }
 
 /// ⑤ 跨类型去重：owner 已有 Pending 的 `ProjectFollowupNotification` →
-/// 本次不再发 `TaskDispatchNotification`（跟进类统一去重）。
+/// 本次不再发第二条 `TaskCompleted` 知会（同项目同收件人在途即合并）。
 #[sqlx::test]
-async fn test_task_completed_dedups_pending_followup_of_other_type(pool: SqlitePool) {
+async fn test_completion_delivery_ignores_pending_followup_gate(pool: SqlitePool) {
     // 串行化临界区：见文件顶部 SERIAL 说明
     let _serial = SERIAL.lock().await;
     let ctx = crate::common::init_full_test_env(pool.clone()).await;
@@ -397,15 +399,15 @@ async fn test_task_completed_dedups_pending_followup_of_other_type(pool: SqliteP
     let task_id = format!("task-{}", uuid::Uuid::now_v7());
     let event = build_completed_event(&task_id, "已完成的任务", &project_id, &owner_agent_id);
 
-    TaskEventConsumer::new()
+    TaskCompletionConsumer::new()
         .on_event(RequestContext::new_system(), event)
         .await
         .expect("on_event should succeed");
 
-    let count = count_dispatch_notifications(ctx.clone(), &project_id, &owner_agent_id).await;
+    let count = count_completion_notices(ctx.clone(), &project_id, &owner_agent_id).await;
     assert_eq!(
-        count, 0,
-        "已有 Pending 的 ProjectFollowupNotification 时不应再发 TaskDispatchNotification（实际 {} 条）",
+        count, 1,
+        "完成交付是必达终点消息，不能被在途的 ProjectFollowupNotification 去重门禁吃掉（实际 {} 条）",
         count
     );
 }
@@ -513,13 +515,225 @@ async fn test_task_completed_publishes_status_changed_event(pool: SqlitePool) {
     );
 }
 
+// ==================== 交付责任制分层（2026-11-14）====================
+
+/// 带交付身份快照的完成事件（project_id 可为 null，表达游离任务）。
+fn build_completed_event_with_delivery(
+    task_id: &str,
+    project_id: Option<&str>,
+    root_user_id: &str,
+    initiator_agent_id: &str,
+    trigger_message_id: &str,
+) -> serde_json::Value {
+    json!({
+        "event_id": uuid::Uuid::now_v7().to_string(),
+        "task_id": task_id,
+        "task_title": "分层交付任务",
+        "project_id": project_id,
+        "assignee_id": initiator_agent_id,
+        "old_status": "InProgress",
+        "new_status": "Completed",
+        "progress": 100,
+        "created_at": now_ms(),
+        "root_user_id": root_user_id,
+        "initiator_agent_id": initiator_agent_id,
+        "trigger_message_id": trigger_message_id,
+    })
+}
+
+/// 无项目任务完成：完成知会必须发给任务发起者、类型必须是 `TaskCompleted`，
+/// 且挂回触发消息链（不能另起新链）。
+///
+/// 旧实现 `let Some(project_id) = ... else { return Ok(()) }` 在这里直接吞掉
+/// 整个事件 —— 游离任务完成后没有任何 Agent 被唤醒，归属用户永远收不到结果。
+#[sqlx::test]
+async fn test_free_task_completion_notifies_initiator_with_task_completed(pool: SqlitePool) {
+    let _serial = SERIAL.lock().await;
+    let ctx = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool.clone()).await;
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    let initiator = crate::common::factories::create_test_agent(
+        &app,
+        &jwt,
+        &bs.chat_provider_id,
+        &format!("FreeTaskInitiator-{}", uuid::Uuid::now_v7()),
+    )
+    .await;
+
+    let task_id = format!("free-task-{}", uuid::Uuid::now_v7());
+    let trigger_id = format!("trigger-{}", uuid::Uuid::now_v7());
+    let event =
+        build_completed_event_with_delivery(&task_id, None, &bs.user_id, &initiator, &trigger_id);
+
+    TaskCompletionConsumer::new()
+        .on_event(RequestContext::new_system(), event)
+        .await
+        .expect("on_event should succeed");
+
+    let messages = ai_orz::service::dal::message::dal()
+        .query(
+            ctx.clone(),
+            ai_orz::service::dao::message::MessageQuery {
+                task_id: Some(task_id.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("query should succeed");
+    let completed: Vec<_> = messages
+        .iter()
+        .filter(|m| m.po.message_type == MessageType::TaskCompleted)
+        .collect();
+
+    // 交付责任制（2026-11-15）：无项目任务完成产出**两条**各司其职的消息 ——
+    // 一条带关键字段/执行结果/产物清点的交付回执直达归属用户，一条知会给发起者。
+    let delivery = completed
+        .iter()
+        .find(|m| m.po.to_id == bs.user_id)
+        .expect("归属用户必须收到一条直达的交付回执");
+    assert!(
+        delivery.po.content.contains("任务完成回执")
+            && delivery.po.content.contains("交付产物")
+            && delivery.po.content.contains(&task_id),
+        "交付回执必须带任务维度关键字段，实际正文：{}",
+        delivery.po.content
+    );
+    assert!(
+        delivery.po.content.contains("无项目任务不落产物"),
+        "artifacts.project_id NOT NULL ⇒ 游离任务没有产物通道，正文必须显式降级说明"
+    );
+    assert!(
+        delivery.po.reply_to_id.is_some(),
+        "交付回执必须挂回触发消息链"
+    );
+
+    let notice = completed
+        .iter()
+        .find(|m| m.po.to_id == initiator)
+        .expect("任务发起者必须收到一条完成知会");
+    assert!(
+        notice.po.content.contains("直接送达归属用户"),
+        "知会必须写明交付已直达用户，避免收件方再转发一份"
+    );
+    assert!(notice.po.reply_to_id.is_some(), "知会同样挂回同一条链");
+}
+
+/// 项目存在但未配置 owner：完成知会必须退回任务发起者，不能静默 return。
+/// 前端创建项目恒传 `owner_agent_id: None`，这是线上默认形态。
+#[sqlx::test]
+async fn test_project_owner_missing_falls_back_to_initiator(pool: SqlitePool) {
+    let _serial = SERIAL.lock().await;
+    let ctx = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool.clone()).await;
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    let initiator = crate::common::factories::create_test_agent(
+        &app,
+        &jwt,
+        &bs.chat_provider_id,
+        &format!("FallbackInitiator-{}", uuid::Uuid::now_v7()),
+    )
+    .await;
+    let project_id = create_project_with_owner(
+        &app,
+        &jwt,
+        &format!("NoOwnerProject-{}", uuid::Uuid::now_v7()),
+        None,
+    )
+    .await;
+
+    let task_id = format!("no-owner-task-{}", uuid::Uuid::now_v7());
+    let event = build_completed_event_with_delivery(
+        &task_id,
+        Some(&project_id),
+        "test-root-user",
+        &initiator,
+        "",
+    );
+
+    TaskCompletionConsumer::new()
+        .on_event(RequestContext::new_system(), event)
+        .await
+        .expect("on_event should succeed");
+
+    let count = count_completion_notices(ctx.clone(), &project_id, &initiator).await;
+    assert_eq!(
+        count, 1,
+        "owner 未配置时完成知会应退回任务发起者（实际 {} 条）",
+        count
+    );
+}
+
+/// `create_task` 走「动作 → AOP → TaskAssignment」后必须真的落库一条派单消息。
+///
+/// ⚠️ 这条用例同时守住 **Sync 消费者已注册** 这个前提：`aop::publish` 对没有
+/// 订阅者的 topic 是静默 return（连日志都不打），漏注册 = 任务建好了但永远
+/// 没有 Agent 被唤醒，而且不会有任何报错。
+#[sqlx::test]
+async fn test_create_task_dispatches_assignment_via_aop(pool: SqlitePool) {
+    let _serial = SERIAL.lock().await;
+    let ctx = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool.clone()).await;
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    let agent_id = crate::common::factories::create_test_agent(
+        &app,
+        &jwt,
+        &bs.chat_provider_id,
+        &format!("AopDispatchTarget-{}", uuid::Uuid::now_v7()),
+    )
+    .await;
+
+    let task_req = json!({
+        "title": "AOP 派发探针",
+        "description": "验证派单消息经 Sync 消费者内联落库",
+        "assignee_id": agent_id,
+    });
+    let (status, body) = app.post_with_jwt("/api/v1/tasks", &task_req, &jwt).await;
+    let data = crate::common::assert_api_ok(status, &body);
+    let task_id = data
+        .get("id")
+        .and_then(|v| v.as_str())
+        .expect("missing task id")
+        .to_string();
+
+    let messages = ai_orz::service::dal::message::dal()
+        .query(
+            ctx.clone(),
+            ai_orz::service::dao::message::MessageQuery {
+                task_id: Some(task_id.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("query should succeed");
+    let assignments: Vec<_> = messages
+        .iter()
+        .filter(|m| m.po.message_type == MessageType::TaskAssignment)
+        .collect();
+
+    assert_eq!(
+        assignments.len(),
+        1,
+        "任务 {} 创建后必须恰好有一条 TaskAssignment（实际 {} 条）—— \
+         没有就说明 task.dispatched 的 Sync 消费者没注册或派发失败",
+        task_id,
+        assignments.len()
+    );
+    assert_eq!(
+        assignments[0].po.to_id, agent_id,
+        "派单必须直达 task.assignee_id，owner 只做知会不做转发"
+    );
+}
+
 /// 去重作用域回归：Pending 跟进通知的压制**只在同一项目内生效**。
 ///
 /// Owner 同时带两个项目时，按 Agent 去重会让先挂上 Pending 的项目永远占着门，
 /// 另一个项目的任务完成通知被饿死。这里用「A 有 Pending、B 没有」直接钉住作用域：
 /// A 被去重（0 条），B 必须照常通知（1 条）。
 #[sqlx::test]
-async fn test_pending_followup_dedup_is_scoped_to_project(pool: SqlitePool) {
+async fn test_completion_notice_is_scoped_to_project(pool: SqlitePool) {
     let _serial = SERIAL.lock().await;
     let ctx = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool.clone()).await;
@@ -573,7 +787,7 @@ async fn test_pending_followup_dedup_is_scoped_to_project(pool: SqlitePool) {
         .expect("pre-insert pending followup should succeed");
 
     // A：被同项目去重拦下
-    TaskEventConsumer::new()
+    TaskCompletionConsumer::new()
         .on_event(
             RequestContext::new_system(),
             build_completed_event(
@@ -585,15 +799,15 @@ async fn test_pending_followup_dedup_is_scoped_to_project(pool: SqlitePool) {
         )
         .await
         .expect("on_event should succeed");
-    let count_a = count_dispatch_notifications(ctx.clone(), &project_a, &owner_agent_id).await;
+    let count_a = count_completion_notices(ctx.clone(), &project_a, &owner_agent_id).await;
     assert_eq!(
-        count_a, 0,
-        "项目 A 已有 Pending 跟进通知，本次完成通知应被去重（实际 {} 条）",
+        count_a, 1,
+        "项目 A 即使已有 Pending 跟进通知，完成知会也必须送达（实际 {} 条）",
         count_a
     );
 
     // B：不受项目 A 的在途通知影响
-    TaskEventConsumer::new()
+    TaskCompletionConsumer::new()
         .on_event(
             RequestContext::new_system(),
             build_completed_event(
@@ -605,12 +819,116 @@ async fn test_pending_followup_dedup_is_scoped_to_project(pool: SqlitePool) {
         )
         .await
         .expect("on_event should succeed");
-    let count_b = count_dispatch_notifications(ctx.clone(), &project_b, &owner_agent_id).await;
+    let count_b = count_completion_notices(ctx.clone(), &project_b, &owner_agent_id).await;
     assert_eq!(
         count_b, 1,
         "项目 B 没有在途跟进通知，任务完成必须通知 Owner（实际 {} 条）—— \
          按 Agent 去重会让 A 的 Pending 把 B 饿死",
         count_b
+    );
+}
+
+/// 完成知会按**项目**合并：同一项目连续完成多个任务，Owner 只保留一条在途知会；
+/// 那条被消费掉（`Processed`）之后，下一次完成才再发一条。
+///
+/// 反例（2026-11-15 回归）：职责从 `TaskEventConsumer` 迁到
+/// `TaskCompletionConsumer` 时项目级去重丢了 ⇒ N 次完成 = N 轮完整思维链；
+/// `ReplyObligation` 的 NotifyOnly 只让 Final 被 Discard，**拦不住唤醒**。
+#[sqlx::test]
+async fn test_completion_notice_coalesces_within_project(pool: SqlitePool) {
+    let _serial = SERIAL.lock().await;
+    let ctx = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool.clone()).await;
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    let owner_agent_id = crate::common::factories::create_test_agent(
+        &app,
+        &jwt,
+        &bs.chat_provider_id,
+        &format!("TaskEventCoalesce-{}", uuid::Uuid::now_v7()),
+    )
+    .await;
+
+    let project_id = create_project_with_owner(
+        &app,
+        &jwt,
+        &format!("TaskEventCoalesceProject-{}", uuid::Uuid::now_v7()),
+        Some(&owner_agent_id),
+    )
+    .await;
+
+    AgentRuntimeStateManager::global().set_idle(&owner_agent_id);
+
+    let consumer = TaskCompletionConsumer::new();
+
+    // ① 第一个任务完成 → 一条知会
+    consumer
+        .on_event(
+            RequestContext::new_system(),
+            build_completed_event(
+                &format!("task-1-{}", uuid::Uuid::now_v7()),
+                "第一个任务",
+                &project_id,
+                &owner_agent_id,
+            ),
+        )
+        .await
+        .expect("on_event should succeed");
+    assert_eq!(
+        count_completion_notices(ctx.clone(), &project_id, &owner_agent_id).await,
+        1,
+        "第一个任务的完成知会必须送达"
+    );
+
+    // ② 同项目第二个任务完成 → 第一条仍在途，应合并（不再唤醒一轮）
+    consumer
+        .on_event(
+            RequestContext::new_system(),
+            build_completed_event(
+                &format!("task-2-{}", uuid::Uuid::now_v7()),
+                "第二个任务",
+                &project_id,
+                &owner_agent_id,
+            ),
+        )
+        .await
+        .expect("on_event should succeed");
+    assert_eq!(
+        count_completion_notices(ctx.clone(), &project_id, &owner_agent_id).await,
+        1,
+        "同一项目已有在途完成知会，第二条必须合并（实际多发了就是 N 次完成 N 轮唤醒）"
+    );
+
+    // ③ 消费侧把那条知会处理完 → 第三条才能再发（合并，不是永久静音）
+    let notice = message::domain()
+        .management()
+        .list_by_project_id(ctx.clone(), &project_id)
+        .await
+        .expect("list_by_project_id should succeed")
+        .into_iter()
+        .find(|m| m.po.to_id == owner_agent_id && m.po.message_type == MessageType::TaskCompleted)
+        .expect("在途完成知会必须存在");
+    ai_orz::service::dal::message::dal()
+        .update_status(ctx.clone(), &notice.po.id, MessageStatus::Processed)
+        .await
+        .expect("update_status should succeed");
+
+    consumer
+        .on_event(
+            RequestContext::new_system(),
+            build_completed_event(
+                &format!("task-3-{}", uuid::Uuid::now_v7()),
+                "第三个任务",
+                &project_id,
+                &owner_agent_id,
+            ),
+        )
+        .await
+        .expect("on_event should succeed");
+    assert_eq!(
+        count_completion_notices(ctx.clone(), &project_id, &owner_agent_id).await,
+        2,
+        "上一条知会处理完后，新的完成必须再发一条（否则 Owner 会漏掉后续交付）"
     );
 }
 
@@ -860,5 +1178,100 @@ async fn test_processing_is_inflight_for_dedup_but_not_for_redelivery(pool: Sqli
             .await
             .expect("has_pending_followup_for_project should succeed"),
         "Processing 的跟进通知仍在途，去重必须命中（否则重复投同一项目的跟进）"
+    );
+}
+
+/// 验收层红线（2026-11-15）：`PendingReview` **不是** `Completed`。两个以
+/// `new_status == Completed` 为门禁的消费者必须整条短路 —— 不发交付、不解锁
+/// DAG 后继。否则执行人一提交，用户就收到「已完成」回执、下游也提前开工，
+/// Owner 的验收判定形同虚设。
+#[sqlx::test]
+async fn pending_review_event_does_not_trigger_delivery_or_dag(pool: SqlitePool) {
+    let _serial = SERIAL.lock().await;
+    let ctx = crate::common::init_full_test_env(pool.clone()).await;
+    let project_id = format!("proj-{}", uuid::Uuid::now_v7());
+    let task_id = format!("task-{}", uuid::Uuid::now_v7());
+
+    let event = json!({
+        "event_id": uuid::Uuid::now_v7().to_string(),
+        "task_id": task_id,
+        "task_title": "待验收的任务",
+        "project_id": project_id,
+        "assignee_id": "agent-worker",
+        "old_status": "InProgress",
+        "new_status": "PendingReview",
+        "progress": 90,
+        "created_at": now_ms(),
+        "root_user_id": "user-1",
+        "initiator_agent_id": "agent-reception",
+        "trigger_message_id": "",
+    });
+
+    TaskCompletionConsumer::new()
+        .on_event(ctx.clone(), event.clone())
+        .await
+        .expect("completion consumer should short-circuit PendingReview");
+    TaskEventConsumer::new()
+        .on_event(ctx.clone(), event)
+        .await
+        .expect("dag consumer should short-circuit PendingReview");
+
+    let messages = message::domain()
+        .management()
+        .list_by_project_id(ctx.clone(), &project_id)
+        .await
+        .expect("list_by_project_id should succeed");
+    assert!(
+        messages.is_empty(),
+        "提交验收不得产出任何交付回执 / 后继派单（实际 {} 条）",
+        messages.len()
+    );
+}
+
+/// 待验收知会必须进「滞留通知重投」白名单：它一旦投递丢失，任务会永久停在
+/// 待验收且没有任何报错（交付与 DAG 都只认 Completed）。定时重发知会是这条
+/// 链路最后的确定性兜底 —— 注意只重发，不自动确认。
+#[sqlx::test]
+async fn pending_review_notice_is_eligible_for_stale_redelivery(pool: SqlitePool) {
+    let _serial = SERIAL.lock().await;
+    let ctx = crate::common::init_full_test_env(pool.clone()).await;
+    let project_id = format!("proj-{}", uuid::Uuid::now_v7());
+    let agent_id = format!("agent-{}", uuid::Uuid::now_v7());
+
+    let notice = message::domain()
+        .delivery()
+        .send_to_agent(
+            ctx.clone(),
+            SendToAgentCommand {
+                from_id: "system",
+                from_role: MessageRole::System,
+                to_agent_id: &agent_id,
+                content: "请验收该任务",
+                project_id: Some(&project_id),
+                task_id: None,
+                reply_to_id: None,
+                external: Default::default(),
+                attachment_ids: None,
+                message_type: MessageType::TaskPendingReview,
+            },
+        )
+        .await
+        .expect("send_to_agent should succeed");
+
+    sqlx::query("UPDATE messages SET created_at = ? WHERE id = ?")
+        .bind(now_ms() - 16 * 60 * 1000)
+        .bind(&notice.po.id)
+        .execute(ctx.db_pool())
+        .await
+        .expect("shift created_at should succeed");
+
+    let found = message::domain()
+        .list_stale_pending_notifications(ctx.clone(), 15 * 60 * 1000, 200)
+        .await
+        .expect("list_stale_pending_notifications should succeed");
+    assert!(
+        found.iter().any(|m| m.po.id == notice.po.id),
+        "滞留的 TaskPendingReview 知会必须能被扫出重投（实际扫出 {} 条）",
+        found.len()
     );
 }

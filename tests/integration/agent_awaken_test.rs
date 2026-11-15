@@ -291,7 +291,9 @@ async fn test_consumer_completed_task_skips_awaken(pool: SqlitePool) {
         from_id: &bs.user_id,
         from_role: MessageRole::User,
         to_agent_id: &agent_id,
+        root_user_id: &bs.user_id,
         project_id: Some(project_id.as_str()),
+        reply_to_id: None,
     };
     let assignment = message_domain::domain()
         .delivery()

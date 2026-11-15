@@ -386,6 +386,8 @@ pub fn progress_summary_from_tasks(tasks: &[crate::models::task::Task]) -> Proje
             common::enums::task::TaskStatus::Completed => completed += 1,
             common::enums::task::TaskStatus::InProgress => in_progress += 1,
             common::enums::task::TaskStatus::Pending => pending += 1,
+            // 已提交但未验收 = 项目尚未完成，计入「进行中」，避免进度汇总虚高。
+            common::enums::task::TaskStatus::PendingReview => in_progress += 1,
             common::enums::task::TaskStatus::Cancelled => cancelled += 1,
             common::enums::task::TaskStatus::Archived => {}
         }

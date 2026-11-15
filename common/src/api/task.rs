@@ -30,6 +30,9 @@ pub struct CreateTaskRequest {
     pub due_at: Option<i64>,
     /// 前置任务 ID 列表（DAG 依赖）；任务存在前置时必须填写，留空 / 缺省表示可立即开工
     pub dependencies: Option<Vec<String>>,
+    /// 验收标准（DoD）：随派单下发给执行人，也是项目 Owner 验收的对照依据
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acceptance_criteria: Option<String>,
 }
 
 /// 创建 Task 响应
@@ -192,6 +195,9 @@ pub struct GetTaskResponse {
     /// 执行结果（Agent 执行阶段产出，Markdown 格式）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution_result: Option<String>,
+    /// 验收标准（DoD）
+    #[serde(default)]
+    pub acceptance_criteria: String,
     /// 产物列表，按需返回（with_artifacts=true 时填充）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub artifacts: Option<Vec<ArtifactDetail>>,
@@ -224,6 +230,12 @@ pub struct UpdateTaskRequest {
     /// 挂载到的目标项目 ID（仅当任务尚未挂载任何项目时生效；已挂载的任务忽略该参数）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_id: Option<String>,
+    /// 验收标准（DoD）；不传不修改，传空串表示清空
+    ///
+    /// ⚠️ 与 `execution_result` 严格分开：前者是「事先约定做到什么算完成」，
+    /// 后者是「事后交付了什么」。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acceptance_criteria: Option<String>,
 }
 
 /// 更新 Task 响应

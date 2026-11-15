@@ -27,6 +27,8 @@ struct TaskSearchRow {
     end_at: Option<i64>,
     dependencies: Option<String>,
     root_user_id: String,
+    initiator_agent_id: String,
+    trigger_message_id: String,
     assignee_type: AssigneeType,
     assignee_id: String,
     project_id: Option<String>,
@@ -38,6 +40,7 @@ struct TaskSearchRow {
     updated_at: i64,
     execution_plan: Option<String>,
     execution_result: Option<String>,
+    acceptance_criteria: String,
     fts_rank: Option<f32>,
 }
 
@@ -88,10 +91,11 @@ impl TaskDao for TaskDaoSqliteImpl {
         sqlx::query!(
             r#"INSERT INTO tasks(
                 id, title, description, "status", priority, tags, due_at, start_at, end_at, dependencies, root_user_id,
+                initiator_agent_id, trigger_message_id,
                 "assignee_type", assignee_id, project_id, thinking_depth, progress, created_by, modified_by, created_at, updated_at,
-                execution_plan, execution_result
+                execution_plan, execution_result, acceptance_criteria
             ) VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             )"#,
             task.id,
             task.title,
@@ -104,6 +108,8 @@ impl TaskDao for TaskDaoSqliteImpl {
             task.end_at,
             task.dependencies,
             task.root_user_id,
+            task.initiator_agent_id,
+            task.trigger_message_id,
             assignee_type_i32,
             task.assignee_id,
             task.project_id,
@@ -114,7 +120,8 @@ impl TaskDao for TaskDaoSqliteImpl {
             task.created_at,
             task.updated_at,
             task.execution_plan,
-            task.execution_result
+            task.execution_result,
+            task.acceptance_criteria
         ).execute(pool).await?;
         Ok(())
     }
@@ -125,9 +132,10 @@ impl TaskDao for TaskDaoSqliteImpl {
             TaskPo,
             r#"
 SELECT id, title, description, "status" as "status: TaskStatus", priority as "priority: i32", tags, due_at, start_at, end_at, dependencies, root_user_id,
+       initiator_agent_id, trigger_message_id,
        "assignee_type" as "assignee_type: AssigneeType", assignee_id, project_id, thinking_depth, progress as "progress: i32",
        created_by, modified_by, created_at, updated_at,
-       execution_plan, execution_result
+       execution_plan, execution_result, acceptance_criteria
 FROM tasks WHERE id = ? AND "status" != 0
 "#,
             id
@@ -149,7 +157,7 @@ FROM tasks WHERE id = ? AND "status" != 0
         let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
 
         let mut list_builder = sqlx::QueryBuilder::new(
-            r#"SELECT id, title, description, "status", priority, tags, due_at, start_at, end_at, dependencies, root_user_id, "assignee_type", assignee_id, project_id, thinking_depth, progress, created_by, modified_by, created_at, updated_at, execution_plan, execution_result FROM tasks WHERE 1=1"#,
+            r#"SELECT id, title, description, "status", priority, tags, due_at, start_at, end_at, dependencies, root_user_id, initiator_agent_id, trigger_message_id, "assignee_type", assignee_id, project_id, thinking_depth, progress, created_by, modified_by, created_at, updated_at, execution_plan, execution_result, acceptance_criteria FROM tasks WHERE 1=1"#,
         );
         push_query_filters(&mut list_builder, &query);
 
@@ -235,6 +243,8 @@ FROM tasks WHERE id = ? AND "status" != 0
                 end_at: row.end_at,
                 dependencies: row.dependencies,
                 root_user_id: row.root_user_id,
+                initiator_agent_id: row.initiator_agent_id,
+                trigger_message_id: row.trigger_message_id,
                 assignee_type: row.assignee_type,
                 assignee_id: row.assignee_id,
                 project_id: row.project_id,
@@ -246,6 +256,7 @@ FROM tasks WHERE id = ? AND "status" != 0
                 updated_at: row.updated_at,
                 execution_plan: row.execution_plan,
                 execution_result: row.execution_result,
+                acceptance_criteria: row.acceptance_criteria,
             };
             (po, row.fts_rank)
         };
@@ -257,7 +268,7 @@ FROM tasks WHERE id = ? AND "status" != 0
         // 注意：MATCH 左侧必须使用完整表名（非别名），否则 SQLite 会将别名解释为列名
         if let Some(match_expr) = &plan.match_expr {
             let mut builder = sqlx::QueryBuilder::new(
-                r#"SELECT t.id, t.title, t.description, t."status", t.priority, t.tags, t.due_at, t.start_at, t.end_at, t.dependencies, t.root_user_id, t."assignee_type", t.assignee_id, t.project_id, t.thinking_depth, t.progress, t.created_by, t.modified_by, t.created_at, t.updated_at, t.execution_plan, t.execution_result, tasks_fts.rank as fts_rank
+                r#"SELECT t.id, t.title, t.description, t."status", t.priority, t.tags, t.due_at, t.start_at, t.end_at, t.dependencies, t.root_user_id, t.initiator_agent_id, t.trigger_message_id, t."assignee_type", t.assignee_id, t.project_id, t.thinking_depth, t.progress, t.created_by, t.modified_by, t.created_at, t.updated_at, t.execution_plan, t.execution_result, t.acceptance_criteria, tasks_fts.rank as fts_rank
 FROM tasks_fts
 JOIN tasks t ON tasks_fts.rowid = t.rowid
 WHERE tasks_fts MATCH "#,
@@ -279,7 +290,7 @@ WHERE tasks_fts MATCH "#,
         // 直接查主表列，BM25 不可用，改按 updated_at 排序
         if !plan.like_patterns.is_empty() {
             let mut builder = sqlx::QueryBuilder::new(
-                r#"SELECT t.id, t.title, t.description, t."status", t.priority, t.tags, t.due_at, t.start_at, t.end_at, t.dependencies, t.root_user_id, t."assignee_type", t.assignee_id, t.project_id, t.thinking_depth, t.progress, t.created_by, t.modified_by, t.created_at, t.updated_at, t.execution_plan, t.execution_result, NULL as fts_rank
+                r#"SELECT t.id, t.title, t.description, t."status", t.priority, t.tags, t.due_at, t.start_at, t.end_at, t.dependencies, t.root_user_id, t.initiator_agent_id, t.trigger_message_id, t."assignee_type", t.assignee_id, t.project_id, t.thinking_depth, t.progress, t.created_by, t.modified_by, t.created_at, t.updated_at, t.execution_plan, t.execution_result, t.acceptance_criteria, NULL as fts_rank
 FROM tasks t
 WHERE "#,
             );
@@ -392,7 +403,8 @@ UPDATE tasks SET
     modified_by = ?,
     updated_at = ?,
     execution_plan = ?,
-    execution_result = ?
+    execution_result = ?,
+    acceptance_criteria = ?
 WHERE id = ?
 "#,
             task.title,
@@ -413,6 +425,7 @@ WHERE id = ?
             now,
             task.execution_plan,
             task.execution_result,
+            task.acceptance_criteria,
             task.id
         )
         .execute(pool)
