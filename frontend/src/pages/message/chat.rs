@@ -24,10 +24,11 @@ use crate::utils::local_store;
 use crate::utils::mention::{read_caret, restore_caret};
 use crate::utils::{
     HISTORY_PAGE_SIZE, HISTORY_SCAN_MAX_PAGES, MSG_AUDIO, MSG_IMAGE, MSG_MIXED,
-    MSG_TASK_ASSIGNMENT, MSG_TEXT, MSG_TOOL_CALL_REQUEST, MSG_TOOL_CALL_RESULT, MSG_VIDEO,
-    avatar_initials, build_optimistic_user_msg, format_file_size,
-    format_message_time as format_time, in_project_context, involves_user, is_attachment_message,
-    project_status_text as status_text, replace_tmp_with_real, request_scope,
+    MSG_TASK_ASSIGNMENT, MSG_TASK_COMPLETED, MSG_TASK_PENDING_REVIEW, MSG_TEXT,
+    MSG_TOOL_CALL_REQUEST, MSG_TOOL_CALL_RESULT, MSG_VIDEO, avatar_initials,
+    build_optimistic_user_msg, format_file_size, format_message_time as format_time,
+    in_project_context, involves_user, is_attachment_message, project_status_text as status_text,
+    replace_tmp_with_real, request_scope,
 };
 use common::api::{
     AgentListItem, CreateProjectRequest, GetAgentRequest, GetAgentResponse, GetProjectRequest,
@@ -297,9 +298,8 @@ pub fn MessageChat(project: Option<String>) -> Element {
     // 问题一（第三批·候选一）：点击过滤器时按状态调 query_projects 拉取最新项目列表。
     // 竞态守卫：request_id 自增，响应回来时 id 不匹配（已有点击）则丢弃，旧不覆新；
     // 失败兜底：保留旧数据（projects 不动）+ toast 报错；全部=None 不过滤状态（语义与
-    // 排查报告拍板④一致）；root_user_id 显式传当前用户（CR 整改：后端 query_projects 将 body 的
-    // root_user_id 原样透传不取 ctx.uid()，前端不传即无用户域条件，与挂载
-    // list_projects（内部固定 ctx.uid()）不同源；显式传入保持同用户域）。
+    // 排查报告拍板④一致）；root_user_id 显式传当前用户 —— 后端现在会把它收敛到 ctx.uid()
+    // （缺省即自己、传别人的值直接拒绝），显式传入只是与 list_projects 同口径的冗余声明。
     let mut reload_projects_filtered = move |status_in: Option<i32>| {
         let my_id = filter_request_id() + 1;
         filter_request_id.set(my_id);
@@ -2311,7 +2311,19 @@ fn render_message_content(
         return render_attachment_message(msg, bubble_class, time_class);
     }
 
-    match msg.message_type {
+    // 任务完成回执(14) / 任务待验收知会(15) 是动作伴生消息，正文是 Markdown
+    // 表格工作单（「已完成 / 进度」「待验收工作单」等），不是 TaskAssignment 的
+    // JSON 载荷，按普通文本走同一套 Markdown 渲染。
+    // 归一化而不是新开一个 match 臂：避免复制整段渲染块，也不影响
+    // `MSG_TEXT | MSG_MIXED` 合并臂的源码结构守卫。
+    let message_type =
+        if msg.message_type == MSG_TASK_COMPLETED || msg.message_type == MSG_TASK_PENDING_REVIEW {
+            MSG_TEXT
+        } else {
+            msg.message_type
+        };
+
+    match message_type {
         MSG_TOOL_CALL_REQUEST | MSG_TOOL_CALL_RESULT => render_tool_call_card(
             &msg.content,
             msg.message_type == MSG_TOOL_CALL_RESULT,

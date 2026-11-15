@@ -462,7 +462,8 @@ pub fn Workspace(view: Option<String>) -> Element {
                 WorkspaceView::AgentDetail(aid) => {
                     // AgentDetail：复用 Agent 详情页加载逻辑
                     // 1. 按 agent_id 过滤 tasks；「仅进行中」时叠加 status_in，排除
-                    //    已取消/已完成/已归档的任务，只保留待处理与进行中的活跃工作。
+                    //    已取消/已完成/已归档的任务，只保留待处理、进行中与待验收的活跃工作
+                    //    （待验收是执行人提交后等 Owner 确认，仍未完成，算活跃）。
                     let Some(data) = sidebar_data else {
                         graph_loading.set(false);
                         return;
@@ -474,7 +475,11 @@ pub fn Workspace(view: Option<String>) -> Element {
                         ..Default::default()
                     };
                     if active_only {
-                        req.status_in = Some(vec![TaskStatus::Pending, TaskStatus::InProgress]);
+                        req.status_in = Some(vec![
+                            TaskStatus::Pending,
+                            TaskStatus::InProgress,
+                            TaskStatus::PendingReview,
+                        ]);
                     }
                     match query_tasks(&req).await {
                         Ok(page) => {

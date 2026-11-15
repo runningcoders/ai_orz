@@ -5,8 +5,10 @@ use dioxus_router::{Link, use_navigator};
 
 use crate::api::hr::query_agents;
 use crate::api::project::*;
+use crate::components::avatar_bubble::AvatarTone;
 use crate::components::charts::donut_chart::{DonutChart, DonutSlice};
 use crate::components::hud::{HudPanel, HudProgress};
+use crate::components::identity_chip::IdentityChip;
 use crate::components::markdown::{MarkdownRenderer, MermaidDiagram};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
@@ -23,8 +25,8 @@ use crate::utils::{
 };
 use common::api::{
     AgentListItem, AgentQueryRequest, ArtifactDetail, CreateArtifactRequest, GetProjectRequest,
-    PaginationParams, ProjectListItem, TaskListItem, UpdateProjectRequest,
-    UpdateProjectStatusRequest, UpdateTaskStatusRequest,
+    PaginationParams, ProjectListItem, TaskListItem, TransferProjectOwnerRequest,
+    UpdateProjectRequest, UpdateProjectStatusRequest, UpdateTaskStatusRequest,
 };
 use common::enums::{ArtifactSourceType, ProjectStatus, TaskStatus};
 
@@ -100,6 +102,16 @@ pub fn ProjectDetail(id: String) -> Element {
     let mut edit_tags = use_signal(String::new);
     let mut saving_meta = use_signal(|| false);
     let id_for_edit = id.clone();
+
+    // 负责人交接 Modal 状态。
+    // 负责人 = 本项目任务的验收责任人 + 完成知会收件人，所以这是权限转移，
+    // 独立于「编辑项目」的字段更新（后端也只允许当前负责人 / 管理面调用）。
+    let mut show_owner_modal = use_signal(|| false);
+    let mut owner_candidates = use_signal(Vec::<AgentListItem>::new);
+    let mut owner_target = use_signal(String::new);
+    let mut owner_note = use_signal(String::new);
+    let mut owner_busy = use_signal(|| false);
+    let id_for_owner = id.clone();
 
     // Tab 切换：0=概览 1=任务列表 2=产物 3=关系图
     let mut active_tab = use_signal(|| 0usize);
@@ -220,6 +232,78 @@ pub fn ProjectDetail(id: String) -> Element {
         show_artifact_modal.set(true);
     };
 
+    // 打开负责人交接 Modal：预填当前负责人，并按需拉一份候选 Agent 列表
+    let open_owner_modal = move |_| {
+        owner_target.set(
+            project_res
+                .read()
+                .as_ref()
+                .and_then(|r| r.as_ref().ok())
+                .and_then(|p| p.owner_agent_id.clone())
+                .unwrap_or_default(),
+        );
+        owner_note.set(String::new());
+        show_owner_modal.set(true);
+        if owner_candidates.read().is_empty() {
+            spawn(async move {
+                let req = AgentQueryRequest {
+                    pagination: PaginationParams {
+                        limit: Some(200),
+                        offset: Some(0),
+                    },
+                    ..Default::default()
+                };
+                match query_agents(&req).await {
+                    Ok(page) => owner_candidates.set(page.items),
+                    Err(e) => toast.error(format!("获取 Agent 列表失败: {}", e)),
+                }
+            });
+        }
+    };
+
+    // 提交交接：成功后重新拉项目详情，让负责人展示与验收权限立即刷新
+    let submit_owner_transfer = move |_| {
+        if owner_busy() {
+            return;
+        }
+        let project_id = id_for_owner.clone();
+        let target = owner_target.read().trim().to_string();
+        let note = {
+            let n = owner_note.read().trim().to_string();
+            if n.is_empty() { None } else { Some(n) }
+        };
+        owner_busy.set(true);
+        spawn(async move {
+            let req = TransferProjectOwnerRequest {
+                project_id: project_id.clone(),
+                owner_agent_id: target,
+                note,
+            };
+            let result = transfer_project_owner(req).await;
+            owner_busy.set(false);
+            match result {
+                Ok(_) => {
+                    show_owner_modal.set(false);
+                    toast.success("负责人已交接");
+                    let req = with_stats_range(
+                        GetProjectRequest {
+                            id: project_id.clone(),
+                            with_artifacts: Some(true),
+                            with_task_graph: Some(true),
+                            ..Default::default()
+                        },
+                        stats_range(),
+                    );
+                    match get_project(req).await {
+                        Ok(p) => project_res.set(Some(Ok(p))),
+                        Err(e) => toast.error(&e),
+                    }
+                }
+                Err(e) => toast.error(format!("交接失败: {}", e)),
+            }
+        });
+    };
+
     // 关闭新增产物 Modal
     let close_artifact_modal = move |_| {
         show_artifact_modal.set(false);
@@ -295,12 +379,14 @@ pub fn ProjectDetail(id: String) -> Element {
         tasks_list.iter().map(|t| t.progress).sum::<i32>() / tasks_list.len() as i32
     };
 
-    // 按 5 种状态全量统计，构造 DonutChart 数据
-    // 顺序：进行中(2) → 待处理(1) → 已完成(3) → 已归档(4) → 已取消(0)
-    // 把"进行中"放最前让 HUD 主色橙最显眼，"已完成"绿色紧跟其后
-    let task_status_counts: [(i32, &str); 5] = [
+    // 按 6 种状态全量统计，构造 DonutChart 数据
+    // 顺序：进行中(2) → 待处理(1) → 待验收(5) → 已完成(3) → 已归档(4) → 已取消(0)
+    // 把"进行中"放最前让 HUD 主色橙最显眼；待验收(5) 紧邻已完成(3)，
+    // 体现「执行人 mark_done 提交 → Owner confirm_task 确认 → 已完成」的流转顺序
+    let task_status_counts: [(i32, &str); 6] = [
         (2, "进行中"),
         (1, "待处理"),
+        (5, "待验收"),
         (3, "已完成"),
         (4, "已归档"),
         (0, "已取消"),
@@ -340,7 +426,12 @@ pub fn ProjectDetail(id: String) -> Element {
                     // 区域 1：项目基本信息卡片
                     HudPanel {
                         title: p.name.clone(),
-                        div { class: "flex justify-end mb-3",
+                        div { class: "flex justify-end gap-2 mb-3",
+                            button {
+                                class: "btn hud-btn btn-ghost btn-sm",
+                                onclick: open_owner_modal,
+                                "🔁 交接负责人"
+                            }
                             button {
                                 class: "btn hud-btn btn-ghost btn-sm",
                                 onclick: move |_| {
@@ -359,6 +450,16 @@ pub fn ProjectDetail(id: String) -> Element {
                             div {
                                 label { class: "form-label", "状态" }
                                 span { class: "{project_status_badge(p.status)}", "{project_status_text(p.status)}" }
+                            }
+                            // 负责人 = 本项目任务的验收责任人 + 完成知会收件人，
+                            // 所以不放普通字段区而显式标注它的两层含义。
+                            div {
+                                label { class: "form-label", "负责人" }
+                                if let Some(owner) = p.owner_agent_id.as_deref().filter(|s| !s.is_empty()) {
+                                    IdentityChip { id: owner.to_string(), tone: AvatarTone::Agent }
+                                } else {
+                                    span { class: "text-base-content/70", "未指定（验收退回任务发起者）" }
+                                }
                             }
                             div {
                                 label { class: "form-label", "优先级" }
@@ -547,8 +648,12 @@ pub fn ProjectDetail(id: String) -> Element {
                                                         HudProgress { value: task_progress, tone: Some("primary".to_string()), show_value: Some(true) }
                                                     }
                                                     td { "data-label": "操作",
+                                                        // 待验收(5) 是执行人 mark_done 提交、等 Owner 验收的中间态：
+                                                        // 完成必须走 confirm_task（后端 update_task_status 拒绝 Agent
+                                                        // 直置 Completed），打回必须走 reject_task；因此「开始 / 完成」
+                                                        // 两个直改状态入口都不显示，避免绕过验收链路。
                                                         div { class: "action-group",
-                                                            if task_status != 3 {
+                                                            if task_status != 3 && task_status != 5 {
                                                                 button { class: "btn hud-btn btn-outline btn-sm",
                                                                     onclick: move |e: Event<MouseData>| {
                                                                         // 修复 HIGH #8：阻止事件冒泡到 <tr> 的 onclick，
@@ -577,7 +682,8 @@ pub fn ProjectDetail(id: String) -> Element {
                                                                     "开始"
                                                                 }
                                                             }
-                                                            if task_status != 4 {
+                                                            // 同上：待验收(5) 不显示「完成」入口（须走 confirm_task）。
+                                                            if task_status != 4 && task_status != 5 {
                                                                 button { class: "btn hud-btn btn-primary btn-sm",
                                                                     onclick: move |e: Event<MouseData>| {
                                                                         // 修复 HIGH #8：同上，阻止冒泡
@@ -779,6 +885,58 @@ pub fn ProjectDetail(id: String) -> Element {
                     message: format!("加载失败: {}",
                     e) } },
             },
+        }
+
+        // 负责人交接 Modal：权限转移（验收责任人 + 完成知会收件人随之变更）
+        Modal {
+            title: "交接项目负责人".to_string(),
+            show: show_owner_modal(),
+            on_close: move |_| show_owner_modal.set(false),
+            footer: Some(rsx! {
+                div { class: "modal-footer-actions",
+                    button { class: "btn hud-btn btn-ghost", onclick: move |_| show_owner_modal.set(false), "取消" }
+                    button {
+                        class: "btn hud-btn btn-primary",
+                        disabled: owner_busy(),
+                        onclick: submit_owner_transfer,
+                        if owner_busy() { "交接中…" } else { "确认交接" }
+                    }
+                }
+            }),
+            div { class: "modal-body-stack",
+                div {
+                    label { class: "form-label", "接手负责人" }
+                    select {
+                        class: "select select-bordered w-full",
+                        value: "{owner_target}",
+                        onchange: move |e| owner_target.set(e.value()),
+                        // 回显必须逐项显式写 selected：候选 Agent 是打开弹窗后异步
+                        // 加载的，靠 select 的 value 在子 option 挂载前设置会静默回落
+                        // 首项，把当前负责人显示成「不指定」（与 tasks.rs 状态筛选同因）。
+                        option { value: "", selected: owner_target().is_empty(), "— 不指定（解除负责人）—" }
+                        for a in owner_candidates() {
+                            option {
+                                value: "{a.id}",
+                                selected: owner_target() == a.id,
+                                "{a.name}"
+                            }
+                        }
+                    }
+                    p { class: "text-xs text-base-content/60 mt-1",
+                        "负责人是本项目所有任务的验收责任人，也是任务完成知会的首个收件人；交接后原负责人立即失去验收权。"
+                    }
+                }
+                div {
+                    label { class: "form-label", "交接说明（可选）" }
+                    textarea {
+                        class: "input input-bordered w-full",
+                        placeholder: "为什么交接、接手方需要知道什么",
+                        value: "{owner_note}",
+                        oninput: move |e| owner_note.set(e.value()),
+                        rows: 3,
+                    }
+                }
+            }
         }
 
         // 编辑项目 Modal

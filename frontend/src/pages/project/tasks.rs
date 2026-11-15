@@ -140,7 +140,13 @@ pub fn TaskList() -> Element {
     let pending = tasks_list.iter().filter(|t| t.status == 1).count();
 
     // 看板数据分组
-    let board_groups = [(1, "待处理"), (2, "进行中"), (3, "已完成"), (4, "已归档")];
+    let board_groups = [
+        (1, "待处理"),
+        (2, "进行中"),
+        (5, "待验收"),
+        (3, "已完成"),
+        (4, "已归档"),
+    ];
 
     let filtered_tasks_by_status = |status: i32| {
         tasks_list
@@ -217,11 +223,14 @@ pub fn TaskList() -> Element {
                             }
                             load_data();
                         },
-                        option { value: "-1", "全部状态" }
-                        option { value: "1", "待处理" }
-                        option { value: "2", "进行中" }
-                        option { value: "3", "已完成" }
-                        option { value: "4", "已归档" }
+                        // Dioxus 回显必须逐项显式写 selected（select 的 value
+                        // 在子 option 挂载前设置会静默回落到第一项）
+                        option { value: "-1", selected: filter_status() == -1, "全部状态" }
+                        option { value: "1", selected: filter_status() == 1, "待处理" }
+                        option { value: "2", selected: filter_status() == 2, "进行中" }
+                        option { value: "5", selected: filter_status() == 5, "待验收" }
+                        option { value: "3", selected: filter_status() == 3, "已完成" }
+                        option { value: "4", selected: filter_status() == 4, "已归档" }
                     }
                 }
                 div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
@@ -337,11 +346,15 @@ pub fn TaskList() -> Element {
             // 看板视图 - HUD 风格 KanbanCanvas
             {
                 let columns: Vec<KanbanColumn> = board_columns.iter().map(|(status, title, group_tasks)| {
+                    // 按真实判别值着色（1 待处理 / 2 进行中 / 5 待验收 / 3 已完成 /
+                    // 4 已归档）。原分支键 2/3/4/5 相对 board_groups 整体偏移 1，
+                    // 会让待验收(5)误落「已归档」深灰；此处一并校正并新增 5 分支。
                     let color = match status {
-                        2 => "#3b82f6".to_string(), // 待处理 - 蓝
-                        3 => "#f59e0b".to_string(), // 进行中 - 黄
-                        4 => "#10b981".to_string(), // 已完成 - 绿
-                        5 => "#4b5563".to_string(), // 已归档 - 深灰
+                        1 => "#3b82f6".to_string(), // 待处理 - 蓝
+                        2 => "#fa520f".to_string(), // 进行中 - HUD 主色橙
+                        5 => "#f59e0b".to_string(), // 待验收 - 琥珀（等待人工确认，区别于进行中）
+                        3 => "#10b981".to_string(), // 已完成 - 绿
+                        4 => "#4b5563".to_string(), // 已归档 - 深灰
                         _ => "#fa520f".to_string(),
                     };
                     let tasks: Vec<KanbanTask> = group_tasks.iter().map(|t| KanbanTask {

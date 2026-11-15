@@ -31,6 +31,10 @@ pub const MSG_VIDEO: i32 = 4;
 pub const MSG_TOOL_CALL_REQUEST: i32 = 5;
 pub const MSG_TOOL_CALL_RESULT: i32 = 6;
 pub const MSG_TASK_ASSIGNMENT: i32 = 9;
+/// 任务完成回执（对应 common MessageType::TaskCompleted=14）
+pub const MSG_TASK_COMPLETED: i32 = 14;
+/// 任务待验收知会（对应 common MessageType::TaskPendingReview=15）
+pub const MSG_TASK_PENDING_REVIEW: i32 = 15;
 /// 混排消息（文本+资源引用混排，对应 common MessageType::Mixed=13；批3 混排主线）
 pub const MSG_MIXED: i32 = 13;
 
@@ -294,9 +298,11 @@ mod tests {
             "chat.rs 主渲染 match 须恰一处 MSG_TEXT|MSG_MIXED 合并臂"
         );
         let bubble = include_str!("../components/chat/message_bubble.rs");
+        // 副渲染把归一化结果落在局部 `message_type`（不 clone 整条 MessageListItem，
+        // 见 `render_content` 注释），守卫跟着认这个形态。
         assert_eq!(
             bubble
-                .matches("msg.message_type == MSG_TEXT || msg.message_type == MSG_MIXED")
+                .matches("message_type == MSG_TEXT || message_type == MSG_MIXED")
                 .count(),
             1,
             "message_bubble.rs 副渲染须恰一处 Text||Mixed 合并条件"
