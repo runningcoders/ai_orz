@@ -434,6 +434,11 @@ fn project_routes() -> Router {
             "/projects/{id}/status",
             put(handlers::project::projects::update_project_status_handler),
         )
+        // 负责人交接：权限转移，独立于 update_project 的字段更新
+        .route(
+            "/projects/{project_id}/owner",
+            put(handlers::project::projects::transfer_project_owner_handler),
+        )
 }
 
 fn task_routes() -> Router {
@@ -463,6 +468,16 @@ fn task_routes() -> Router {
         .route(
             "/tasks/{id}/progress",
             put(handlers::project::task::update_task_progress_handler),
+        )
+        // 验收闭环的两个决策口：管理面（无 Agent 身份）同样可用，身份守卫在
+        // `review_guard::ensure_reviewer` 里按「发起者 ∪ 项目 Owner」判定。
+        .route(
+            "/tasks/{task_id}/confirm",
+            put(handlers::project::task::confirm_task_handler),
+        )
+        .route(
+            "/tasks/{task_id}/reject",
+            put(handlers::project::task::reject_task_handler),
         )
         .route(
             "/projects/{project_id}/tasks",
