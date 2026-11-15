@@ -20,11 +20,11 @@
 | [ai-orz-think-path.html](./ai-orz-think-path.html) | 组件级 | 两阶段唤醒 → 小脑决策契约（entry_gate / entry_pool / chain_reply, close_default）→ 思考中注入新输入 → 三层预算循环 → 七相位图引擎 → 两段式落盘（增量 + 收尾）→ 前端时间线；含思考强度判相对偏移、先验与兜底分离 | 一轮思考 / 两阶段唤醒 / 轨迹链路 / 认知分层 | 02-Agent运行时 |
 | [ai-orz-tools.html](./ai-orz-tools.html) | 组件级 | CoreTool 三协议路由（Builtin / HTTP / MCP）+ 工具级凭据契约与身份注入 + 策略拦截与六态授权 + 技能包装配 | 三层调用 / 策略与授权 / 注册与装配 | 06-工具与技能 |
 | [ai-orz-tool-context.html](./ai-orz-tool-context.html) | 组件级 | 工具调用中的上下文（身份）数据流转：声明（`CredentialKind` 的 `UserInfo` / `AgentInfo` 两个非凭据变体 + `field` 白名单 + `binding` 四注入点）→ 解析（`is_identity` 二元分派 + 未命中按来源分叉）→ 注入（`check` 注入 + `base_env` 九键末位硬 insert）→ 使用（git 子进程 4 个 `GIT_*` / commit-msg hook） | 四层主链路 / 失败语义分叉 / 注入与优先级 / 落点实证 | 06-工具与技能 |
-| [ai-orz-aop.html](./ai-orz-aop.html) | 组件级 | pkg/aop 六 Trait + Registry 单例 + 7 类业务消费者 + 3 类 tick 生产者 + context_carrier 贯穿 | 一次事件流转 / 启动顺序 / 生产者与兜底 | 10-异步基建(AOP) |
+| [ai-orz-aop.html](./ai-orz-aop.html) | 组件级 | pkg/aop 六 Trait + Registry 单例 + 12 类业务消费者（18 处注册 / 8 Sync + 10 Async）+ 3 类 tick 生产者 + context_carrier 贯穿 | 一次事件流转 / 启动顺序 / 生产者与兜底 | 10-异步基建(AOP) |
 | [ai-orz-memory.html](./ai-orz-memory.html) | 组件级 | 四层记忆（Core / Working / Short / Long）+ 两条 JSONL + 三路召回 + 短期记忆索引分层 + 睡眠沉淀 | 四层记忆 / 存储面 / 检索与沉淀 | 03-记忆系统 |
 | [ai-orz-ontology.html](./ai-orz-ontology.html) | 组件级 | 受控词表 TBox + 属性定义与门闩 + 骨架三元组 + 漂移与有效性治理（口径与现网 `get_ontology_drift_dashboard` / `get_property_effectiveness` 同源） | 读侧链路 / 写入门闩 / 治理面 | 00-总览与架构 |
 | [ai-orz-org-federation.html](./ai-orz-org-federation.html) | 组件级 | 多级组织 + UserRole 并查集继承 + JWT 双模式 + 身份凭证 + 配对码建联与跨组织签名 | 组织与角色 / 认证与凭证 / 联邦组网 | 01-组织与权限 |
-| [ai-orz-task-project.html](./ai-orz-task-project.html) | 组件级 | TaskStatus 四态 + progress 联动 + dependencies DAG + execution_plan / result 增量 + Project 五字段注入 | 任务状态机 / DAG 与唤醒 / 项目聚合 | 05-任务与项目 |
+| [ai-orz-task-project.html](./ai-orz-task-project.html) | 组件级 | TaskStatus 六态（含 PendingReview=5）+ 验收闭环 + dependencies DAG + execution_plan / result 增量 + Project 五字段注入 | 任务状态机 / DAG 与唤醒 / 项目聚合 | 05-任务与项目 |
 | [ai-orz-messaging.html](./ai-orz-messaging.html) | 组件级 | 渠道入站归一化 → 路由策略（含回复仲裁与协作压力）→ 入站过滤（规则门 + 小脑相关性门，渠道无关）→ MessageDomain（builder / delivery）→ 附件字节流与正文引用 → DAL/DAO → SSE 与唤醒 | 入站与路由 / 编排与投递 / 存储与唤醒 | 04-对话与消息 |
 | [ai-orz-a2a.html](./ai-orz-a2a.html) | 组件级 | Agent Card + JSON-RPC 四方法 + 协议映射与回调 + 30s 轮询兜底 + 联邦签名 | 协议入口 / 结果与兜底 / 联邦与长连接 | 07-外部Agent(A2A) |
 | [ai-orz-search.html](./ai-orz-search.html) | 组件级 | FTS5 全文 + 向量检索 + 图谱遍历三路召回 + 属性精确过滤 + `ids` 直取与 `include_retired` / `include_history` 受控出口 | 工具入口 / 三路召回 / 存储面 | 08-搜索 |
@@ -113,6 +113,29 @@
 声明值当场实测（2026-11-13，与上一轮 r13 对照）：`dao/cerebellum` **519**（未变）、`dao/cortex` **3,795**（r13 的 3,797 → 本批减少 2 行，已同步修数）、`think_loop.rs` **866**（未变）、`think_trace.rs` **759**（未变）、`think_trace_query.rs` **321**（未变）、`inbox.rs` **368**（未变）、`think_round/` **2,298**（未变）、`pkg/think_path/` **2,499**（未变）、`cerebellum_router.rs` **519**（未变）、`cerebellum_context.rs` **601**（r13 的 606 → 本批删 `context_soft_target` / `context_hard_ceiling` 后为 601）、前端 pages **62** / components **63**（均未变）、覆盖率门槛 PR **38%** / main **45%**（未变）；新增源文件 `inbound_filter.rs` **185** / `inbound_filter_tests.rs` **154** / `relevance_gate.rs` **33**。预算常量实测：`FRAME_BP=1_250`、`PENDING_REPLY_BP=1_500`、`BODY_BP=7_250`、`SNIPPET_BP=400`、`INBOUND_HISTORY_BP=3_600`、`INBOUND_SEARCHED_MEMORY_BP=1_440`、`INBOUND_RECENT_MEMORY_BP=1_440`、`INBOUND_CURRENT_BP=720`、`INBOUND_TOTAL_BP=7_200`，编译期断言在 `cerebellum_context.rs` L111。
 
 未做人眼视觉复核，仅通过 archify 四道门禁（validate / check / finalize --browser-check 全 pass、diagnostics 0）。
+
+**2026-11-15 增量同步（四张重渲染，revision 刷到 `25cced8ff330f005a39ecb37a178e08732839a85`）**
+
+本基线为 **PR #9 分支 `feat/aman-local-changes-20261114` 的第 4 笔提交（`25cced8f`）**，尚未进 main；PR #9 合并后该 commit 将成为 `main` 上合并提交的祖先。图纸改动单独一笔，推同一分支，不进新 PR。
+
+判定方法：从每张图 HTML 的 `archify-source-evidence-data` 取 `nodes{}` 里的 `path` 清单，与 PR #9 全量文件集（`git diff --name-only origin/main...HEAD` 的 **125** 条路径）求交得 touched 数；`touched=0` 且无新机制判「不需更」。**求交基数必须是 PR 全量 125 路径**——用「本批四笔 103 路径」会漏掉前两笔的重叠路径，实测因此把 messaging 从 7 误算成 5、aop 从 2 误算成 1。
+
+- **touched>0 且需更（4 张）**：task-project（**11**：`frontend/src/pages/workspace.rs`、`src/consumer/scheduler.rs`、`src/consumer/task_event_consumer.rs`、`src/consumer/wake_gate_policy.rs`、`src/models/events/task_status.rs`、`src/models/project.rs`、`src/router.rs`、`src/service/domain/project/{mod,service,task,task_graph}.rs`）、messaging（**7**：`frontend/src/pages/message/chat.rs`、`src/consumer/message_route_policy.rs`、`src/producer/inbound_filter.rs`、`src/producer/message_channel.rs`、`src/service/domain/message/{builder,delivery,mod}.rs`）、aop（**2**：`src/consumer/mod.rs`、`src/producer/message_channel.rs`）、architecture（**2**：`src/consumer/mod.rs`、`src/router.rs`）。
+- **touched>0 但机制未变、判不刷新（7 张）**：a2a（2）、frontend（2）、org-federation（2）、stats（1）、think-path（1）、tool-context（1）、tools（1）——命中项分别是「调用签名补 `None` 参数」「页面计数未变」「链上下文不随 carrier 传播」这类机械适配，把偶然引用画进图等于把噪声当机制。
+- **touched=0（6 张）**：data-model（只画存储形态，本批迁移只加列不改表形）、infra（进程/端口/容器，零涉）、memory（分层记忆与 JSONL 写入，零涉）、ontology（TBox 零变更）、search（FTS5 + 向量召回未动）、testing（门禁判据未改）。
+
+本次改动摘要：
+
+- **task-project**：`meta.subtitle` 由「TaskStatus 四态」改为**六态（含 PendingReview=5）+ 验收闭环**；组件 14→**22**、连线 17→**28**、卡片 4→**8**。新增 `reviewguard`（`review_guard fail-closed`）、`confirm`（`PUT /tasks/{id}/confirm`）、`reject`（`PUT /tasks/{id}/reject`）、`transfer`（`PUT /projects/{id}/owner`）、`scope`（`effective_root_user_id`）五个组件，以及三个 Sync 消费者 `TaskDispatchConsumer` / `TaskPendingReviewConsumer` / `TaskCompletionConsumer`。四张新卡：六态硬顺序（判别值只追加不插入）、验收闭环（提交 ≠ 完成：`submit_for_review` 不写 `progress=100` 与 `end_at`，100% 只在 `confirm_task` 生效）、验收身份守卫 fail-closed（允许集 = 发起者 ∪ 项目 Owner，空集即拒）、三个 Sync 消费者把「动作」与「通知」切开。
+- **messaging**：新增 `identity` 组件（消息三身份：派发者 / 接收者 / 归属用户）与三条边；`db` 组件副标补 `root_user_id` 并加挂迁移 `20261115000002` 作为 source；`route` 副标改「三身份路由 · DeliverToRootUser」。两张新卡：消息三身份（`messages.root_user_id` 与 `from_id` / `to_id` 正交，旧「用户身份中继」已删）、第 6 态带来两条新消息类型（`TaskCompleted(14)` / `TaskPendingReview(15)`，`TaskDispatchNotification(10)` 已无生产发送点仅兜存量）。组件 18→**19**、连线 18→**21**、卡片 7→**9**。
+- **aop**：`meta.subtitle` 由「7 类业务消费者」改为**12 类业务消费者（18 处注册 / 8 Sync + 10 Async）**；`consumer` 与 `channel` 副标同步。新增卡片「Sync 与 Async 的现行分布（实测）」：18 处 `register_consumer` 覆盖 12 个消费者文件，Sync 8 / Async 10，本轮新增的 dispatch / review / completion 三名全为 Sync。**组件与连线数不变（14 / 14）**——理由：任务三消费者属 `src/consumer/mod.rs` 的注册细节，AOP 图的抽象层是「框架零业务 + 六 Trait + Registry」，把具体业务消费者展开会把框架图变成业务图；口径数字与 Sync 清单进卡片即可承载。卡片 4→**5**。
+- **architecture**：**只刷 revision 与卡片口径，不动组件与连线（17 / 18 / 6 全不变）**。既有「严格单向分层（红线）」卡补一条「验收闭环同层分工：Handler 层 `review_guard` 拦身份，Domain 状态机管流转」；「认知架构：大脑不止一层」卡补一条「任务链路补验收：六态含 `PendingReview=5`，`mark_done` = 提交验收，只有 `confirm_task` 进 Completed」。
+
+声明值当场实测（2026-11-15，对照 r14）：`dao/cortex` **3,795** 行 / 9 文件（未变）、`dao/cerebellum` **519** 行（未变）、前端 pages **62** / components **63**（均未变）、覆盖率门槛 PR **38%** / main **45%**（`.github/workflows/rust.yml` L217，未变）、workspace members **5**（未变）、`src/handlers` **8** 项 / `src/service/domain` **7** 域（未变）、`register_consumer` **18 处**（本轮新增 3，此前 15）、`src/consumer/*.rs` **25** 个文件、其中 12 个含 `ConsumeMode` 声明（Sync 8 / Async 10）。新增源文件行数：`review_guard.rs` 104 / `confirm_task.rs` 83 / `reject_task.rs` 61 / `projects/transfer_owner.rs` 141 / `projects/scope.rs` 96 / `task_dispatched.rs` 82；迁移 `20261114000001` 11 行 / `20261115000001` 4 行 / `20261115000002` 27 行。
+
+**已知差异（只记录，不改文档、不顺手修）**：`docs/modules/05-任务与项目/A-设计/task_acceptance_and_dual_channel_design.md`（AMan 自写，本轮同批入库）已在第 2 节六态、第 5 节 DoD、第 8 节负责人交接口径上覆盖本批设计；本批未发现文档与代码冲突（六态、`confirm_task` 唯一入口、`review_guard` fail-closed 三处口径与代码一致）。差集判定留待 AMan 定。
+
+未做人眼视觉复核，仅通过 archify 四道门禁（validate / deliver / check / browser-check 全 pass、diagnostics 0）。
 
 ## 五、维护约定
 
