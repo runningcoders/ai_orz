@@ -262,6 +262,17 @@ impl MessageConsumer {
             message.message_type()
         );
 
+        // 站内实时上屏（受众推送）：收件人不是用户的消息（Agent↔Agent、任务知会、
+        // 工具调用）也要推给**归属用户**。展示面 `list_messages` 按 project/task
+        // 过滤，这些消息本来就出现在列表里；不推就是「只能刷新才看到」。
+        // 用户收件人分支由 `handle_user_message → deliver_message` 自己推，这里跳过。
+        //
+        // 位置在 dispatch **之前**：消息已落库，它就是事实。推送失败只记日志，
+        // 不影响消费。重投不会重复上屏 —— 已 `Processed` 的消息被上面的幂等守卫
+        // 挡在推送之前；仍 Pending 的（首次推送后处理失败）会再推一次，前端按
+        // `message_id` 去重。
+        crate::service::domain::message::delivery::push_message_to_audience(&ctx, &message).await;
+
         // 根据 to_role 分发到对应 domain（携带框架还原的 ctx，下游可继续追加/修饰）
         match message.to_role() {
             MessageRole::Agent => {

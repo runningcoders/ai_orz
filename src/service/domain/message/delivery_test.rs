@@ -1,7 +1,7 @@
 //! Message Delivery 单元测试
 
 use crate::models::cortex_types::{ThinkResult, ToolDescriptor};
-use crate::models::message::{Message, TaskAssignmentMessage, ToolCallMessage};
+use crate::models::message::{Message, MessagePo, TaskAssignmentMessage, ToolCallMessage};
 use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::cortex::CortexDao;
@@ -1606,4 +1606,98 @@ async fn test_chat_id_and_external_mentions_persisted_and_inherited(pool: Sqlite
         .await
         .unwrap();
     assert_eq!(reply.po.chat_id.as_deref(), Some("oc_group_1"));
+}
+
+// ========== 受众推送（SSE 扇出）==========
+
+/// 构造一条待推送的消息（不落库，只用于推送判定）
+fn audience_test_message(to_role: MessageRole, to_id: &str, root_user_id: &str) -> Message {
+    let mut po = MessagePo::new(
+        Uuid::now_v7().to_string(),
+        Some("proj-1".to_string()),
+        None,
+        "agent-1".to_string(),
+        to_id.to_string(),
+        MessageRole::Agent,
+        to_role,
+        MessageType::Text,
+        "hi".to_string(),
+        None,
+        Default::default(),
+        None,
+        None,
+        None,
+        "agent-1".to_string(),
+    );
+    po.root_user_id = root_user_id.to_string();
+    Message::from_po(po)
+}
+
+/// 用户自己发出的消息（`from_role = User`）——用于「不回推给发件人自己」的守卫
+fn audience_user_sent_message(to_id: &str, root_user_id: &str) -> Message {
+    let mut msg = audience_test_message(MessageRole::Agent, to_id, root_user_id);
+    msg.po.from_role = MessageRole::User;
+    msg.po.from_id = root_user_id.to_string();
+    msg
+}
+
+#[tokio::test]
+async fn audience_push_goes_to_root_user_not_recipient() {
+    crate::pkg::storage::test_support::init_for_test().await;
+    let ctx = RequestContext::new_system();
+    let sse = crate::service::dao::message_push::dao();
+    let user = format!("audience-user-{}", Uuid::now_v7());
+    let conn = format!("audience-conn-{}", Uuid::now_v7());
+    let mut rx = sse.register(ctx.clone(), &user, &conn).await;
+
+    let msg = audience_test_message(MessageRole::Agent, "agent-1", &user);
+    let delivered = super::delivery::push_message_to_audience(&ctx, &msg).await;
+    assert_eq!(delivered, 1, "Agent 收件人的消息必须推给归属用户");
+
+    let raw = rx.try_recv().expect("应收到一条 SSE 事件");
+    let parsed: crate::service::dal::message_push::SsePushPayload =
+        serde_json::from_str(&raw).unwrap();
+    assert_eq!(parsed.message_id, msg.po.id);
+    assert_eq!(
+        parsed.to_id, "agent-1",
+        "事件体保留原始收件人，前端据此渲染旁观样式"
+    );
+
+    sse.unregister(ctx, &conn).await;
+}
+
+#[tokio::test]
+async fn audience_push_skips_user_recipient_and_unowned_messages() {
+    crate::pkg::storage::test_support::init_for_test().await;
+    let ctx = RequestContext::new_system();
+    let sse = crate::service::dao::message_push::dao();
+    let user = format!("audience-user-{}", Uuid::now_v7());
+    let conn = format!("audience-conn-{}", Uuid::now_v7());
+    let mut rx = sse.register(ctx.clone(), &user, &conn).await;
+
+    // 收件人就是用户：由 handle_user_message → deliver_message 推，不能重复推
+    let to_user = audience_test_message(MessageRole::User, &user, &user);
+    assert_eq!(
+        super::delivery::push_message_to_audience(&ctx, &to_user).await,
+        0
+    );
+
+    // 无归属用户（A2A / 系统内部）：没有可推送的目标
+    let unowned = audience_test_message(MessageRole::Agent, "agent-1", "");
+    assert_eq!(
+        super::delivery::push_message_to_audience(&ctx, &unowned).await,
+        0
+    );
+
+    // 发件人是用户：用户自己的动作 —— 前端有乐观气泡，渠道入站另由
+    // `producer::message_channel` 立即推一次，这里再推就是同一事件送两遍
+    // （前端按 id 去重看不出来，但未读角标是按条计数的）
+    let from_user = audience_user_sent_message("agent-1", &user);
+    assert_eq!(
+        super::delivery::push_message_to_audience(&ctx, &from_user).await,
+        0
+    );
+
+    assert!(rx.try_recv().is_err(), "以上三条都不应产生 SSE 事件");
+    sse.unregister(ctx, &conn).await;
 }

@@ -5,7 +5,9 @@ use wasm_bindgen::{JsCast, closure::Closure};
 use crate::Route;
 use crate::api::finance::upload_attachment;
 use crate::api::hr::{get_agent, get_reception_agent, list_agents};
-use crate::api::message::{load_latest_messages, load_older_messages, send_message_to_agent};
+use crate::api::message::{
+    load_latest_messages, load_older_messages, poll_new_messages, send_message_to_agent,
+};
 use crate::api::project::{create_project, get_project, list_projects, query_projects};
 use crate::components::avatar_bubble::{AvatarBubble, AvatarTone, BubbleAlign};
 use crate::components::chat::{CancelThinkingButton, ChatSidePanel};
@@ -23,12 +25,12 @@ use crate::store::toast::use_toast;
 use crate::utils::local_store;
 use crate::utils::mention::{read_caret, restore_caret};
 use crate::utils::{
-    HISTORY_PAGE_SIZE, HISTORY_SCAN_MAX_PAGES, MSG_AUDIO, MSG_IMAGE, MSG_MIXED,
-    MSG_TASK_ASSIGNMENT, MSG_TASK_COMPLETED, MSG_TASK_PENDING_REVIEW, MSG_TEXT,
-    MSG_TOOL_CALL_REQUEST, MSG_TOOL_CALL_RESULT, MSG_VIDEO, avatar_initials,
-    build_optimistic_user_msg, format_file_size, format_message_time as format_time,
-    in_project_context, involves_user, is_attachment_message, project_status_text as status_text,
-    replace_tmp_with_real, request_scope,
+    HISTORY_PAGE_SIZE, HISTORY_SCAN_MAX_PAGES, MESSAGE_POLL_LIMIT, MESSAGE_POLL_SECS, MSG_AUDIO,
+    MSG_IMAGE, MSG_MIXED, MSG_TASK_ASSIGNMENT, MSG_TASK_COMPLETED, MSG_TASK_PENDING_REVIEW,
+    MSG_TEXT, MSG_TOOL_CALL_REQUEST, MSG_TOOL_CALL_RESULT, MSG_VIDEO, append_new_messages,
+    avatar_initials, build_optimistic_user_msg, format_file_size,
+    format_message_time as format_time, in_project_context, involves_user, is_attachment_message,
+    page_hidden, project_status_text as status_text, replace_tmp_with_real, request_scope,
 };
 use common::api::{
     AgentListItem, CreateProjectRequest, GetAgentRequest, GetAgentResponse, GetProjectRequest,
@@ -132,6 +134,8 @@ pub fn MessageChat(project: Option<String>) -> Element {
     let mut selected_project = use_signal(|| Option::<String>::None);
     let navigator = use_navigator();
     let mut messages = use_signal(Vec::<MessageListItem>::new);
+    // 增量兜底轮询的游标（`created_at` 毫秒）。切换会话时置空，回落到列表最大值。
+    let mut poll_cursor = use_signal(|| Option::<i64>::None);
     let mut is_typing = use_signal(|| false);
     // 当前会话目标 Agent 的运行时状态（0=Idle 1=Resting 2=Busy），轮询刷新。
     // 驱动置底状态气泡文案 + 非空闲时的发送门禁。
@@ -351,6 +355,8 @@ pub fn MessageChat(project: Option<String>) -> Element {
         // 切换会话重置滚动状态：进入对话视为停靠底部，加载完成后自动滚到最新消息
         at_bottom.set(true);
         has_new_messages.set(false);
+        // 换会话 ⇒ 轮询游标作废（新旧会话的时间轴不可比）
+        poll_cursor.set(None);
         loading_messages.set(true);
         spawn(async move {
             let mut visible = Vec::new();
@@ -491,18 +497,28 @@ pub fn MessageChat(project: Option<String>) -> Element {
             if current.iter().any(|m| m.message_id == msg.message_id) {
                 return;
             }
+            // 只有「发给我」的消息才算「回复到了」：受众推送也会送来项目内的
+            // Agent 间交流 / 任务知会 / 工具调用（`to_role` 是 Agent/System），
+            // 那些消息不该把「思考中」提前清掉。
+            let for_me = msg.to_role == 0;
             current.push(msg);
-            is_typing.set(false);
+            if for_me {
+                is_typing.set(false);
+            }
             // 用户上翻阅读时不拽回底部，仅标记新消息（由悬浮提示按钮承接）
             if !at_bottom() {
                 has_new_messages.set(true);
             }
             // 通知信息侧栏防抖刷新（任务进度/执行计划/产物可能已变化）
             refresh_tick.set(refresh_tick() + 1);
-        } else if msg.message_type == MSG_TEXT {
+        } else if msg.to_role == 0 && msg.message_type == MSG_TEXT {
             // 问题二（AMan 拍板）：非当前会话的 Text 消息计入未读角标；
             // 默认对话（project_id=None）用哨兵键 default，项目会话用 project_id 原值。
-            // SSE 正常推送语义下单条消息只到达一次，未做 message_id 去重（评估报告口径：倾向简单）。
+            //
+            // ⚠️ 必须限定 `to_role == 0`（发给我的）：受众推送上线后，项目内的
+            // Agent 间交流、任务知会、工具调用也会推到本端，它们是**旁听内容**，
+            // 按条 `+= 1` 会让角标数字凭空暴涨。旁听消息在上面的 if 分支里
+            // 正常上屏，只是不计数。
             let key = match msg.project_id.as_deref() {
                 Some(pid) => pid.to_string(),
                 None => local_store::UNREAD_DEFAULT_KEY.to_string(),
@@ -620,6 +636,78 @@ pub fn MessageChat(project: Option<String>) -> Element {
             drop(res.on_error);
             res.event_source.close();
         }
+    });
+
+    // SSE 兜底轮询：可见时每 `MESSAGE_POLL_SECS` 拉一次当前会话的增量消息
+    //
+    // SSE 是尽力而为的实时通道：断线（休眠 / 换网）与内存 broadcast 缓冲（100）溢出
+    // 都会静默丢事件且不补发，而历史加载是查库的 —— 一旦漏就是「刷新才看到」。
+    // 另一个真实场景：同一账号在别的标签页 / 手机上发的消息，本页没有乐观气泡，
+    // 只有库里那条，SSE 又只推给收件人。
+    //
+    // ⚠️ 只起一个循环：闭包体不读 signal，异步块里读的不进 `use_effect` 依赖表
+    //    （同下方 3s 状态轮询的写法），否则每拍会再 spawn 一个循环。
+    use_effect(move || {
+        spawn(async move {
+            loop {
+                gloo_timers::future::sleep(std::time::Duration::from_secs(MESSAGE_POLL_SECS)).await;
+                if page_hidden() {
+                    continue;
+                }
+                let cur_project = selected_project();
+                // 请求侧带哨兵值（默认对话 → `__default__`），与首屏加载同口径
+                let req_scope = request_scope(cur_project.as_deref());
+                // 游标只认**服务端**时间戳（上一拍响应里的最新一条）。本地列表不能当
+                // 基准：乐观消息的 `created_at` 是本机时钟，浏览器一旦快于服务端，游标
+                // 就被推到「未来」，这段窗口内的消息再也拉不到（游标只前进，`.max()`
+                // 还会把虚高值钉住）。没有游标时传 `None` ⇒ 取「最新一页」，用响应里
+                // 服务端的时间戳校准，重复的按 `message_id` 去掉。
+                let cursor = poll_cursor();
+                let resp = match poll_new_messages(common::api::ListMessagesRequest {
+                    project_id: req_scope,
+                    // 开区间 + 回退 1ms：同一毫秒内的多条不会被游标跨过（重复按 id 去重）
+                    after_timestamp: cursor.map(|c| c.saturating_sub(1)),
+                    limit: Some(MESSAGE_POLL_LIMIT),
+                    ..Default::default()
+                })
+                .await
+                {
+                    Ok(resp) => resp,
+                    // 失败静默：SSE 仍在跑，下一拍重试
+                    Err(_) => continue,
+                };
+                // 竞态守卫：请求期间切了会话 ⇒ 丢弃本次结果
+                if selected_project() != cur_project {
+                    continue;
+                }
+                // 游标只前进不回退：被前端滤掉的原始消息也要算进去，
+                // 否则它们会一直占住窗口、永远推不到更新的一条
+                if let Some(newest) = resp.messages.last().map(|m| m.created_at) {
+                    poll_cursor.set(Some(cursor.map_or(newest, |c| newest.max(c))));
+                }
+                let fresh = resp
+                    .messages
+                    .into_iter()
+                    .filter(|m| in_project_context(m, cur_project.as_deref()))
+                    .collect::<Vec<_>>();
+                if fresh.is_empty() {
+                    continue;
+                }
+                // 与 SSE 分支同口径：只有「发给我」的新消息才清「思考中」，
+                // 旁观消息（Agent 间交流 / 工具调用）不算回复到达
+                let for_me = fresh.iter().any(|m| m.to_role == 0);
+                let mut current = messages.write();
+                if append_new_messages(&mut current, fresh) > 0 {
+                    if for_me {
+                        is_typing.set(false);
+                    }
+                    if !at_bottom() {
+                        has_new_messages.set(true);
+                    }
+                    refresh_tick.set(refresh_tick() + 1);
+                }
+            }
+        });
     });
 
     // 轮询当前会话目标 Agent 的运行时状态（3s 周期），驱动置底状态气泡实时刷新。

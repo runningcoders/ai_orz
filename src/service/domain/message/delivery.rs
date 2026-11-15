@@ -76,6 +76,57 @@ fn build_sse_payload(message: &Message) -> crate::service::dal::message_push::Ss
     }
 }
 
+/// 站内实时上屏：把一条**已落库**的消息推送给它的「受众」
+///
+/// 受众 = 消息的归属用户（`root_user_id`），不是收件人。原因是**推送面必须与
+/// 展示面对齐**：`list_messages` 按 project / task 过滤，项目里 Agent 之间的
+/// 横向交流、任务知会、工具调用都会出现在列表里（前端还专门给了 `.message-bystander`
+/// 旁观样式），但它们的 `to_role` 是 Agent/System，走不到 `deliver_message` ——
+/// 于是用户只能刷新才看得到，症状是「不推、刷新才有」。
+///
+/// ⚠️ **只走 SSE，绝不复用 `deliver_message`**：后者会同时往飞书/微信等外部渠道
+/// 投递，把 Agent 之间的内部对话同步到用户的聊天软件里，属于事故级泄露。
+///
+/// 收件人本身就是用户时直接跳过（`0`）：那条路径由
+/// `handle_user_message → deliver_message` 负责，重复推同一个 `message_id`
+/// 只会让前端未读角标重复计数。
+///
+/// 发件人是用户时同样跳过（`0`）：那是**用户自己的动作**，前端有乐观气泡
+/// （且带真实 `message_id`），网页端跨标签页靠 5s 增量轮询补齐；渠道入站
+/// （飞书/微信）另由 `producer::message_channel` 在投递时**立即**推一次，
+/// `deliver_message` 走同一个 SSE 出口，这里再推就是同一事件送两遍。
+/// 结论：本函数只负责「用户不直接参与」的旁观消息（Agent↔Agent、任务知会、
+/// 工具调用），这也是 `deliver_message` 覆盖不到的那一类。
+pub async fn push_message_to_audience(ctx: &RequestContext, message: &Message) -> usize {
+    if message.to_role() == MessageRole::User || message.from_role() == MessageRole::User {
+        return 0;
+    }
+    let audience = message.po.root_user_id.trim();
+    if audience.is_empty() {
+        // A2A / 系统内部消息没有归属用户，没有可推送的目标
+        return 0;
+    }
+    let payload = build_sse_payload(message);
+    match crate::service::dal::message_push::dal()
+        .push_to_sse(ctx.clone(), audience, &payload)
+        .await
+    {
+        Ok(result) => result.delivered_count,
+        Err(e) => {
+            // 推送是展示增强，失败不能影响消息消费（消息已在库里，刷新仍可见）
+            log_warn!(
+                ctx,
+                "message_delivery",
+                message_id = %message.po.id,
+                user_id = %audience,
+                error = ?e,
+                "推送受众 SSE 失败"
+            );
+            0
+        }
+    }
+}
+
 impl MessageDomainImpl {
     /// 收件人「角色 ⟷ ID」一致性门闩
     ///
