@@ -347,7 +347,7 @@ neural 意味着「Agent 唤醒时自动注入 Prompt」，**仅用于资源发�
 | finance/attachment | 6 | 0 | file_management×6 |
 | finance/mcp_server | 6 | 0 | - |
 | finance/mcp_tool | 2 | 0 | - |
-| finance/message | 5 | 3（list_messages、send_message、send_task_assignment_message） | messaging×4、collaboration×1 |
+| finance/message | 5 | 3（list_messages、send_message、send_task_assignment_message） | messaging×4、collaboration×1、project_management×1（send_task_assignment_message：派单既是消息也是项目协作动作，整包装 project_management 时要能拿到） |
 | finance/message_channel | 8 | 1（query_message_channels） | - |
 | finance/model_provider | 8 | 1（query_model_providers） | - |
 | finance/tool | 13 | 2（list_tools、query_tools） | tool_management×13、internal×2（request_tool_call、send_tool_call_message） |

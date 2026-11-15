@@ -142,13 +142,28 @@ pub enum ReplyDecision {
 
 ```
 ① 静态规则表（零查库，声明顺序即优先级）
-   哨兵 → 用户来源 Peer → 系统来源 → 自触发 → 知会
+   哨兵 → 完成回执/待验收知会 → 自派任务 → 任务派单 → 巡检通知
+     → 用户来源 Peer → 系统来源 → 自触发 → 知会
 ② 协作压力档位（awaken 前已观测）
    Exhausted → CloseChainAsNotify（Final 作知会送达 + 终止链），其余 → Peer
-③ 未来：小脑（读同一份证据）
+③ 小脑判内容（chain_reply，见 §五）
 ```
 
-哨兵仍在最前：保留字任何来源都不投递（任务派发经用户身份中继后 `from_role=User`，
+静态表里与任务相关的四条（2026-11-15 三身份改造后）：
+
+| 规则 | 判据 | 路由 | 说明 |
+|---|---|---|---|
+| `task_completed_notify` / `task_pending_review_notify` | `message_type` 14 / 15 | Discard | 交付与验收结论由框架/工具产出，Final 不承载 |
+| `task_self_assignment` | `TaskAssignment` 且 `from_id == agent_id` | `DeliverToRootUser` | 自派任务三者身份重合，Peer 会自唤醒、self_trigger 会丢结论 |
+| `task_assignment_delivery` | `TaskAssignment`（其余） | Peer | `from_id` 已是真实派发者，回执天然回到它 |
+| `owner_briefing` | `ProjectFollowupNotification` / `TaskDispatchNotification` | `DeliverToRootUser` | 系统触发、无对等回复方，结论交给归属用户 |
+
+> 历史形态（已删）：派单曾把归属用户写进 `from_id`（用户身份中继），于是需要
+> `task_initiator_handoff → ReplyToInitiator` 把 Final 掰回发起者、`task_initiator_closing
+> → DeliverToRootUser` 再交给用户。三身份模型（派发者 / 接收者 / 所属用户
+> `MessagePo::root_user_id`）落地后，第一条退化为 `Peer`，第二条并入上表。
+
+哨兵仍在最前：保留字任何来源都不投递（历史上派单经中继后 `from_role=User`，
 若让来源规则先命中会把哨兵原文发给用户，2026-10-16 实证泄漏 29 条）。
 
 **②的兜底形态是「收口」而不是「丢弃」**：命硬墙时 Final 仍作为 `AgentNotify` 送达

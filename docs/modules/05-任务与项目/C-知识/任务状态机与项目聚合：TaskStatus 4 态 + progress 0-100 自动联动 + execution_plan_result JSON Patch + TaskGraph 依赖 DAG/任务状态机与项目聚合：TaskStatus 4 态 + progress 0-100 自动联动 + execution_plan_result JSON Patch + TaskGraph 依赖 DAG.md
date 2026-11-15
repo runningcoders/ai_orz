@@ -46,13 +46,15 @@ source_files:
 
 ---
 
+> ⚠️ **已过时 / 被取代**：本卡写于「TaskStatus 4 态」时期，其状态判别值与「`PendingReview` 已废弃并入 `Pending`」的说法**与现行代码相反**。2026-11-15 起任务状态为 **6 态**（`PendingReview = 5` 为新增的「待验收」态），完成语义拆成「提交验收（`mark_done`）+ 验收通过（`confirm_task`）」两步。**状态枚举、转换边与生命周期以 [任务验收层与双通道路由模型](docs/modules/05-任务与项目/A-设计/task_acceptance_and_dual_channel_design.md) 为准**。本卡其余内容（execution_plan/result JSON Patch、Project 聚合按需注入、DAG 环检测、回归红线）保留供历史追溯。
+
 ## §1 概述
 
-**本卡角色**：任务状态机与项目聚合的业务领域知识卡。覆盖 `TaskStatus` 五态枚举（Cancelled/Pending/InProgress/Completed/Archived；PendingReview 已废弃并入 Pending）（禁止数字大小比较，用 match 分支）+ `progress` 自动联动 status 规则、`TaskPo.execution_plan / execution_result` 两字段 JSON 结构化存储规范（后端 patch 合并，不允许前端整字段覆盖）、`Project.progress_summary` 按任务子状态实时百分比计算算法、以及 `task_graph.rs` 基于 `dependencies` 前置任务数组构建的 Mermaid DAG 可视化链路。**定位：写任务推进代码、前端进度条 UI、项目详情聚合查询、排查状态流转错乱时读。**
+**本卡角色**：任务状态机与项目聚合的业务领域知识卡。覆盖 `TaskStatus` 枚举（**现行 6 态**：Cancelled=0 / Pending=1 / InProgress=2 / Completed=3 / Archived=4 / **PendingReview=5 待验收**；⚠️ 本卡下文「4 态 / 5 态」「`PendingReview` 已废弃并入 `Pending`」及 `Pending(2)/InProgress(3)/Completed(4)/Archived(5)` 等判别值均为**旧稿残留、已过时**，现行判别值与转换边见 [任务验收层与双通道路由模型](docs/modules/05-任务与项目/A-设计/task_acceptance_and_dual_channel_design.md)）（禁止数字大小比较，用 match 分支）+ `progress` 自动联动 status 规则、`TaskPo.execution_plan / execution_result` 两字段 JSON 结构化存储规范（后端 patch 合并，不允许前端整字段覆盖）、`Project.progress_summary` 按任务子状态实时百分比计算算法、以及 `task_graph.rs` 基于 `dependencies` 前置任务数组构建的 Mermaid DAG 可视化链路。**定位：写任务推进代码、前端进度条 UI、项目详情聚合查询、排查状态流转错乱时读。**
 
 > 📌 视角声明（AGENTS §2.1.3 Level 3 互补视角平行卡）：本卡与 [AOP 生产消费事件中心](docs/modules/10-异步基建(AOP)/C-知识/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册.md) + [唤醒前置门闩与依赖补发闭环](docs/modules/10-异步基建(AOP)/C-知识/唤醒前置门闩与依赖补发闭环：wake_gate_policy 策略化前置校验 + TaskEventConsumer 依赖就绪自动重发/唤醒前置门闩与依赖补发闭环：wake_gate_policy 策略化前置校验 + TaskEventConsumer 依赖就绪自动重发.md) 构成「任务领域语义 / 事件框架 / DAG 运行时推进」互补视角；按 AGENTS §2.1.3 Level 3 保留平行卡。本卡讲 `dependencies` 与 `TaskStatus` 的**存储与展示语义**，**谁在运行时读 `dependencies` 决定能不能开跑，见唤醒门闩兄弟卡**。
 
-- **四态状态机（硬顺序）**：`Pending(2)` → `InProgress(3)` → `Completed(4)`；任意状态可跳 `Cancelled(0)`（软删除）。禁止逆向跳转（Completed→InProgress 的"重新打开"应新建任务而非回退，保证历史审计链完整）。`progress` 字段联动规则：写入 progress 时 Domain 自动 → 0=Pending、1-99=InProgress、100=Completed。如果同时传 status + progress → 以 status 为准，progress 裁剪（防止 status=Completed 但 progress=80 的冲突状态进库）。
+- **状态机（现行 6 态；⚠️ 本段旧稿「四态硬顺序」与 `Pending(2)/InProgress(3)/Completed(4)` 判别值已过时）**：现行链路为 `Pending(1) → InProgress(2) → PendingReview(5) → Completed(3)`（提交验收 → 验收通过），`reject_task` 可从 `PendingReview(5)` 打回 `InProgress(2)` 返工；`PendingReview` 不是终态，只有 `Completed(3)` 触发完成交付消息与 DAG 后继补发。因此**「禁止逆向跳转」不再绝对**（`PendingReview → InProgress` 是合法驳回边），但 `Completed → InProgress` 仍应新建任务而非回退。完整判别值与转换边见 [任务验收层与双通道路由模型](docs/modules/05-任务与项目/A-设计/task_acceptance_and_dual_channel_design.md)。下方 progress 自动联动与 status+progress 裁剪为旧稿描述，以代码为准。
 - **execution_plan / result 结构化 + patch 增量**：`execution_plan` JSON Schema 固定结构：`{ steps: [{ description, estimated_minutes, risk: "低|中|高" }], total_estimated_minutes, notes }`。`execution_result`：`{ completed_steps: [{ description, actual_minutes, output_summary, artifacts: [path] }], risks_mitigated, issues_found, next_actions }`。接口绝不允许整字段 PUT 覆盖——前端通过 `execution_plan_delta / execution_result_delta` 传增量，Domain `patch_execution_json()` 合并原 JSON 并校验 Schema，非法直接 400。
 - **Project 聚合按需注入五字段**：`Project` 业务实体有 5 个 `Option<_>` 字段，不是每次查询都全量拉。Domain 提供 5 个明确方法按需调用（性能 + 最小惊讶）：① `inject_stats` → stats；② `inject_model_call_stats` → model_call_stats；③ `inject_task_graph` → task_graph mermaid；④ `inject_artifacts` → artifacts；⑤ `compute_progress_summary` → progress_summary。项目详情页 5 Tab 各调 1-2 个对应注入，列表页只取 PO 不注入，避免 5+ N+1。
 
@@ -62,7 +64,7 @@ source_files:
 
 | 文件 | 角色 | 内容摘要 | 源码锚点 |
 |------|------|---------|---------|
-| common/src/enums/task.rs | TaskStatus 枚举 | 0=Cancelled 2=Pending 3=InProgress 4=Completed 5=Archived（1 已废弃，读回映射为 Pending）；#[repr(i32)] + sqlx::Type + From<i64>；禁止数字比较，用 match | 见 enum 定义 |
+| common/src/enums/task.rs | TaskStatus 枚举 | **现行 6 态：0=Cancelled 1=Pending 2=InProgress 3=Completed 4=Archived 5=PendingReview（待验收，2026-11-15 追加）**；`0..=4` 稳定、5 为追加，不插中间；#[repr(i32)] + sqlx::Type + From<i64>；禁止数字比较，用 match。⚠️ 本表旧值（0/2/3/4/5、「1 已废弃」）已作废 | 见 enum 定义 |
 | models/task.rs PO | 任务持久化对象 | 24 字段，重点：status(TaskStatus)/progress(0-100)/dependencies(JSON 前置 ID 数组)/execution_plan(Option<String> JSON)/execution_result(Option<String> JSON) | `:L16-L63` |
 | models/task.rs Task 实体 | 业务聚合容器 | po + 5 个 Option 注入槽位（search_match/stats/model_call_stats/artifacts） | `:L65-L93` |
 | models/project.rs PO | 项目持久化对象 | owner_agent_id(可选 PMO)/last_followup_at/plan+result 同步字段；progress_summary 不落库 | `:L15-L58` |

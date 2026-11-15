@@ -6,13 +6,14 @@
 >
 > 本文件自动生成：改内容请改源文件后跑 `make wiki-index`。
 
-本模块共 64 篇：A 设计 5 · B 落地方案 6 · C 知识 53。
+本模块共 65 篇：A 设计 6 · B 落地方案 6 · C 知识 53。
 
 ## A 设计（design）
 
 - [聊天侧栏「项目内 Agent 列表」与「工具调用身份展示」设计说明](<A-设计/chat_project_agents_and_tool_call_identity_design.md>) — `现行`
 - [项目系统设计文档](<A-设计/project_design.md>) — `已废弃`
 - [项目管理系统设计文档](<A-设计/project_management_design.md>) — `已废弃`
+- [任务验收层与双通道路由模型](<A-设计/task_acceptance_and_dual_channel_design.md>) — `现行`
 - [任务系统设计文档](<A-设计/task_design.md>) — `已废弃`
 - [定时任务系统设计文档](<A-设计/task_scheduler_design.md>) — `已废弃`
 

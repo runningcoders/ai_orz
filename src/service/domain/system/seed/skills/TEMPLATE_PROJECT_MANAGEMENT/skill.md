@@ -1,8 +1,8 @@
 # 项目管理
 
-项目管理技能是在模拟人类团队的「项目制工作法」：把复杂工作拆成可落地的「任务」、排好先后顺序（DAG 依赖 = 先做 A 才能做 B）、指派合适的人（Agent）去做、定期追进度（progress 0→100 = 项目经理每周开周会）、把交付物归档保存（Artifact = 项目文档/设计稿/代码提交/测试报告）。Project Owner 就像项目经理（PM）——对最终交付负责拆分和全局调度；Task Owner 就像负责某个模块的工程师——把分配的任务做完、有阻塞就问 PM、交付时附交付物。**execution_plan 是你开干前写的「我准备怎么做」，execution_result 是你干完后写的「我实际做了什么 + 交付了什么 + 有哪些坑」**——这些不只是给别人看的，也是未来你自己或其他同事接手时能快速读懂背景的「工作交接单」。
+项目管理技能是在模拟人类团队的「项目制工作法」：把复杂工作拆成可落地的「任务」、排好先后顺序（DAG 依赖 = 先做 A 才能做 B）、指派合适的人（Agent）去做、定期追进度（progress 0→100 = 项目经理每周开周会）、把交付物归档保存（Artifact = 项目文档/设计稿/代码提交/测试报告）。Project Owner 就像项目经理（PM）——对最终交付负责拆分和全局调度；Task Owner 就像负责某个模块的工程师——把分配的任务做完、有阻塞就问 PM、交付时附交付物。**execution_plan 是你开干前写的「我准备怎么做」，execution_result 是你干完后写的「我实际做了什么 + 交付了什么 + 有哪些坑」**——这些不只是给别人看的，也是未来你自己或其他同事接手时能快速读懂背景的「工作交接单」。另外，任务「做完」不等于「完成」：执行人 `mark_done` 只是把任务提交为「待验收」，要等发起者 / 项目 Owner 用 `confirm_task` 对照验收标准核对通过后才转 `Completed`。
 
-**核心协作模型**：Project Owner 主导（拆解 / 分配 / 调度 / 收尾）+ Task Owner 执行（完成 / 上报）两层结构。协作查询类工具（`query_agents` / `search_agents` / `list_agents` / `get_agent` / `get_reception_agent`）默认是用户 / 前端入口，**不在你的 neural 面板中**；候选 Agent ID 通过用户、前台 Agent 或项目上下文获取。
+**核心协作模型**：Project Owner 主导（拆解 / 分配 / 调度 / **验收** / 收尾）+ Task Owner 执行（**提交验收** / 上报）两层结构。任务「完成」被拆成「执行人 `mark_done` 提交验收 → Owner `confirm_task` 确认通过」两步，**只有后者才算真的完成**（详见「任务管理 → 交付责任制」）。协作查询类工具（`query_agents` / `search_agents` / `list_agents` / `get_agent` / `get_reception_agent`）默认是用户 / 前端入口，**不在你的 neural 面板中**；候选 Agent ID 通过用户、前台 Agent 或项目上下文获取。
 
 本技能工具 tags 为 `project_management` / `file_management`，非 neural——加载 / 安装规则见「技能管理」技能（`install_skill_pack(tag=project_management)` 可整包安装）。
 
@@ -42,8 +42,10 @@ Completed  → InProgress（项目重启专用）/ Archived
 - **`create_project`**：`owner_agent_id` **纯透传**，后端不调 `resolve_agent`（ID 无效不报错）。创建即 `InProgress`，规划与对齐在 InProgress 中进行。
 - **`get_project(id)`**：`stats_time_start`+`stats_time_end`（毫秒）须成对出现；`with_progress_summary=true` 实时计算不持久化（`overall_percent` = Σ task.progress / total），**Owner 跟进进度务必开启，无需自己逐任务计算**。
 - **`list_projects`**：固定过滤 `root_user_id = ctx.uid()`（看不到他人项目），按 `priority DESC, created_at DESC`。
+- **`query_projects` / `search_projects`**：读侧同样收敛到当前用户域 —— `root_user_id` 不传即当前用户，传别人的值直接 `InvalidRequest`。需要跨项目检索时用 `ids` / `owner_agent_id` / `keyword`，别指望改 `root_user_id` 换个用户看。
 - **`update_project`**：`description` / `execution_plan` / `execution_result` 书写规范见下文统一章节；预留字段 `last_followup_at`（巡检时间）现在主动填写有助于调度节奏。
 - **`update_project_status(status)`**：不能设为 `Deleted`。
+- **`transfer_project_owner(project_id, owner_agent_id, note?)`**：交接项目负责人，**这是权限转移不是字段编辑**——负责人是本项目所有任务的验收责任人，也是任务完成知会的首个收件人。只有**当前负责人**（或无主项目）可调；`owner_agent_id` 传空串 = 解除负责人，验收退回「任务发起者 → 无责任人自动确认」。`update_project` 改不了负责人，换人只能走这个工具。
 
 ## 任务管理
 
@@ -52,17 +54,32 @@ Completed  → InProgress（项目重启专用）/ Archived
 | 状态 | 值 | 说明 |
 |------|---|------|
 | `Cancelled` | 0 | 取消（相当于删除），**不可通过状态接口设置** |
-| `Pending` | 2 | 待启动（默认，等 DAG 前置满足 / Task Owner 开工） |
-| `InProgress` | 3 | 进行中，自动填入 `start_at` |
-| `Completed` | 4 | 已完成，自动填入 `end_at` |
-| `Archived` | 5 | 总结后归档 |
+| `Pending` | 1 | 待启动（默认，等 DAG 前置满足 / Task Owner 开工） |
+| `InProgress` | 2 | 进行中，自动填入 `start_at` |
+| `Completed` | 3 | 已完成，自动填入 `end_at` 与 `progress=100`；**唯一会触发完成交付消息 + DAG 后继补发的状态** |
+| `Archived` | 4 | 总结后归档 |
+| `PendingReview` | 5 | 待验收：执行人 `mark_done` 提交后进入，**不是完成态**，等待发起者 / 项目 Owner 验收 |
+
+> 判别值 `0..=4` 稳定不变，`PendingReview = 5` 是**追加**的第 6 态，不要插到中间。
 
 ```
-Pending    → InProgress / Archived
-InProgress → Completed / Archived
-Completed  → Archived
+Pending       → InProgress / Archived
+InProgress    → PendingReview（mark_done）/ Archived
+PendingReview → Completed（confirm_task）/ InProgress（reject_task）/ Archived
+Completed     → Archived
 相同状态 → no-op；其它 → 非法（返回 InvalidRequest）
 ```
+
+#### 交付责任制（完成 = 提交验收 + 验收通过，两步）
+
+任务侧「完成」被拆成两个动作，工具权限与副作用严格分开：
+
+- **`mark_done`**：执行人声明做完 → `PendingReview`。此时**不算完成**：不写 `end_at`、不设 `progress=100`、不触发完成交付消息、**不解锁 DAG 后继任务**。只有任务承接人可调，且只从 `InProgress` 提交；可选 `summary` 写入 `execution_result` 供验收人核对。
+- **`confirm_task`**：`PendingReview → Completed`，**唯一**会触发「完成交付消息（MessageType=14）+ DAG 后继补发」的状态转换，此时才写 `end_at` / `progress=100`。只有**任务发起者或项目 Owner** 可调用；对已 Completed 的任务重复调用为 no-op。
+- **`reject_task`**：`PendingReview → InProgress` 打回返工，驳回原因必填并追加到 `execution_result`（执行人据此返工）。权限同 `confirm_task`；驳回不产生交付、不解锁后继。
+- **无验收责任人**（无项目 Owner、也无 initiator）的任务由 Sync 消费者自动确认，执行人无需等待。
+
+**为什么不能用 `update_task_status(Completed)` 绕过验收**：后端会拒绝 Agent 侧 `InProgress → Completed` 的直连转换；完成必须经过 `PendingReview` 并由 `confirm_task` 落地。绕过去会丢掉验收环节与「唯一交付消息」语义，让看板把未经确认的工作算成完成。
 
 负责人类型（`AssigneeType`）：`User = 0` / `Agent = 1`（默认）。
 
@@ -72,8 +89,32 @@ Completed  → Archived
 - **`get_task(id)`**：`with_artifacts=true` 一并返回关联产物。
 - **`query_tasks`**：`status_in` 为 OR 语义。
 - **`update_task`**：`project_id` 仅对未挂载任务生效（见「游离任务挂载」）；`description` 只写需求边界 + 产物索引（规范见下文「任务 description」）。
-- **`update_task_status(status)`**：不能设为 `Cancelled`；非法转换返回 `InvalidRequest`。
-- **`mark_done(task_id, summary?)`**：**绕过状态机**，直接 `Completed` + `progress=100`，快速闭环用；严格校验走 `update_task_status(Completed)`。
+- **`update_task_status(status)`**：不能设为 `Cancelled`；非法转换返回 `InvalidRequest`。**不能用它直接置 `Completed` 绕过验收**——Agent 侧 `InProgress → Completed` 会被后端拒绝。
+- **`mark_done(task_id, summary?)`**：提交验收，**不是「标记完成」**。执行人声明做完 → `PendingReview`，可选 `summary` 写入 `execution_result`；此时不算完成、不设 `progress=100`、不写 `end_at`、不解锁后继、不触发交付消息。只有任务承接人可调，且只从 `InProgress` 提交。
+- **`confirm_task(task_id, note?)`**：验收通过，`PendingReview → Completed`，**唯一**触发完成交付消息与 DAG 后继补发的入口。只有**任务发起者或项目 Owner** 可调用。
+- **`reject_task(task_id, reason)`**：验收驳回，打回 `InProgress` 返工，`reason` 必填（追加到 `execution_result`）。权限同 `confirm_task`。
+
+### 验收标准 acceptance_criteria（DoD / Definition of Done）
+
+`acceptance_criteria` 是任务上的独立字段，由 Owner 派单时填写，随派单经 `Task::to_prompt_summary` 注入执行人的任务上下文（形如 `- 验收标准: ...（提交前请逐条自检，并在执行结果中说明达成情况）`）。它是验收的唯一对照基准：Owner 在 `confirm_task` 前逐条核对其达成情况。
+
+**写法**（可验证、可判定，别写「尽量 / 完善一下 / 看着办」这类无法判定的描述）：
+
+- 一条一个可核对的产出或条件，例如「接口返回 200 且字段 X 非空」「单测覆盖率 ≥80%」「报告已 `create_text_artifact` 并关联 project_id + task_id」
+- 写清产物清单与落地位置（产物 ID / 路径），别只写「交付文档」
+- 与 `dependencies` 前置约定、`description` 的需求边界一致，不额外扩大范围
+
+**执行人自检（调 `mark_done` 前强制）**：
+
+- [ ] 逐条对照 `acceptance_criteria`，在 `execution_result` 里写明每条「达成 / 未达成 + 证据（产物 ID、结果）」
+- [ ] 产物已保存并关联；有未达成项不要提交验收，先补做，或在 `execution_result` 明确列为遗留
+- [ ] `mark_done(summary=...)` 的摘要与 `execution_result` 一致，别只写「做完了」
+
+**Owner 验收（收到「任务待验收知会」MessageType=15 后）**：
+
+- [ ] `get_task(with_artifacts=true)` 读 `acceptance_criteria` / `execution_result` / 产物清单，逐条核对
+- [ ] 全部达成 → `confirm_task`（可附 `note` 作验收结论）；不达标 → `reject_task(reason=具体差在哪、要改什么)`，不要含糊打回
+- [ ] 停在 `PendingReview` 的任务不算完成，不能据此收尾或解锁后继任务
 
 ### 游离任务挂载（project_id 一次性绑定）
 
@@ -98,7 +139,7 @@ Completed  → Archived
 
 任务 `description` 是 Owner 交给 Task Owner 的**需求说明**，只写三样东西，保持简短：
 
-1. **需求目标**：要做什么、做成什么样（含验收标准）
+1. **需求目标**：要做什么、做成什么样（**验收标准不写在 description**，单独填 `acceptance_criteria` 字段，规范见「任务管理 → 验收标准」）
 2. **边界**：明确不做什么、依赖哪些前置约定
 3. **关键产物 ID 索引**：需求变更快照、参考产物等 `artifact_id`（一行一个，附一句话说明）
 
@@ -110,7 +151,7 @@ Completed  → Archived
 
 **时机（强制）**：
 - `execution_plan`——项目创建后立即由 Owner 写入（`update_project`），任务由 Task Owner 在开工（InProgress）前写（`update_task`）；阶段 / 方案有重大调整时**立即更新**，让 Owner 与系统巡检看到思路变化。
-- `execution_result`——项目收尾（Owner）或任务完成 / 阻塞（Task Owner）时写入。
+- `execution_result`——项目收尾（Owner）、或任务**提交验收前 / 阻塞时**（Task Owner）写入。`mark_done(summary)`、`confirm_task(note)`、`reject_task(reason)` 都会落到这个字段；执行人提交前先按 `acceptance_criteria` 逐条自检、写明达成情况，Owner 验收时对照核对。
 
 **plan 骨架（分阶段 + 占比 + 风险，越具体越好，别只写一句「我先看看怎么做」）**：
 
@@ -211,7 +252,7 @@ Completed  → Archived
 
 ### 流程总览
 
-前台转交 → 【阶段 1】Owner 规划分配 → 【阶段 2】Task Owner 执行上报 → 【阶段 3】Owner 调度循环（↺ 收到上报 / 巡检通知）→ 【阶段 4】收尾 → 项目重启（查询类直接回复 / 新需求重新规划）
+前台转交 → 【阶段 1】Owner 规划分配（含写 `acceptance_criteria`）→ 【阶段 2】Task Owner 执行 → `mark_done` **提交验收** → 【阶段 3】Owner **验收**（`confirm_task` / `reject_task`）+ 调度循环（↺ 收到上报 / 巡检通知）→ 【阶段 4】收尾（全部 `Completed` 后）→ 项目重启（查询类直接回复 / 新需求重新规划）
 
 ### 阶段 1：Project Owner 规划与分配（启动后强制清单）
 
@@ -225,9 +266,9 @@ Completed  → Archived
 
 **启动前强制清单**：
 - [ ] `get_task` / `list_project_tasks` 校验 `dependencies` 中**所有前置任务均 Completed**；任何一个未完成 → **等待**，`send_task_assignment_message` 向 Owner 报告阻塞原因，绝不强行启动
-- [ ] **先验任务自身是否仍然有效**：`get_task` 发现自身 `status` 为 `Archived(5)` / `Cancelled(0)` ⇒ 这条分配已被废弃（多为需求变更后重规划所致）→ **不执行、不改状态**，先 `recall_message` **拒收这条消息**，再 `send_task_assignment_message` 回报 Owner 请其重发新指令
+- [ ] **先验任务自身是否仍然有效**：`get_task` 发现自身 `status` 为 `Archived(4)` / `Cancelled(0)` ⇒ 这条分配已被废弃（多为需求变更后重规划所致）→ **不执行、不改状态**，先 `recall_message` **拒收这条消息**，再 `send_task_assignment_message` 回报 Owner 请其重发新指令；若为 `PendingReview(5)`，说明本任务已提交验收、正等 Owner 确认，**不要再执行一遍**，回报 Owner 即可
 - [ ] **有前置任务时必读前置产物**：`get_task(前置ID, with_artifacts=true)` 查看其 execution_result 与产物清单 → 文本产物用 `get_artifact_content` 读内容、文件类产物按存储路径 `fs_read`；前置的方案文档 / 技术实现是本任务的输入，跳过这步容易重复造轮子或与前置约定对不上
-- [ ] 完整读取 task.description / tags / due_at，理解需求边界
+- [ ] 完整读取 task.description / tags / due_at / **`acceptance_criteria`**，理解需求边界与验收标准（提交前逐条自检，见「验收标准」）
 - [ ] `update_task(execution_plan=...)` 写入执行计划 → `update_task_status(InProgress)` + `update_task_progress(progress=10)` 启动
 
 **执行循环**：
@@ -235,14 +276,23 @@ Completed  → Archived
 - 方案调整时**立即 `update_task(execution_plan=修订版)`**，不要闷头做事
 - 成果随手保存：文本 → `create_text_artifact`；工作目录文件 → `register_artifact_from_path`；已有附件 → `create_artifact(Attachment 模式)`；阶段执行记录 → `create_text_artifact(tags=["execution_log"], task_id=...)` **独立分片存储**，不要合并进单个大产物（粒度规范见「产物粒度与分片规范」）
 
-**完成 / 阻塞清单（顺序缺一不可）**：
+**提交验收 / 阻塞清单（顺序缺一不可）**：
 - [ ] 产出物已保存并关联 `project_id` + `task_id`
-- [ ] `update_task(execution_result=...)` 写结果总结（结构见书写规范：完成情况 / 产出物清单 / 遗留与风险必填 / 下一步建议）；阻塞时写清阻塞原因、已尝试方法、当前进度
-- [ ] `mark_done(summary=一句话总结)`（阻塞时**不要 mark_done、不要回退 status**，保留现场）
-- [ ] `send_task_assignment_message` 向 Owner 上报：task id/title/status/progress、**明确说明 execution_plan 和 execution_result 已写入 task 字段**、结果摘要、产物清单、遗留风险、下一步建议
+- [ ] 按 `acceptance_criteria` 逐条自检（见「验收标准」），`update_task(execution_result=...)` 写结果总结（结构见书写规范：完成情况 / 产出物清单 / 遗留与风险必填 / 下一步建议），**并写明每条验收标准的达成情况**；阻塞时写清阻塞原因、已尝试方法、当前进度
+- [ ] `mark_done(summary=一句话总结)` **提交验收**（不是「标记完成」）：任务进入 `PendingReview`，此时**不算完成**、不设 `progress=100`、不写 `end_at`、不解锁后继任务、不触发完成交付消息。阻塞时**不要 mark_done、不要回退 status**，保留现场
+- [ ] `send_task_assignment_message` 向 Owner 上报：task id/title/status/progress、**明确说明 execution_plan 和 execution_result 已写入 task 字段**、结果摘要、产物清单、遗留风险、下一步建议，并提示「已提交验收，请 Owner 对照 `acceptance_criteria` 核对后 `confirm_task`」
+- [ ] **提交后等待验收**：`PendingReview` 期间不要自行继续推进或收尾；被 `reject_task` 打回 `InProgress` 时，按 `execution_result` 里的驳回原因返工，再走一遍本清单重新提交
 - [ ] **不要自行决定下一个任务**，由 Owner 总揽全局后决定
 
 ### 阶段 3：Project Owner 调度循环（每次收到上报或系统通知后）
+
+> **⚠️ 收到「任务待验收知会」（MessageType=15）或执行人的 `mark_done` 上报时，先验收、再调度**：
+> 1. `get_task(id, with_artifacts=true)` 读 `acceptance_criteria` / `execution_result` / 产物清单，逐条核对达成情况
+> 2. 全部达成 → `confirm_task(task_id, note?)`：验收通过 → `Completed`，**这是唯一会触发完成交付消息与 DAG 后继补发的动作**
+> 3. 不达标 → `reject_task(task_id, reason=具体差在哪、要改什么)`：打回 `InProgress` 返工，原因追加到 `execution_result`
+> 4. 只有 `Completed` 才算完成；停在 `PendingReview` 的任务不解锁后继、不计入收尾
+>
+> **只有任务发起者或项目 Owner 能验收**（`confirm_task` / `reject_task` 会校验身份，工具包授权不等于验收权）。验收完成后再按下面的调度循环处理其余任务。
 
 1. **拉取全局**：`get_project(id, with_progress_summary=true, with_task_graph=true)` 读 overall_percent + 各状态计数 + DAG 视图；`query_artifacts` 查看已有产出
 2. **逐个审视任务**：InProgress 任务对照 `execution_plan` vs `progress` 是否偏离，关注 `modified_at`（>1 小时无更新可能卡住）；Pending 任务检查 `dependencies` 是否满足；异常任务读 `execution_result` 中的阻塞描述
@@ -254,7 +304,9 @@ Completed  → Archived
    - 阻塞决策选项：调整依赖 / 拆新任务 / 修改任务描述 / 换 Agent 分配
 4. **记录巡检时间**：`update_project(last_followup_at=...)`
 
-### 阶段 4：项目收尾（所有任务 Completed 后）
+### 阶段 4：项目收尾（所有任务均 `confirm_task` 验收通过、转为 `Completed` 后）
+
+> 停在 `PendingReview` 的任务**不算完成**：先按阶段 3 逐个验收（`confirm_task` / `reject_task`），全部 `Completed` 后才能收尾。
 
 - [ ] `get_project(with_progress_summary=true)` 获取最终进度快照；`query_artifacts` 汇总产物
 - [ ] `update_project(execution_result=...)` 写项目总结：整体成果概述（对照 plan 说明完成 / 调整）、各 Phase 产出清单（artifact id）、经验教训、后续建议
@@ -263,7 +315,7 @@ Completed  → Archived
 
 ### 进度纪律
 
-`progress=10` 写完 plan 正式启动 → `20~80` 按子步骤分阶段（如完成接口=40、完成单测=80）→ `90` 测试收尾 → `100` **只能由 mark_done 设置**。不要从 0 直接跳 100；长任务每小时至少更新一次，避免系统巡检误判为阻塞。
+`progress=10` 写完 plan 正式启动 → `20~80` 按子步骤分阶段（如完成接口=40、完成单测=80）→ `90` 测试收尾 → `100` **只在 Owner `confirm_task` 验收通过（`Completed`）后由后端设置**；`mark_done` 提交验收时**刻意不动** `progress` / `end_at`，看板不会把未经确认的工作算成完成。不要从 0 直接跳 100；长任务每小时至少更新一次，避免系统巡检误判为阻塞。
 
 ### 项目重启（Completed 后用户继续发消息）
 
@@ -287,13 +339,20 @@ Completed  → Archived
 
 ## 系统通知响应规范（所有 Agent 强制）
 
-> 系统通过「📋 任务调度通知」（MessageType=10 TaskDispatchNotification）和「📊 项目进度定期检查」（MessageType=11 ProjectFollowupNotification）**主动唤醒你**，每小时巡检一次。收到这两类消息**优先按行动指令执行**，不要当作普通闲聊。
+> 系统通过「📋 任务调度通知」（MessageType=10 TaskDispatchNotification）、「📊 项目进度定期检查」（MessageType=11 ProjectFollowupNotification）和「✅ 任务待验收知会」（MessageType=15 TaskPendingReview）**主动唤醒你**，每小时巡检一次（待验收知会为状态事件触发）。收到这几类消息**优先按行动指令执行**，不要当作普通闲聊。
 
 **📋 任务调度通知**：
-1. 读「行动指令」识别角色：你是 Owner → 按阶段 3 调度循环执行；你是 Task Owner → 按阶段 2 对应阶段执行；要求上报结果 → 按完成清单执行
+1. 读「行动指令」识别角色：你是 Owner → 按阶段 3 调度循环执行；你是 Task Owner → 按阶段 2 对应阶段执行；要求上报结果 → 按「提交验收 / 阻塞清单」执行
 2. 拉取上下文：Owner → `get_project(with_progress_summary=true)`；Task Owner → `get_task(id=指令中 task_id)` + 所属项目 `get_project(with_progress_summary=true)`
 3. 执行指令要求的具体动作
 4. 指令信息不全或上下文冲突 → 立即 `send_task_assignment_message` / `send_message` 上报冲突点，不要跳过或猜测
+
+**✅ 任务待验收知会（MessageType=15 TaskPendingReview）**：发给项目 Owner（无 Owner 时 fallback 到任务发起者），由 Sync 消费者投递，正文带验收标准 / 提交说明 / 产物清单。
+
+1. 识别角色：**只有任务发起者或项目 Owner 有验收权**，其它 Agent 收到不要越权调 `confirm_task` / `reject_task`
+2. `get_task(id, with_artifacts=true)` 读 `acceptance_criteria` / `execution_result` / 产物清单
+3. 对照 `acceptance_criteria` 逐条核对 → 全部达成 `confirm_task`，不达标 `reject_task(reason=...)`（按阶段 3 验收清单执行）
+4. 验收产出是 **`confirm_task` / `reject_task` 工具调用**，框架随后按工具结果发交付或驳回消息；这类知会按「入口消息类型」判定路由，**不要在 Final 里再复述一遍**（不会重复投递）
 
 **📊 项目进度定期检查**：按**阶段 3 调度循环**执行（拉全貌 → 逐任务审视 → 决策 → 记巡检时间）；发现重大偏差（里程碑超时、整体落后 >30%）→ `send_message` 通知用户并给出调整建议。
 
