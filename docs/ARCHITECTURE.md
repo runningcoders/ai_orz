@@ -318,7 +318,7 @@ data/
 | 记忆原始细节 | `agents/{agent_id}/memory/{YYYYMMDD}.jsonl` | 记忆写入、图谱变更等事件 | 「我记了什么」 |
 | 思考轨迹 | `agents/{agent_id}/think_trace/{YYYYMMDD}.jsonl` | 轮级阶段、预算、工具调用、收敛结果 | 「我怎么想的」 |
 
-两者共用同一套按天 JSONL 写入设施（`pkg/daily_jsonl`），但**目录树不同、语义不同、生命周期不同**——不要按「记忆文件」一个口径去统计（路径常量见 [src/pkg/paths.rs](src/pkg/paths.rs)）。
+两者共用同一套按天 JSONL 写入设施（`pkg/jsonl/writer`），但**目录树不同、语义不同、生命周期不同**——不要按「记忆文件」一个口径去统计（路径常量见 [src/pkg/paths.rs](src/pkg/paths.rs)）。
 
 ### 设计取向
 

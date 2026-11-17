@@ -54,7 +54,7 @@ impl MemoryDaoSqliteImpl {
             .next()
             .unwrap_or(&reference.knowledge_id);
         let agent_dir = self.agent_memory_dir(agent_id);
-        let writer = crate::pkg::daily_jsonl::DailyJsonlWriter::new(agent_dir);
+        let writer = crate::pkg::jsonl::writer::DailyJsonlWriter::new(agent_dir);
         // date_path is just YYYYMMDD.jsonl
         let date = reference.date_path.replace(".jsonl", "");
         let line = writer.read_line(&date, reference.line_number as usize)?;

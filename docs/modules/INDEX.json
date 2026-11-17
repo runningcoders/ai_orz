@@ -3,7 +3,7 @@
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
   "total": 674,
-  "total_bytes": 14274510,
+  "total_bytes": 14279571,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -193,7 +193,7 @@
           "path": "00-总览与架构/C-知识/思维轨迹架构.md",
           "name": "思维轨迹架构",
           "title": "思维轨迹架构",
-          "bytes": 5377
+          "bytes": 5378
         },
         {
           "tier": "C-知识",
@@ -207,7 +207,7 @@
           "path": "00-总览与架构/C-知识/数据存储架构.md",
           "name": "数据存储架构",
           "title": "数据存储架构",
-          "bytes": 29357
+          "bytes": 29393
         },
         {
           "tier": "C-知识",
@@ -270,7 +270,7 @@
           "path": "00-总览与架构/C-知识/记忆系统架构.md",
           "name": "记忆系统架构",
           "title": "记忆系统架构",
-          "bytes": 30257
+          "bytes": 30284
         },
         {
           "tier": "C-知识",
@@ -1106,7 +1106,7 @@
           "path": "02-Agent运行时/C-知识/ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板/ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板.md",
           "name": "ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板",
           "title": "ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板",
-          "bytes": 13281
+          "bytes": 13282
         },
         {
           "tier": "C-知识",
@@ -1272,7 +1272,7 @@
           "path": "03-记忆系统/C-知识/原始记忆追踪.md",
           "name": "原始记忆追踪",
           "title": "原始记忆追踪",
-          "bytes": 22490
+          "bytes": 22560
         },
         {
           "tier": "C-知识",
@@ -1413,7 +1413,7 @@
           "path": "04-对话与消息/A-设计/message_interaction_design.md",
           "name": "message_interaction_design",
           "title": "用户-Agent 消息交互设计",
-          "bytes": 19755,
+          "bytes": 20415,
           "status": "已废弃",
           "scope": [],
           "related": []
@@ -1722,7 +1722,7 @@
           "path": "04-对话与消息/C-知识/实时推送.md",
           "name": "实时推送",
           "title": "实时推送",
-          "bytes": 18046
+          "bytes": 22204
         },
         {
           "tier": "C-知识",
@@ -3977,7 +3977,7 @@
           "path": "10-异步基建(AOP)/C-知识/工具执行消费者.md",
           "name": "工具执行消费者",
           "title": "工具执行消费者",
-          "bytes": 18629
+          "bytes": 18661
         },
         {
           "tier": "C-知识",
@@ -5119,7 +5119,7 @@
           "path": "12-基础设施与部署/C-知识/基于 tracing 的结构化日志系统（宏 + 文件滚动 + JSONL 查询）/基于 tracing 的结构化日志系统（宏 + 文件滚动 + JSONL 查询）.md",
           "name": "基于 tracing 的结构化日志系统（宏 + 文件滚动 + JSONL 查询）",
           "title": "基于 tracing 的结构化日志系统（宏 + 文件滚动 + JSONL 查询）",
-          "bytes": 10599
+          "bytes": 10601
         },
         {
           "tier": "C-知识",
@@ -5196,7 +5196,7 @@
           "path": "12-基础设施与部署/C-知识/工具执行日志消费者.md",
           "name": "工具执行日志消费者",
           "title": "工具执行日志消费者",
-          "bytes": 17700
+          "bytes": 17734
         },
         {
           "tier": "C-知识",
@@ -5273,7 +5273,7 @@
           "path": "12-基础设施与部署/C-知识/日志系统.md",
           "name": "日志系统",
           "title": "日志系统",
-          "bytes": 20484
+          "bytes": 20524
         },
         {
           "tier": "C-知识",

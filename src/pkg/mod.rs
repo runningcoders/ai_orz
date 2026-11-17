@@ -7,11 +7,11 @@ pub mod collaboration_pressure;
 pub mod credential;
 pub mod cron;
 pub mod crypto;
-pub mod daily_jsonl;
 pub mod external;
 pub mod git_workspace;
 pub mod http;
 pub mod identity_dataset;
+pub mod jsonl;
 pub mod jwt;
 pub mod lark_integration;
 pub mod logging;
@@ -97,8 +97,6 @@ pub async fn init_all(config: &AppConfig) {
     sys_info!("All pkg modules initialized");
 }
 
-#[cfg(test)]
-mod daily_jsonl_test;
 #[cfg(test)]
 mod logging_test;
 #[cfg(test)]

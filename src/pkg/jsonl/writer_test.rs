@@ -1,6 +1,6 @@
 //! Daily JSONL 单元测试
 
-use crate::pkg::daily_jsonl::DailyJsonlWriter;
+use crate::pkg::jsonl::writer::DailyJsonlWriter;
 use serde::{Deserialize, Serialize};
 use tempfile::tempdir;
 

@@ -456,3 +456,303 @@ fn log_call_appends_without_line_number_and_stays_queryable() {
     }
     assert_eq!(total_lines, 5);
 }
+
+// ==================== 旁车索引（sidecar index）====================
+
+fn has_sidecar_index(trace_dir: &std::path::Path) -> bool {
+    std::fs::read_dir(trace_dir).unwrap().any(|entry| {
+        entry
+            .unwrap()
+            .path()
+            .extension()
+            .is_some_and(|ext| ext == "idx")
+    })
+}
+
+fn sidecar_test_entry(call_id: &str, started_at: u64) -> ToolCallEntry {
+    ToolCallEntry {
+        call_id: call_id.to_string(),
+        tool_id: "idx-tool".to_string(),
+        tool_name: "Idx Tool".to_string(),
+        agent_id: Some("idx-agent".to_string()),
+        task_id: None,
+        project_id: None,
+        started_at,
+        finished_at: started_at + 100,
+        duration_ms: 100,
+        input: json!({}),
+        output: Some(json!({"ok": true})),
+        error: None,
+        status: ToolCallStatus::Completed,
+        metadata: json!(null),
+    }
+}
+
+/// 索引自包含过滤字段 + 字节坐标，且不含 input/output 原文（轻量性）
+#[test]
+fn sidecar_index_is_lightweight_and_queryable() {
+    let temp_dir = tempdir().unwrap();
+    let base = temp_dir.path().to_path_buf();
+    let logger = ToolCallLogger::new(base.clone());
+    let secret = "UNIQUE_PAYLOAD_SENTINEL_9f3a";
+
+    logger
+        .log_call(ToolCallEntry {
+            input: json!({ "blob": secret }),
+            output: Some(json!({ "blob": secret })),
+            ..sidecar_test_entry("idx-call", 5000)
+        })
+        .unwrap();
+
+    let trace_dir = base.join("tools").join("call_trace");
+    let idx_files: Vec<_> = std::fs::read_dir(&trace_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "idx"))
+        .collect();
+    assert_eq!(idx_files.len(), 1, "应为原文生成旁车索引");
+    let idx_content = std::fs::read_to_string(&idx_files[0]).unwrap();
+    assert!(
+        !idx_content.contains(secret),
+        "索引不应包含 input/output 原文"
+    );
+    assert!(
+        idx_content.contains("idx-call"),
+        "索引应包含过滤字段 call_id"
+    );
+
+    let found = logger.read_call_by_id("idx-call").unwrap().unwrap();
+    assert_eq!(found.input, json!({ "blob": secret }));
+}
+
+/// 存量无索引文件（绕过 log_call 直接写原文）查询时惰性重建索引
+#[test]
+fn query_rebuilds_index_for_legacy_jsonl_without_index() {
+    let temp_dir = tempdir().unwrap();
+    let base = temp_dir.path().to_path_buf();
+    let logger = ToolCallLogger::new(base.clone());
+    let entry = sidecar_test_entry("legacy-call", 1000);
+
+    // 绕过 log_call，模拟历史数据 / 其它写入方直接落原文
+    logger.writer().append_no_position(&entry).unwrap();
+
+    let trace_dir = base.join("tools").join("call_trace");
+    assert!(!has_sidecar_index(&trace_dir), "初始应无索引");
+
+    let found = logger.read_call_by_id("legacy-call").unwrap().unwrap();
+    assert_eq!(found.call_id, "legacy-call");
+    assert!(has_sidecar_index(&trace_dir), "查询后应重建出索引");
+}
+
+/// 索引落后（原文新增但索引没跟上）时增量补齐，不漏新行
+#[test]
+fn query_backfills_lagging_index_incrementally() {
+    let temp_dir = tempdir().unwrap();
+    let base = temp_dir.path().to_path_buf();
+    let logger = ToolCallLogger::new(base.clone());
+
+    logger
+        .log_call(sidecar_test_entry("lagged-a", 1000))
+        .unwrap();
+    logger
+        .log_call(sidecar_test_entry("lagged-b", 2000))
+        .unwrap();
+    // 直接写原文，制造「原文有、索引无」的落后窗口
+    logger
+        .writer()
+        .append_no_position(&sidecar_test_entry("lagged-c", 3000))
+        .unwrap();
+
+    let results = logger
+        .query_calls(super::logger::ToolCallQuery {
+            agent_id: Some("idx-agent".to_string()),
+            limit: Some(10),
+            ..Default::default()
+        })
+        .unwrap();
+    let ids: Vec<&str> = results.iter().map(|e| e.call_id.as_str()).collect();
+    assert_eq!(ids, vec!["lagged-c", "lagged-b", "lagged-a"]);
+}
+
+/// 索引含坏行时全量重建，不吞掉任何一条记录
+#[test]
+fn query_rebuilds_corrupted_index_from_scratch() {
+    use std::io::Write;
+
+    let temp_dir = tempdir().unwrap();
+    let base = temp_dir.path().to_path_buf();
+    let logger = ToolCallLogger::new(base.clone());
+
+    logger
+        .log_call(sidecar_test_entry("corrupt-a", 1000))
+        .unwrap();
+    logger
+        .log_call(sidecar_test_entry("corrupt-b", 2000))
+        .unwrap();
+
+    let trace_dir = base.join("tools").join("call_trace");
+    let idx_path = std::fs::read_dir(&trace_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| path.extension().is_some_and(|ext| ext == "idx"))
+        .unwrap();
+    {
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&idx_path)
+            .unwrap();
+        file.write_all(b"NOT_VALID_JSON\n").unwrap();
+    }
+
+    let found = logger.read_call_by_id("corrupt-a").unwrap().unwrap();
+    assert_eq!(found.call_id, "corrupt-a");
+    let found_b = logger.read_call_by_id("corrupt-b").unwrap().unwrap();
+    assert_eq!(found_b.call_id, "corrupt-b");
+}
+
+/// 并发写入：原文与索引在同一把锁内追加，索引行顺序/数量必须与原文严格对应，
+/// 不丢不重（watermark 不回退）。这是 append_with_index 的核心不变量。
+#[test]
+fn sidecar_concurrent_writes_keep_index_in_sync() {
+    use std::sync::Arc;
+
+    let temp_dir = tempdir().unwrap();
+    let base = temp_dir.path().to_path_buf();
+    let logger = Arc::new(ToolCallLogger::new(base.clone()));
+    let threads = 8;
+    let per_thread = 12; // 总数 96 < MAX_TOOL_CALL_QUERY_LIMIT(100)，一次查询可全取回
+
+    let mut handles = Vec::new();
+    for t in 0..threads {
+        let logger = Arc::clone(&logger);
+        handles.push(std::thread::spawn(move || {
+            for i in 0..per_thread {
+                let id = format!("conc-{t}-{i}");
+                logger
+                    .log_call(sidecar_test_entry(&id, (t * per_thread + i) as u64))
+                    .unwrap();
+            }
+        }));
+    }
+    for h in handles {
+        h.join().unwrap();
+    }
+
+    let expected = threads * per_thread;
+    let results = logger
+        .query_calls(super::logger::ToolCallQuery {
+            agent_id: Some("idx-agent".to_string()),
+            limit: Some(100),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(
+        results.len(),
+        expected,
+        "并发写入后查询应拿回全部记录，不丢不重"
+    );
+
+    let trace_dir = base.join("tools").join("call_trace");
+    let idx_path = std::fs::read_dir(&trace_dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| p.extension().is_some_and(|ext| ext == "idx"))
+        .unwrap();
+    let idx_lines = std::fs::read_to_string(idx_path)
+        .unwrap()
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .count();
+    assert_eq!(idx_lines, expected, "索引行数必须与原文行数严格一致");
+}
+
+/// 跨天分片：两个日期的原文各自重建索引，查询应合并全部命中并按 started_at 排序
+#[test]
+fn sidecar_query_merges_across_date_shards() {
+    let temp_dir = tempdir().unwrap();
+    let base = temp_dir.path().to_path_buf();
+    let logger = ToolCallLogger::new(base.clone());
+    let trace_dir = base.join("tools").join("call_trace");
+    std::fs::create_dir_all(&trace_dir).unwrap();
+
+    // 直接写两个日期的原文（绕过 log_call 的「当天」约束），触发查询侧惰性重建
+    for (date, id, ts) in [
+        ("20260101", "day1-old", 100u64),
+        ("20260102", "day2-new", 200u64),
+    ] {
+        let entry = sidecar_test_entry(id, ts);
+        std::fs::write(
+            trace_dir.join(format!("{date}.jsonl")),
+            format!("{}\n", serde_json::to_string(&entry).unwrap()),
+        )
+        .unwrap();
+    }
+
+    let results = logger
+        .query_calls(super::logger::ToolCallQuery {
+            agent_id: Some("idx-agent".to_string()),
+            limit: Some(10),
+            ..Default::default()
+        })
+        .unwrap();
+    let ids: Vec<&str> = results.iter().map(|e| e.call_id.as_str()).collect();
+    assert_eq!(
+        ids,
+        vec!["day2-new", "day1-old"],
+        "跨天应按 started_at 倒序合并"
+    );
+}
+
+/// limit=0 / 无命中：边界返回空，不 panic、不误建索引数据
+#[test]
+fn sidecar_query_zero_limit_and_empty_result() {
+    let temp_dir = tempdir().unwrap();
+    let base = temp_dir.path().to_path_buf();
+    let logger = ToolCallLogger::new(base.clone());
+    logger
+        .log_call(sidecar_test_entry("some-call", 1000))
+        .unwrap();
+
+    let zero = logger
+        .query_calls(super::logger::ToolCallQuery {
+            agent_id: Some("idx-agent".to_string()),
+            limit: Some(0),
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(zero.is_empty(), "limit=0 应返回空");
+
+    let no_match = logger
+        .query_calls(super::logger::ToolCallQuery {
+            call_id: Some("nonexistent".to_string()),
+            limit: Some(10),
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(no_match.is_empty(), "无命中应返回空");
+}
+
+/// 索引文件被删后：下次查询自动重建，行为与从未有过索引一致
+#[test]
+fn sidecar_rebuilds_after_index_file_deleted() {
+    let temp_dir = tempdir().unwrap();
+    let base = temp_dir.path().to_path_buf();
+    let logger = ToolCallLogger::new(base.clone());
+    logger
+        .log_call(sidecar_test_entry("persist-call", 1000))
+        .unwrap();
+    assert!(logger.read_call_by_id("persist-call").unwrap().is_some());
+
+    let trace_dir = base.join("tools").join("call_trace");
+    for entry in std::fs::read_dir(&trace_dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_some_and(|ext| ext == "idx") {
+            std::fs::remove_file(&path).unwrap();
+        }
+    }
+    assert!(!has_sidecar_index(&trace_dir), "索引应已被删除");
+
+    let found = logger.read_call_by_id("persist-call").unwrap().unwrap();
+    assert_eq!(found.call_id, "persist-call");
+    assert!(has_sidecar_index(&trace_dir), "查询后应自动重建索引");
+}

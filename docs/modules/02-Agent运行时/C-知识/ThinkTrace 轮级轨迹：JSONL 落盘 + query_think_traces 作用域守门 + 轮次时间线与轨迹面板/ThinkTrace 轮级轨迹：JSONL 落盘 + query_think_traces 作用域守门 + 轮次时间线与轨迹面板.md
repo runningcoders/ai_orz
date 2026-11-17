@@ -4,7 +4,7 @@ name: ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守�
 category: Agent 运行时
 scope:
   - 'src/pkg/think_trace.rs'
-  - 'src/pkg/daily_jsonl.rs'
+  - 'src/pkg/jsonl/writer.rs'
   - 'src/service/domain/runtime/think_trace_query.rs'
   - 'src/service/domain/runtime/mod.rs'
   - 'src/handlers/hr/agent/query_think_traces.rs'

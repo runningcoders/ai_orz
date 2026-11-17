@@ -8,14 +8,13 @@
 //! `tool_id` 只是 entry 的字段。拉平后未带 `tool_id` 的查询不再退化成全量目录枚举。
 
 use std::fs;
-use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::Result;
 use once_cell::sync::OnceCell;
 
 use super::entry::{ToolCallEntry, ToolCallStatus};
-use crate::pkg::daily_jsonl::DailyJsonlWriter;
+use crate::pkg::jsonl::writer::DailyJsonlWriter;
 use crate::pkg::paths;
 
 pub const MAX_TOOL_CALL_QUERY_LIMIT: usize = 100;
@@ -82,18 +81,37 @@ impl ToolCallLogger {
         DailyJsonlWriter::new(self.trace_dir())
     }
 
-    /// Log a tool call entry to the daily JSONL file
+    /// Log a tool call entry to the daily JSONL file and its sidecar index.
     ///
     /// `tool_id` 仅作为 entry 字段落盘，不参与路径（见模块级边界决策）。
     ///
-    /// 不返回「日期 + 行号」：call trace 的检索键是 `call_id`，行号定位用不上，
-    /// 而每次写入都数一遍当日文件行数会把成本放大成 O(行数²)（拉平后当日所有工具
-    /// 共用一个文件，行数远超按 tool 分目录时期）。需要位置坐标的测试请直接用
-    /// `writer().append()`。
+    /// 【写时维护索引】原文 append 与索引 append 必须共成败边界：原文写入成功后
+    /// 立即在**同一把 `APPEND_LOCK` 临界区**内追加索引行（offset 由写入前的长度
+    /// 得到，严格对应本行位置）。索引写失败只告警、不传播——原文已落盘，索引
+    /// watermark 至多落后，读路径会增量补齐（见 `sidecar_index::ensure_fresh`）。
     pub fn log_call(&self, entry: ToolCallEntry) -> Result<()> {
         let writer = self.writer();
-        writer.append_no_position(&entry)?;
+        let sidecar = self.sidecar_index();
+        let call_id = entry.call_id.clone();
+        let entry_ref = &entry;
+        // 原文 append + 索引 append 在 append_with_index 内共用同一把 APPEND_LOCK，
+        // 保证索引行顺序与原文行顺序严格一致；索引写失败只告警、不传播。
+        writer.append_with_index(entry_ref, |date, offset, len| {
+            if let Err(err) = sidecar.append_record(date, entry_ref, offset, len) {
+                log_warn!(
+                    "工具调用 trace 索引追加失败，将在下次查询补齐: date={}, call_id={}, err={}",
+                    date,
+                    call_id,
+                    err
+                );
+            }
+            Ok(())
+        })?;
         Ok(())
+    }
+
+    fn sidecar_index(&self) -> super::sidecar_index::SidecarIndex {
+        super::sidecar_index::SidecarIndex::new(self.trace_dir())
     }
 
     /// Read a logged tool call entry by date and line number
@@ -118,123 +136,50 @@ impl ToolCallLogger {
 
     /// Query logged tool call entries by common fields.
     ///
-    /// First implementation intentionally scans JSONL files directly. It is
-    /// simple and storage-detail-local; if query volume grows, add an index
-    /// without changing this public API.
+    /// 【索引路径】先在旁车索引上过滤/排序/截断，再按字节坐标 seek 回原文读命中行。
+    /// 索引缺失或落后时由 `sidecar_index` 增量重建（这也是历史无索引文件的兼容路径），
+    /// 因此本方法的语义与文件扫描实现完全一致，只是不再全量反序列化 input/output。
     pub fn query_calls(&self, query: ToolCallQuery) -> Result<Vec<ToolCallEntry>> {
-        let trace_dir = self.trace_dir();
-        let mut entries = Vec::new();
-        if trace_dir.exists() {
-            for path in jsonl_files(&trace_dir)? {
-                read_matching_entries(&path, &query, &mut entries)?;
+        let limit = query.limit.unwrap_or(1);
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let hits = self.sidecar_index().query(&query)?;
+        let mut entries = Vec::with_capacity(hits.len());
+        for hit in hits {
+            match self.read_at_offset(&hit.date, hit.offset, hit.len) {
+                Ok(entry) => entries.push(entry),
+                // 索引指向的行损坏/被清理：跳过并告警，不让一次坏行拖垮整次查询。
+                // 它与文件扫描版「单行损坏跳过」的容错口径一致。
+                Err(err) => log_warn!(
+                    "跳过无法读取的工具调用轨迹行: date={}, offset={}, err={}",
+                    hit.date,
+                    hit.offset,
+                    err
+                ),
+            }
+            // 回读成功后才计入配额：坏行命中被跳过后由后续候选补位，返回满 limit 条。
+            if entries.len() >= limit {
+                break;
             }
         }
-
-        entries.sort_by(|a, b| {
-            b.started_at
-                .cmp(&a.started_at)
-                .then_with(|| b.finished_at.cmp(&a.finished_at))
-                .then_with(|| b.call_id.cmp(&a.call_id))
-        });
-
-        let limit = query.limit.unwrap_or(1);
-        if limit > MAX_TOOL_CALL_QUERY_LIMIT {
-            anyhow::bail!(
-                "tool call query limit exceeds maximum {}",
-                MAX_TOOL_CALL_QUERY_LIMIT
-            );
-        }
-        entries.truncate(limit);
         Ok(entries)
+    }
+
+    /// 按字节坐标精确读取一行并反序列化（O(命中行载荷)，不扫整文件）
+    fn read_at_offset(&self, date: &str, offset: u64, len: u64) -> Result<ToolCallEntry> {
+        use std::io::{Read, Seek, SeekFrom};
+
+        let path = self.trace_dir().join(format!("{date}.jsonl"));
+        let mut file = fs::File::open(path)?;
+        file.seek(SeekFrom::Start(offset))?;
+        let mut buf = vec![0u8; len as usize];
+        file.read_exact(&mut buf)?;
+        let line = std::str::from_utf8(&buf)?.trim_end_matches('\n');
+        Ok(serde_json::from_str(line)?)
     }
 
     fn trace_dir(&self) -> PathBuf {
         paths::tool_call_trace_dir(&self.base_data_path)
     }
-}
-
-fn jsonl_files(trace_dir: &Path) -> Result<Vec<PathBuf>> {
-    let mut files = Vec::new();
-    for entry in fs::read_dir(trace_dir)? {
-        let entry = entry?;
-        if entry.file_type()?.is_file()
-            && entry
-                .path()
-                .extension()
-                .is_some_and(|extension| extension == "jsonl")
-        {
-            files.push(entry.path());
-        }
-    }
-    files.sort();
-    Ok(files)
-}
-
-fn read_matching_entries(
-    path: &Path,
-    query: &ToolCallQuery,
-    entries: &mut Vec<ToolCallEntry>,
-) -> Result<()> {
-    let file = fs::File::open(path)?;
-    let reader = BufReader::new(file);
-    for line in reader.lines() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        // 单行损坏（历史遗留的并发粘连行等）不应让整次查询失败：跳过并告警，
-        // 其余记录照常返回。写入侧已保证「一条记录 = 一次 write」（见
-        // `DailyJsonlWriter::write_lines`），这里只是对既有坏数据的降级容错。
-        let entry: ToolCallEntry = match serde_json::from_str(&line) {
-            Ok(entry) => entry,
-            Err(err) => {
-                log_warn!(
-                    "跳过无法解析的工具调用轨迹行: file={}, err={}",
-                    path.display(),
-                    err
-                );
-                continue;
-            }
-        };
-        if matches_query(&entry, query) {
-            entries.push(entry);
-        }
-    }
-    Ok(())
-}
-
-fn matches_query(entry: &ToolCallEntry, query: &ToolCallQuery) -> bool {
-    query
-        .call_id
-        .as_ref()
-        .is_none_or(|call_id| entry.call_id == *call_id)
-        && query
-            .agent_id
-            .as_ref()
-            .is_none_or(|agent_id| entry.agent_id.as_deref() == Some(agent_id.as_str()))
-        && query.agent_ids.as_ref().is_none_or(|agent_ids| {
-            entry
-                .agent_id
-                .as_deref()
-                .is_some_and(|agent_id| agent_ids.iter().any(|id| id == agent_id))
-        })
-        && query
-            .project_id
-            .as_ref()
-            .is_none_or(|project_id| entry.project_id.as_deref() == Some(project_id.as_str()))
-        && query
-            .task_id
-            .as_ref()
-            .is_none_or(|task_id| entry.task_id.as_deref() == Some(task_id.as_str()))
-        && query
-            .tool_id
-            .as_ref()
-            .is_none_or(|tool_id| entry.tool_id == *tool_id)
-        && query.status.is_none_or(|status| entry.status == status)
-        && query
-            .started_after
-            .is_none_or(|started_after| entry.started_at >= started_after)
-        && query
-            .started_before
-            .is_none_or(|started_before| entry.started_at <= started_before)
 }

@@ -39,6 +39,88 @@ impl DailyJsonlWriter {
         }
     }
 
+    /// 在 JSONL 追加锁的临界区内执行闭包。
+    ///
+    /// 供旁车索引的「读时补齐」使用：补齐要重扫原文尾部并追加索引，必须与
+    /// 写入侧的「原文 append + 索引 append」互斥，否则会读到半行或与写入交错。
+    /// 注意：闭包内**不得**再调用本 writer 的 append 方法（锁不可重入）。
+    pub fn with_append_lock<R>(f: impl FnOnce() -> R) -> R {
+        let _guard = APPEND_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        f()
+    }
+
+    /// 追加一条，并在**同一把 `APPEND_LOCK` 临界区内**回调 `on_appended`。
+    ///
+    /// 供「写时维护旁车索引」使用：回调收到 (date, offset, len)，offset 是该行
+    /// 在当日文件中的起始字节位置（持锁读取，与实际写入严格对应）。原文 append
+    /// 与回调（写索引）被同一把锁包住，保证并发写入时索引行顺序与原文行顺序一致——
+    /// 若分两次加锁，两次写入的索引行会交错乱序，watermark 回退并重复补齐。
+    ///
+    /// 回调内部**不得**再获取 `APPEND_LOCK`（不可重入）；写索引_directly_打开文件即可。
+    pub fn append_with_index<T: Serialize, F>(&self, entry: &T, on_appended: F) -> Result<String>
+    where
+        F: FnOnce(&str, u64, u64) -> Result<()>,
+    {
+        let _guard = APPEND_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let date = self.current_date_path();
+        let path = self.file_path_for_date(&date);
+        let offset = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        let json = serde_json::to_string(entry)?;
+        let line_len = (json.len() + 1) as u64; // +1 for '\n'
+        self.write_lines_inner(&path, std::slice::from_ref(entry))?;
+        on_appended(&date, offset, line_len)?;
+        Ok(date)
+    }
+
+    /// 追加一批，并在**同一把 `APPEND_LOCK` 临界区内**完成「数行 + 写原文 + 索引回调」。
+    ///
+    /// 与 [`Self::append_with_index`] 的差别：本方法额外产出 `line_number`（0-based 物理
+    /// 行号），供需要「日期 + 行号」引用链的 trace（memory）使用。数行、取字节偏移、
+    /// 逐行写盘、索引回调全在同一锁内，保证三者严格对应；分两次加锁会让并发写入时
+    /// 行号/偏移与索引行错位。
+    ///
+    /// 返回 `(date, first_line_number)`：每条的坐标由回调按顺序给出
+    /// `(date, line_number, offset, len)`。单条场景传 `std::slice::from_ref(entry)` 即可。
+    /// 回调内部**不得**再获取 `APPEND_LOCK`（不可重入）。
+    pub fn append_with_index_position<T: Serialize, F>(
+        &self,
+        entries: &[T],
+        mut on_appended: F,
+    ) -> Result<(String, usize)>
+    where
+        F: FnMut(&str, usize, u64, u64) -> Result<()>,
+    {
+        let _guard = APPEND_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let date = self.current_date_path();
+        let path = self.file_path_for_date(&date);
+        let first_line_number = self.count_lines(&path)?;
+        let mut offset = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+
+        // 预序列化，逐条拼行（+'\n'），后续按序写出并用同一份长度算坐标
+        let mut lines: Vec<String> = Vec::with_capacity(entries.len());
+        for entry in entries {
+            let mut line = serde_json::to_string(entry)?;
+            line.push('\n');
+            lines.push(line);
+        }
+
+        let mut file = OpenOptions::new().create(true).append(true).open(&path)?;
+        for (i, line) in lines.iter().enumerate() {
+            let len = line.len() as u64;
+            file.write_all(line.as_bytes())?;
+            on_appended(&date, first_line_number + i, offset, len)?;
+            offset += len;
+        }
+        file.flush()?;
+        Ok((date, first_line_number))
+    }
+
     /// Get the current date path in YYYYMMDD format
     fn current_date_path(&self) -> String {
         let now = chrono::Local::now();
@@ -77,7 +159,12 @@ impl DailyJsonlWriter {
         let _guard = APPEND_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        self.write_lines_inner(path, entries)
+    }
 
+    /// 不加锁的写盘内核。仅供已持有 `APPEND_LOCK` 的调用方使用（如
+    /// [`Self::append_with_index`]），避免 Mutex 重入死锁。
+    fn write_lines_inner<T: Serialize>(&self, path: &Path, entries: &[T]) -> Result<()> {
         // Open file in append mode, create if it doesn't exist
         let mut file = OpenOptions::new().create(true).append(true).open(path)?;
 
@@ -100,12 +187,16 @@ impl DailyJsonlWriter {
     /// 「日期 + 行号」这个定位坐标时才用本方法（例如记忆 trace 要把位置回写索引）；
     /// 只落盘、后续按业务键检索的场景请用 [`Self::append_no_position`]。
     pub fn append<T: Serialize>(&self, entry: &T) -> Result<(String, usize)> {
+        // 数行 + 写盘绑进同一把锁：否则两个并发 append 会数到同一行号（行号重复），
+        // 或批次数行后、写入前有别的写入插入导致整批行号错位。
+        let _guard = APPEND_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let date = self.current_date_path();
         let path = self.file_path_for_date(&date);
 
-        // Count existing lines to get the next line number (0-based)
         let line_number = self.count_lines(&path)?;
-        self.write_lines(&path, std::slice::from_ref(entry))?;
+        self.write_lines_inner(&path, std::slice::from_ref(entry))?;
 
         Ok((date, line_number))
     }
@@ -134,10 +225,14 @@ impl DailyJsonlWriter {
     /// 约定：整批共用**同一个日期**（取批次开始时的当日），即使写入跨越午夜也不拆文件
     /// —— 位置坐标必须与 `date_filename` 自洽，拆开反而会让行号指向错误的文件。
     pub fn append_batch<T: Serialize>(&self, entries: &[T]) -> Result<(String, usize)> {
+        // 同 append：数行与写入必须在同一把锁内，保证整批行号与写入顺序一致。
+        let _guard = APPEND_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let date = self.current_date_path();
         let path = self.file_path_for_date(&date);
         let first_line_number = self.count_lines(&path)?;
-        self.write_lines(&path, entries)?;
+        self.write_lines_inner(&path, entries)?;
         Ok((date, first_line_number))
     }
 
