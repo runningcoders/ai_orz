@@ -16,7 +16,7 @@ source_files:
     - src/pkg/tool_tracing/mod.rs
     - src/pkg/tool_tracing/entry.rs
     - src/pkg/tool_tracing/logger.rs
-    - src/pkg/daily_jsonl.rs
+    - src/pkg/jsonl/writer.rs
     - docs/modules/12-基础设施与部署/A-设计/logging_design.md
     - docs/modules/12-基础设施与部署/C-知识/日志系统.md
 ---
@@ -46,7 +46,7 @@ source_files:
 | `src/pkg/tool_tracing/mod.rs` | 工具调用追踪模块入口 |
 | `src/pkg/tool_tracing/logger.rs` | 基于 `DailyJsonlWriter` 的每日 JSONL 文件持久化工具调用记录，提供查询 API |
 | `src/pkg/tool_tracing/entry.rs` | `ToolCallEntry` 结构体与外部协议工具的 trace 脱敏函数 `redact_trace_values_for_tool` |
-| `src/pkg/daily_jsonl.rs` | 通用每日 JSONL 写入器（被工具追踪复用） |
+| `src/pkg/jsonl/writer.rs` | 通用每日 JSONL 写入器（被工具追踪复用） |
 
 ## 3. 架构与设计约定
 

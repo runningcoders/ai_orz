@@ -331,6 +331,13 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
     // path / query 字段的字符串名（下沉到这里供多个片段共用）
     let path_idents_str: Vec<String> = path_idents.iter().map(|i| i.to_string()).collect();
     let query_idents_str: Vec<String> = query_idents.iter().map(|i| i.to_string()).collect();
+    // 声明为 String / Option<String> 的 query 字段：不做任何字面量类型推断，一律取原始字符串。
+    // 见 build_query_value 内注释（32 位纯十进制 TimeId 曾被 f64 推断读成 2.02e31）。
+    let query_string_idents_str: Vec<String> = query_fields
+        .iter()
+        .filter(|(_, ty)| is_string_typed(ty))
+        .map(|(i, _)| i.to_string())
+        .collect();
 
     // 为非 flatten query 字段生成提取代码（所有分支共用，故提到 match 之前）
     let extract_query_fields = {
@@ -372,6 +379,15 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
     // 不能用 `axum::extract::Query`：其底层 serde_urlencoded 不支持 `#[serde(flatten)]`，
     // 对 `Option<usize>` 之类的分页参数会报 `invalid type: string "500", expected usize`，
     // 导致带 limit 的分页 GET（如 agents 列表预载传 limit=500）解析失败。
+    //
+    // **推断规则（判别职责归目标类型，不归字面量形态）**：query string 里全是字符串，
+    // 「长得像数字」不足以判定它是数字——`task_id` 这类 32 位纯十进制 `TimeId`
+    // （`YYYYMMDDHHMMSS` + 18 位十六进制，前后缀全为十进制数字的概率
+    // `(10/16)^18 ≈ 1/4722`）会被 `parse::<f64>()` 读成 `2.026111710461351e+31`，
+    // 随后在 `serde_json::from_value::<String>` 处报
+    // `invalid type: floating point ..., expected a string`（PR #11 backend CI 实锤）。
+    // 因此对**声明类型为 String / Option<String> 的字段强制原样回填**，把
+    // bool / i64 / f64 推断限定在真正的数值语义字段上。
     let build_query_value = quote! {
         let __query_value: serde_json::Value = if let Some(__qs) = __raw_query.as_deref() {
             let __query_map: std::collections::HashMap<String, String> =
@@ -395,6 +411,16 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
                 };
                 __obj.insert(__k.clone(), __parsed);
             }
+            // 类型驱动的原样回填：声明为 String / Option<String> 的 query 字段一律用
+            // 原始字符串覆盖推断结果（含 "500" 这类整数形态）。字面量形态不承担判别职责。
+            #(
+                if let Some(__raw) = __query_map.get(#query_string_idents_str) {
+                    __obj.insert(
+                        #query_string_idents_str.to_string(),
+                        serde_json::Value::String(__raw.clone()),
+                    );
+                }
+            )*
             serde_json::Value::Object(__obj)
         } else {
             serde_json::Value::Object(serde_json::Map::new())
@@ -620,6 +646,46 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
 
     expanded.into()
 }
+/// 字段类型是否属于「字符串语义」（`String` / `Option<String>` / 全限定同名写法）。
+///
+/// 用于让 query 参数的类型推断对字符串字段让路：query string 本身无类型，
+/// 若按字面量形态（全十进制）推断成数字，`{prefix}_{32 位十六进制}` 一类的标识符
+/// 在十六进制后缀恰好全为十进制数字时会被读成浮点数而反序列化成 String 失败
+/// （概率 `(10/16)^18 ≈ 1/4722`，PR #11 backend CI 已实证）。
+fn is_string_typed(ty: &syn::Type) -> bool {
+    fn last_segment_is_string(ty: &syn::Type) -> bool {
+        match ty {
+            syn::Type::Path(tp) => tp
+                .path
+                .segments
+                .last()
+                .is_some_and(|seg| seg.ident == "String"),
+            _ => false,
+        }
+    }
+
+    if last_segment_is_string(ty) {
+        return true;
+    }
+    // Option<String> / std::option::Option<String>
+    let syn::Type::Path(tp) = ty else {
+        return false;
+    };
+    let Some(seg) = tp.path.segments.last() else {
+        return false;
+    };
+    if seg.ident != "Option" {
+        return false;
+    }
+    let syn::PathArguments::AngleBracketed(args) = &seg.arguments else {
+        return false;
+    };
+    match args.args.first() {
+        Some(syn::GenericArgument::Type(inner)) => last_segment_is_string(inner),
+        _ => false,
+    }
+}
+
 /// Collect field ids that have #[param(source = "path")] or #[param(source = "query")] attribute by parsing the source file.
 ///
 /// Returns `(path_fields, query_fields, flattened_query_fields, total_named_fields)`. `total_named_fields` counts all

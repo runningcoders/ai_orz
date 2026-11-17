@@ -825,3 +825,148 @@ fn flush_cerebellum_patch_drains_run_buffer_and_reports_count() {
     );
     assert_eq!(again, 0, "同一条留痕不得被补写两次");
 }
+
+// ==================== 旁车索引（sidecar index）====================
+
+/// 索引轻量：不含 rounds/reasoning 大载荷，但含过滤字段
+#[test]
+fn sidecar_think_index_is_lightweight_and_queryable() {
+    let base = tempdir().unwrap();
+    let date = today();
+    let mut e = entry("think-idx-run", "agent-idx", 1_000);
+    e.rounds = vec![ThinkTraceRound {
+        assistant_text: Some("UNIQUE_THINK_ROUND_SENTINEL_5b1f".to_string()),
+        reasoning: vec!["deep reasoning payload".to_string()],
+        ..Default::default()
+    }];
+    write_entry(base.path(), "agent-idx", &date, &e);
+
+    // 直接写原文（无索引）→ 查询触发惰性重建
+    let result = query(
+        base.path(),
+        ThinkTraceQuery {
+            agent_id: Some("agent-idx".to_string()),
+            run_id: Some("think-idx-run".to_string()),
+            ..Default::default()
+        },
+    );
+    assert_eq!(result.items.len(), 1);
+    assert_eq!(
+        result.items[0].rounds[0].assistant_text.as_deref(),
+        Some("UNIQUE_THINK_ROUND_SENTINEL_5b1f")
+    );
+
+    let trace_dir = paths::agent_think_trace_dir(base.path(), "agent-idx");
+    let idx_files: Vec<_> = fs::read_dir(&trace_dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|ext| ext == "idx"))
+        .collect();
+    assert_eq!(idx_files.len(), 1);
+    let idx_content = fs::read_to_string(&idx_files[0]).unwrap();
+    assert!(
+        !idx_content.contains("UNIQUE_THINK_ROUND_SENTINEL_5b1f"),
+        "索引不应包含 rounds/reasoning 大载荷"
+    );
+    assert!(idx_content.contains("think-idx-run"), "索引应含 run_id");
+}
+
+/// 索引落后时增量补齐 + merge 语义不变（partial + final 合并成一整条）
+#[test]
+fn sidecar_think_backfills_and_preserves_merge() {
+    let base = tempdir().unwrap();
+    let date = today();
+
+    // 先写 partial（无索引）→ 查询建索引
+    let mut partial = entry("think-lag-run", "agent-lag", 1_000);
+    partial.partial = true;
+    partial.rounds = vec![ThinkTraceRound {
+        round: 0,
+        assistant_text: Some("round-0".to_string()),
+        ..Default::default()
+    }];
+    write_entry(base.path(), "agent-lag", &date, &partial);
+    let first = query(
+        base.path(),
+        ThinkTraceQuery {
+            agent_id: Some("agent-lag".to_string()),
+            ..Default::default()
+        },
+    );
+    assert_eq!(first.items.len(), 1);
+
+    // 直接追加 final 行（制造索引落后），含本片段 rounds
+    let mut final_line = entry("think-lag-run", "agent-lag", 2_000);
+    final_line.partial = false;
+    final_line.rounds = vec![ThinkTraceRound {
+        round: 1,
+        assistant_text: Some("round-1".to_string()),
+        ..Default::default()
+    }];
+    write_entry(base.path(), "agent-lag", &date, &final_line);
+
+    let result = query(
+        base.path(),
+        ThinkTraceQuery {
+            agent_id: Some("agent-lag".to_string()),
+            run_id: Some("think-lag-run".to_string()),
+            ..Default::default()
+        },
+    );
+    assert_eq!(result.total, 1, "同一 run 的 partial/final 应合并为一条");
+    assert_eq!(result.items.len(), 1);
+    // think 的既定语义：final 行替换本片段 partial 的 rounds（避免重复计数），
+    // 所以这里验证「落后补齐的 final 行生效」，而非 partial + final 轮次叠加。
+    let texts: Vec<_> = result.items[0]
+        .rounds
+        .iter()
+        .filter_map(|r| r.assistant_text.as_deref())
+        .collect();
+    assert!(texts.contains(&"round-1"), "落后补齐的 final 行应生效");
+}
+
+/// 索引坏行时全量重建，不吞记录
+#[test]
+fn sidecar_think_rebuilds_corrupted_index() {
+    use std::io::Write;
+
+    let base = tempdir().unwrap();
+    let date = today();
+    write_entry(
+        base.path(),
+        "agent-corrupt",
+        &date,
+        &entry("corrupt-run", "agent-corrupt", 1_000),
+    );
+    // 建索引
+    query(
+        base.path(),
+        ThinkTraceQuery {
+            agent_id: Some("agent-corrupt".to_string()),
+            ..Default::default()
+        },
+    );
+
+    // 往索引追加坏行
+    let trace_dir = paths::agent_think_trace_dir(base.path(), "agent-corrupt");
+    let idx_path = fs::read_dir(&trace_dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| p.extension().is_some_and(|ext| ext == "idx"))
+        .unwrap();
+    {
+        let mut f = OpenOptions::new().append(true).open(&idx_path).unwrap();
+        f.write_all(b"NOT_VALID_JSON\n").unwrap();
+    }
+
+    let result = query(
+        base.path(),
+        ThinkTraceQuery {
+            agent_id: Some("agent-corrupt".to_string()),
+            run_id: Some("corrupt-run".to_string()),
+            ..Default::default()
+        },
+    );
+    assert_eq!(result.items.len(), 1, "坏行应触发全量重建，不吞记录");
+    assert_eq!(result.items[0].run_id, "corrupt-run");
+}

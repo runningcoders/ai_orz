@@ -146,7 +146,7 @@ async fn test_batch_append_traces(pool: SqlitePool) {
     // 按 (date_filename, line_number) 读回，内容与写入顺序一一对应
     let trace_dir =
         crate::pkg::paths::agent_memory_dir(&crate::config::get().base_data_path(), "test-agent-1");
-    let writer = crate::pkg::daily_jsonl::DailyJsonlWriter::new(trace_dir);
+    let writer = crate::pkg::jsonl::writer::DailyJsonlWriter::new(trace_dir);
     for (position, expected) in positions.iter().zip(traces.iter()) {
         let date = position.date_filename.trim_end_matches(".jsonl");
         let read: MemoryTrace = writer
@@ -427,5 +427,198 @@ fn test_resolve_trace_positions_locates_line_number() {
         resolve_trace_positions_at(tmp.path(), agent_id, &[])
             .unwrap()
             .is_empty()
+    );
+}
+
+// ==================== 旁车索引（sidecar index）====================
+
+/// 索引轻量：不含 input 原文，但含查询字段 + 引用链行号
+#[test]
+fn sidecar_memory_index_is_lightweight_and_carries_line_number() {
+    let dir = tempfile::tempdir().unwrap();
+    let day = chrono::Local
+        .with_ymd_and_hms(2026, 1, 1, 12, 0, 0)
+        .unwrap()
+        .timestamp();
+    let secret = "UNIQUE_MEMORY_INPUT_SENTINEL_7c2e";
+    let mut trace = trace_at("agent-idx", "mem-idx-1", "log-idx", Some("task-idx"), day);
+    trace.input = secret.to_string();
+    write_trace_shard(dir.path(), "agent-idx", "20260101", &[trace]);
+
+    // 直接写原文（无索引）→ 查询触发惰性重建
+    let page = query_traces_at(
+        dir.path(),
+        &MemoryTraceQuery {
+            agent_id: Some("agent-idx".to_string()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].input, secret);
+
+    let memory_dir = dir.path().join("agents").join("agent-idx").join("memory");
+    let idx_files: Vec<_> = std::fs::read_dir(&memory_dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|ext| ext == "idx"))
+        .collect();
+    assert_eq!(idx_files.len(), 1, "应生成旁车索引");
+    let idx_content = std::fs::read_to_string(&idx_files[0]).unwrap();
+    assert!(
+        !idx_content.contains(secret),
+        "索引不应包含 input 原文（几十 KB 大字段）"
+    );
+    assert!(idx_content.contains("mem-idx-1"), "索引应含 trace_id");
+    // 引用链行号由下方 sidecar_resolve_positions_keeps_physical_line_numbers 用行为验证，
+    // 不断言序列化后的字段名（那是实现细节，改名不应让测试失败）。
+}
+
+/// 存量无索引文件的引用链解析：line_number 与物理行一致
+#[test]
+fn sidecar_resolve_positions_keeps_physical_line_numbers() {
+    let dir = tempfile::tempdir().unwrap();
+    let day = chrono::Local
+        .with_ymd_and_hms(2026, 1, 1, 12, 0, 0)
+        .unwrap()
+        .timestamp();
+    write_trace_shard(
+        dir.path(),
+        "agent-pos",
+        "20260101",
+        &[
+            trace_at("agent-pos", "pos-0", "log-0", None, day),
+            trace_at("agent-pos", "pos-1", "log-1", None, day + 1),
+            trace_at("agent-pos", "pos-2", "log-2", None, day + 2),
+        ],
+    );
+
+    let found = resolve_trace_positions_at(
+        dir.path(),
+        "agent-pos",
+        &["pos-0".to_string(), "pos-2".to_string()],
+    )
+    .unwrap();
+    assert_eq!(found["pos-0"].line_number, 0);
+    assert_eq!(found["pos-2"].line_number, 2);
+    // 引用链解析本身也会建索引
+    let memory_dir = dir.path().join("agents").join("agent-pos").join("memory");
+    assert!(std::fs::read_dir(&memory_dir).unwrap().any(|e| {
+        e.unwrap()
+            .path()
+            .extension()
+            .is_some_and(|ext| ext == "idx")
+    }));
+}
+
+/// 索引落后（原文新增但索引没跟上）时增量补齐，不漏新行
+#[test]
+fn sidecar_memory_backfills_lagging_index() {
+    use std::io::Write;
+
+    let dir = tempfile::tempdir().unwrap();
+    let day = chrono::Local
+        .with_ymd_and_hms(2026, 1, 1, 12, 0, 0)
+        .unwrap()
+        .timestamp();
+    write_trace_shard(
+        dir.path(),
+        "agent-lag",
+        "20260101",
+        &[trace_at("agent-lag", "lag-a", "log-a", None, day)],
+    );
+
+    // 首次查询建索引（只覆盖 lag-a）
+    query_traces_at(
+        dir.path(),
+        &MemoryTraceQuery {
+            agent_id: Some("agent-lag".to_string()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    // 直接追加一行原文，制造「原文有、索引无」的落后窗口
+    let memory_dir = dir.path().join("agents").join("agent-lag").join("memory");
+    {
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(memory_dir.join("20260101.jsonl"))
+            .unwrap();
+        let mut t = trace_at("agent-lag", "lag-b", "log-b", None, day + 1);
+        t.input = "later appended input".to_string();
+        file.write_all(serde_json::to_string(&t).unwrap().as_bytes())
+            .unwrap();
+        file.write_all(b"\n").unwrap();
+    }
+
+    let page = query_traces_at(
+        dir.path(),
+        &MemoryTraceQuery {
+            agent_id: Some("agent-lag".to_string()),
+            trace_id: Some("lag-b".to_string()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(page.items.len(), 1, "落后索引应增量补齐，lag-b 不应丢");
+    assert_eq!(page.items[0].id, "lag-b");
+}
+
+/// M1 回归：原文含坏行 + 索引落后时，增量补齐的物理行号必须按真实物理行算，
+/// 不能用「合法索引记录数」近似——否则坏行会让后续行的 line_number 偏小，
+/// 引用链据此 read_line 会读到另一条记忆。
+#[test]
+fn sidecar_line_number_stays_physical_with_corrupted_line_and_backfill() {
+    use std::io::Write;
+
+    let dir = tempfile::tempdir().unwrap();
+    let agent_id = "agent-line-phys";
+    let memory_dir = dir.path().join("agents").join(agent_id).join("memory");
+    std::fs::create_dir_all(&memory_dir).unwrap();
+
+    let day = chrono::Local
+        .with_ymd_and_hms(2026, 1, 1, 12, 0, 0)
+        .unwrap()
+        .timestamp();
+    // 物理行 0=好行 trace-0，1=坏行，2=好行 trace-2
+    let good0 = serde_json::to_string(&trace_at(agent_id, "phys-0", "log", None, day)).unwrap();
+    let good2 = serde_json::to_string(&trace_at(agent_id, "phys-2", "log", None, day + 2)).unwrap();
+    std::fs::write(
+        memory_dir.join("20260101.jsonl"),
+        format!("{good0}\nNOT_VALID_JSON\n{good2}\n"),
+    )
+    .unwrap();
+
+    // 首次查询建索引：坏行跳过，trace-0/2 的行号应分别是 0 和 2
+    let found = resolve_trace_positions_at(
+        dir.path(),
+        agent_id,
+        &["phys-0".to_string(), "phys-2".to_string()],
+    )
+    .unwrap();
+    assert_eq!(found["phys-0"].line_number, 0);
+    assert_eq!(found["phys-2"].line_number, 2, "坏行也占物理行号");
+
+    // 旁路追加物理行 3=好行 phys-3，制造索引落后窗口
+    {
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(memory_dir.join("20260101.jsonl"))
+            .unwrap();
+        file.write_all(
+            serde_json::to_string(&trace_at(agent_id, "phys-3", "log", None, day + 3))
+                .unwrap()
+                .as_bytes(),
+        )
+        .unwrap();
+        file.write_all(b"\n").unwrap();
+    }
+
+    // 再次解析触发增量补齐：phys-3 的真实物理行号是 3，不是合法记录数 2
+    let found = resolve_trace_positions_at(dir.path(), agent_id, &["phys-3".to_string()]).unwrap();
+    assert_eq!(
+        found["phys-3"].line_number, 3,
+        "增量补齐行号必须按原文物理行算，坏行不能被忽略后把后续行号前移"
     );
 }

@@ -306,7 +306,7 @@ data/
 |------|------|------|
 | 轮次编排 | [src/service/domain/runtime/think_loop.rs](src/service/domain/runtime/think_loop.rs) | 851 行；一轮 = 一次完整的「思考 → 动作 → 再思考」循环 |
 | 阶段编排引擎 | [src/pkg/think_path/](src/pkg/think_path/) | 13 个文件 / 2,499 行（engine / arbiter / blueprint / policy / run / strategy） |
-| 落盘出口 | [src/pkg/think_trace.rs](src/pkg/think_trace.rs) | 733 行；轮级 append-only，两段式（partial 增量行 + 收尾全量行） |
+| 落盘出口 | [src/pkg/think_trace.rs](src/pkg/think_trace.rs) | 677 行；轮级 append-only，两段式（partial 增量行 + 收尾全量行）；查询走旁车索引 `.jsonl.idx`（索引过滤 + 按字节偏移 seek 只读命中行） |
 | 查询入口 | [src/handlers/hr/agent/query_think_traces.rs](src/handlers/hr/agent/query_think_traces.rs) | 作用域守门：按 agent / project / task 维度收口 |
 | 统计消费 | [src/consumer/think_round_stats_consumer.rs](src/consumer/think_round_stats_consumer.rs) | 订阅轮次事件做用量统计 |
 | 前端消费 | [frontend/src/utils/think_path_graph.rs](frontend/src/utils/think_path_graph.rs)、`frontend/src/components/chat/` 下的轨迹时间线、轨迹面板与小脑轨迹表 | 五文件合计 4,114 行（886 + 607 + 1,809 + 504 + 308） |
@@ -318,7 +318,7 @@ data/
 | 记忆原始细节 | `agents/{agent_id}/memory/{YYYYMMDD}.jsonl` | 记忆写入、图谱变更等事件 | 「我记了什么」 |
 | 思考轨迹 | `agents/{agent_id}/think_trace/{YYYYMMDD}.jsonl` | 轮级阶段、预算、工具调用、收敛结果 | 「我怎么想的」 |
 
-两者共用同一套按天 JSONL 写入设施（`pkg/daily_jsonl`），但**目录树不同、语义不同、生命周期不同**——不要按「记忆文件」一个口径去统计（路径常量见 [src/pkg/paths.rs](src/pkg/paths.rs)）。
+两者共用同一套按天 JSONL 写入设施（`pkg/jsonl/writer`），但**目录树不同、语义不同、生命周期不同**——不要按「记忆文件」一个口径去统计（路径常量见 [src/pkg/paths.rs](src/pkg/paths.rs)）。
 
 ### 设计取向
 
@@ -339,7 +339,7 @@ data/
 |--------|--------|------|
 | [docs/diagrams/ai-orz-architecture.html](docs/diagrams/ai-orz-architecture.html) | 总图：三级 workspace、四层单向调用、存储与外部系统、认知架构分层 | 主请求路径 / 异步与 Agent 运行时 / 持久化 |
 | [docs/diagrams/ai-orz-ontology.html](docs/diagrams/ai-orz-ontology.html) | 本体子系统：四条能力线 + 五道门闩 + 治理看板 | 读侧 / 写入门闩 / 治理面 |
-| [docs/diagrams/ai-orz-think-path.html](docs/diagrams/ai-orz-think-path.html) | 思维轨迹：两阶段唤醒 → 快判断 → 输入注入 → 轮次 → 相位 → 两段式落盘 → 查询 → 前端；含思考强度判相对偏移、先验与兜底分离 | 一轮思考 / 两阶段唤醒 / 轨迹链路 / 认知分层 |
+| [docs/diagrams/ai-orz-think-path.html](docs/diagrams/ai-orz-think-path.html) | 思维轨迹：两阶段唤醒 → 快判断 → 输入注入 → 轮次 → 相位 → 两段式落盘 → 查询（旁车索引 + seek）→ 前端；含思考强度判相对偏移、先验与兜底分离 | 一轮思考 / 两阶段唤醒 / 轨迹链路 / 认知分层 |
 | [docs/diagrams/ai-orz-memory.html](docs/diagrams/ai-orz-memory.html) | 记忆子系统：四层记忆 + 两条 JSONL + 三路召回 + 沉淀 | 四层 / 存储面 / 检索与沉淀 |
 | [docs/diagrams/ai-orz-tools.html](docs/diagrams/ai-orz-tools.html) | 工具与技能：三层调用 + 凭据编排 + 策略拦截与六态授权 + 技能包 | 三层调用 / 策略与授权 / 注册与装配 |
 | [docs/diagrams/ai-orz-tool-context.html](docs/diagrams/ai-orz-tool-context.html) | 工具调用上下文（身份）数据流转：声明（CredentialKind 的 UserInfo / AgentInfo + field 白名单 + binding）→ 解析（is_identity 二元分派 + 失败语义按来源分叉）→ 注入（check + base_env 九键末位 insert）→ 使用（git 子进程 / commit-msg hook） | 四层主链路 / 失败语义分叉 / 注入与优先级 |

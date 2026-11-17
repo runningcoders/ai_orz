@@ -20,16 +20,20 @@
 //! 查询在分页前按 `(agent_id, run_id, scene)` 合并成一个动作，避免轨迹面板把
 //! 同一个动作展示成多个条目、各自统计轮次。
 
-use crate::pkg::daily_jsonl::DailyJsonlWriter;
+#[path = "think_trace_sidecar.rs"]
+mod think_trace_sidecar;
+
+use crate::pkg::jsonl::writer::DailyJsonlWriter;
 use crate::pkg::paths;
 use common::api::{PagedResult, PaginationParams};
 use common::enums::ThinkingIntensity;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
+
+use think_trace_sidecar::ThinkSidecar;
 
 /// 单次查询允许的最大条数（JSONL 扫描开销控制）
 pub const MAX_THINK_TRACE_QUERY_LIMIT: usize = 100;
@@ -58,8 +62,24 @@ pub fn append(agent_id: &str, entry: &serde_json::Value) -> anyhow::Result<bool>
         entry["created_at"] =
             serde_json::Value::from(chrono::Utc::now().timestamp_millis().max(0) as u64);
     }
-    let writer = DailyJsonlWriter::new(paths::agent_think_trace_dir(base, agent_id));
-    writer.append_no_position(&entry)?;
+    let trace_dir = paths::agent_think_trace_dir(base, agent_id);
+    let writer = DailyJsonlWriter::new(&trace_dir);
+    let sidecar = ThinkSidecar::new(trace_dir);
+    // 原文 append + 索引 append 在同一把 APPEND_LOCK 临界区内；索引写失败只告警，
+    // 原文已落盘，读路径会补齐。
+    let entry_ref = &entry;
+    writer.append_with_index(entry_ref, |date, offset, len| {
+        if let Err(err) = sidecar.append_record(date, entry_ref, offset, len) {
+            log_warn!(
+                "思考轨迹索引追加失败，将在下次查询补齐: agent_id={}, date={}, run_id={}, err={}",
+                agent_id,
+                date,
+                entry.get("run_id").and_then(|v| v.as_str()).unwrap_or(""),
+                err
+            );
+        }
+        Ok(())
+    })?;
     Ok(true)
 }
 
@@ -420,18 +440,14 @@ pub fn query(query: ThinkTraceQuery) -> anyhow::Result<PagedResult<ThinkTraceEnt
 ///
 /// ## 成本模型：以及为什么这里不做早停
 ///
-/// 扫描是**全量**的：每个 JSONL 分片逐行读 + 全量反序列化（[`read_matching_entries`]
-/// 无早停），再合并、排序、分页。单次查询成本 ≈ 匹配行数 × 单行大小。
+/// 查询走旁车索引：索引层只读轻量字段做过滤 + 日期粗筛，再按字节坐标 seek 回原文
+/// 只反序列化**命中行**（不再全目录 + 全文件逐行反序列化 rounds/reasoning）。索引
+/// 缺失/落后时由底层增量重建，语义与全量扫描完全一致。
 ///
-/// 逐轮增量落盘让行数从「1 行 / run」变成「N+1 行 / run」，但增量行只带**单轮**
-/// `rounds`、收尾行才带全量，所以**解析的数据量约 2×** —— 不是行数那个 N+1 倍。
-/// 这是「run 未结束也能查到半成品」的既定代价，量级可接受。
-///
-/// ⚠️ 不要为了省这点成本加「读够一页就停」的早停：`total` 必须是**合并后**的真实
-/// 总数，前端 `has_next = offset + len < total` 与「共 N 条」都依赖它。早停会把
-/// total 变成「已扫描到的条数」，翻页按钮当场失效（永远推不出下一页）。真要优化，
-/// 正确方向是缩小时间窗口（调用方传 `started_after`，由 [`date_in_range`] 在文件级
-/// 粗筛掉整段历史分片），而不是截断扫描过程。
+/// ⚠️ 索引层**不截断命中数**：`total` 必须是 `merge_same_run` 后的真实总数，前端
+/// `has_next = offset + len < total` 与「共 N 条」都依赖它。早停会把 total 变成
+/// 「已扫描到的条数」，翻页按钮当场失效（永远推不出下一页）。正确方向是缩小时间
+/// 窗口（调用方传 `started_after`，索引层在文件级粗筛掉整段历史分片）。
 pub(crate) fn query_at(
     base_data_path: &Path,
     query: &ThinkTraceQuery,
@@ -448,6 +464,9 @@ pub(crate) fn query_at(
     }
     let offset = query.pagination.offset.unwrap_or(0);
 
+    // 【索引路径】每个 agent 目录一个旁车索引：索引层过滤 + 日期粗筛后只 seek 读命中行。
+    // ⚠️ 不截断命中数——merge_same_run 必须在全部命中上做，total 才是真实值（见下方注释）。
+    // 索引缺失/落后/损坏时由底层增量重建（兼容直接写原文的存量数据与测试夹具）。
     let mut entries = Vec::new();
     for agent_dir in agent_dirs(
         base_data_path,
@@ -458,11 +477,19 @@ pub(crate) fn query_at(
         if !trace_dir.is_dir() {
             continue;
         }
-        for path in jsonl_files(&trace_dir)? {
-            if !date_in_range(&path, query.started_after, query.started_before) {
-                continue;
+        let sidecar = ThinkSidecar::new(trace_dir.clone());
+        for hit in sidecar.query(query)? {
+            match sidecar.read_entry(&hit.date, hit.offset, hit.len) {
+                Ok(entry) => entries.push(entry),
+                // 索引指向的行损坏/被清理：跳过并告警，与旧「单行损坏跳过」口径一致
+                Err(err) => log_warn!(
+                    "跳过无法读取的思考轨迹行: dir={}, date={}, offset={}, err={}",
+                    trace_dir.display(),
+                    hit.date,
+                    hit.offset,
+                    err
+                ),
             }
-            read_matching_entries(&path, query, &mut entries)?;
         }
     }
 
@@ -643,115 +670,6 @@ fn agent_dirs(
     }
     dirs.sort();
     Ok(dirs)
-}
-
-fn jsonl_files(trace_dir: &Path) -> anyhow::Result<Vec<PathBuf>> {
-    let mut files = Vec::new();
-    for entry in fs::read_dir(trace_dir)? {
-        let entry = entry?;
-        if entry.file_type()?.is_file()
-            && entry
-                .path()
-                .extension()
-                .is_some_and(|extension| extension == "jsonl")
-        {
-            files.push(entry.path());
-        }
-    }
-    files.sort();
-    Ok(files)
-}
-
-/// 按日期文件名做粗筛（避免为时间窗口扫描全部历史分片）
-fn date_in_range(path: &Path, started_after: Option<u64>, started_before: Option<u64>) -> bool {
-    let Some(date) = path.file_stem().and_then(|s| s.to_str()) else {
-        return true;
-    };
-    if let Some(after) = started_after.and_then(date_string)
-        && date < after.as_str()
-    {
-        return false;
-    }
-    if let Some(before) = started_before.and_then(date_string)
-        && date > before.as_str()
-    {
-        return false;
-    }
-    true
-}
-
-/// 毫秒时间戳 → 落盘文件名使用的本地日期（YYYYMMDD）
-fn date_string(ms: u64) -> Option<String> {
-    let millis = i64::try_from(ms).ok()?;
-    chrono::DateTime::from_timestamp_millis(millis).map(|dt| {
-        dt.with_timezone(&chrono::Local)
-            .format("%Y%m%d")
-            .to_string()
-    })
-}
-
-fn read_matching_entries(
-    path: &Path,
-    query: &ThinkTraceQuery,
-    entries: &mut Vec<ThinkTraceEntry>,
-) -> anyhow::Result<()> {
-    let file = fs::File::open(path)?;
-    let reader = BufReader::new(file);
-    for line in reader.lines() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        // 单行损坏（并发写入残留等）只跳过该行，不让整次查询失败
-        let entry: ThinkTraceEntry = match serde_json::from_str(&line) {
-            Ok(entry) => entry,
-            Err(err) => {
-                log_warn!(
-                    "跳过无法解析的思考轨迹行: file={}, err={}",
-                    path.display(),
-                    err
-                );
-                continue;
-            }
-        };
-        if matches_query(&entry, query) {
-            entries.push(entry);
-        }
-    }
-    Ok(())
-}
-
-fn matches_query(entry: &ThinkTraceEntry, query: &ThinkTraceQuery) -> bool {
-    query
-        .agent_id
-        .as_ref()
-        .is_none_or(|agent_id| entry.agent_id == *agent_id)
-        && query
-            .agent_ids
-            .as_ref()
-            .is_none_or(|agent_ids| agent_ids.iter().any(|id| id == &entry.agent_id))
-        && query
-            .project_id
-            .as_ref()
-            .is_none_or(|project_id| entry.project_id.as_deref() == Some(project_id.as_str()))
-        && query
-            .task_id
-            .as_ref()
-            .is_none_or(|task_id| entry.task_id.as_deref() == Some(task_id.as_str()))
-        && query
-            .run_id
-            .as_ref()
-            .is_none_or(|run_id| entry.run_id == *run_id)
-        && query
-            .scene
-            .as_ref()
-            .is_none_or(|scene| entry.scene == *scene)
-        && query
-            .started_after
-            .is_none_or(|started_after| entry.created_at >= started_after)
-        && query
-            .started_before
-            .is_none_or(|started_before| entry.created_at <= started_before)
 }
 
 #[cfg(test)]

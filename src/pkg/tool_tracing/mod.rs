@@ -7,6 +7,7 @@
 
 pub mod entry;
 pub mod logger;
+pub(crate) mod sidecar_index;
 
 #[cfg(test)]
 mod tests;
