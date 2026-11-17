@@ -60,7 +60,7 @@
 
     <section class="card ">
       <h3>思维轨迹与思考图 · 组件级</h3>
-      <p class="q">Agent 怎么「想」：唤醒 → 三层预算思考循环 → 七相位图引擎 → 两段式轨迹落盘 → 前端时间线</p>
+      <p class="q">Agent 怎么「想」：唤醒 → 三层预算思考循环 → 七相位图引擎 → 两段式轨迹落盘 → 轨迹查询走旁车索引 → 前端时间线</p>
       <ul>
         <li><a href="./diagrams/ai-orz-think-path.html">打开专题子图</a><span class="desc">一轮思考 · 两阶段唤醒 · 轨迹链路 · 认知分层</span></li>
       </ul>
@@ -92,7 +92,7 @@
 
     <section class="card ">
       <h3>记忆子系统 · 组件级</h3>
-      <p class="q">Core / Working / Short-term / Long-term 四层 + 两条 JSONL + 向量与全文索引 + 睡眠沉淀</p>
+      <p class="q">Core / Working / Short-term / Long-term 四层 + 两条 JSONL（writer + 旁车索引）+ 向量与全文索引 + 睡眠沉淀</p>
       <ul>
         <li><a href="./diagrams/ai-orz-memory.html">打开专题子图</a><span class="desc">四层记忆 · 存储面 · 检索与沉淀</span></li>
       </ul>
@@ -158,7 +158,7 @@
     </section>
     <section class="card ">
       <h3>基础设施与部署</h3>
-      <p class="q">怎么跑起来、怎么发出去：配置 → 连接池与迁移 → 路径与 JSONL → 后台任务与定时器；单二进制 + dist 静态托管 + tar.gz</p>
+      <p class="q">怎么跑起来、怎么发出去：配置 → 连接池与迁移 → 路径与 JSONL（pkg/jsonl：writer + sidecar）→ 后台任务与定时器；单二进制 + dist 静态托管 + tar.gz</p>
       <ul>
         <li><a href="./diagrams/ai-orz-infra.html">打开专题子图</a><span class="desc">启动与配置 · 运行期资源 · 构建与发布</span></li>
       </ul>
