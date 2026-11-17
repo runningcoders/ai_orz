@@ -1,16 +1,17 @@
 //! Finance 域 API - 模型提供商、工具、附件、MCP 服务器、消息渠道
 
 use common::api::{
-    AttachmentDetail, AuthorizationDecisionRequest, AuthorizationDecisionResponse,
-    AuthorizationDetailDto, AuthorizationQueryRequest, CallModelRequest, CallModelResponse,
-    CreateMcpServerRequest, CreateMcpServerResponse, CreateModelProviderRequest,
-    CreateModelProviderResponse, CreateTextAttachmentRequest, CreateToolRequest,
-    CreateToolResponse, DebugCallToolRequest, DebugCallToolResponse, GetModelProviderRequest,
-    GetModelProviderResponse, GetToolRequest, GetToolResponse, ListMcpServersResponse,
-    ListModelProvidersResponse, ListToolsRequest, MessageChannelListItem, PagedResult,
-    QueryToolCallEntriesRequest, QueryToolCallEntriesResponse, RevokeAuthorizationRequest,
-    SearchToolsRequest, SwitchEmbeddingProviderRequest, SwitchEmbeddingProviderResponse,
-    TestConnectionResponse, TestMessageChannelConnectionResponse, ToolListItem, ToolQueryRequest,
+    AttachmentDetail, AttachmentSearchResult, AuthorizationDecisionRequest,
+    AuthorizationDecisionResponse, AuthorizationDetailDto, AuthorizationQueryRequest,
+    CallModelRequest, CallModelResponse, CreateMcpServerRequest, CreateMcpServerResponse,
+    CreateModelProviderRequest, CreateModelProviderResponse, CreateTextAttachmentRequest,
+    CreateToolRequest, CreateToolResponse, DebugCallToolRequest, DebugCallToolResponse,
+    GetModelProviderRequest, GetModelProviderResponse, GetToolRequest, GetToolResponse,
+    ListMcpServersResponse, ListModelProvidersResponse, ListToolsRequest, MessageChannelListItem,
+    PagedResult, QueryToolCallEntriesRequest, QueryToolCallEntriesResponse,
+    RevokeAuthorizationRequest, SearchAttachmentsRequest, SearchToolsRequest,
+    SwitchEmbeddingProviderRequest, SwitchEmbeddingProviderResponse, TestConnectionResponse,
+    TestMessageChannelConnectionResponse, ToolListItem, ToolQueryRequest,
     UpdateAttachmentContentRequest, UpdateMcpServerRequest, UpdateMcpServerResponse,
     UpdateMcpServerStatusRequest, UpdateMessageChannelStatusRequest, UpdateModelProviderRequest,
     UpdateModelProviderResponse, UpdateToolRequest, UpdateToolResponse, UpdateToolStatusRequest,
@@ -268,6 +269,13 @@ pub async fn list_attachments() -> Result<Vec<AttachmentDetail>, ApiError> {
     // 这里解析整页信封后只取 items，保持页面侧 Vec<AttachmentDetail> 契约不变。
     let page: PagedResult<AttachmentDetail> = api_get("/api/v1/finance/attachments").await?;
     Ok(page.items)
+}
+
+/// 混合搜索附件（FTS5 + 向量语义），返回带命中信息的分页结果。
+pub async fn search_attachments(
+    req: &SearchAttachmentsRequest,
+) -> Result<PagedResult<AttachmentSearchResult>, ApiError> {
+    api_post("/api/v1/finance/attachments/search", req).await
 }
 
 pub async fn create_text_attachment(

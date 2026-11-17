@@ -1,3 +1,4 @@
+use dioxus::html::HasFileData;
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 use wasm_bindgen::{JsCast, closure::Closure};
@@ -148,6 +149,8 @@ pub fn MessageChat(project: Option<String>) -> Element {
     // AgentInfoTab 共享同一份数据，避免重复请求、并让徽章实时刷新。
     let mut target_agent_info = use_signal(|| Option::<GetAgentResponse>::None);
     let mut input_text = use_signal(String::new);
+    // 拖放文件到输入框时的高亮反馈（ondragover/ondrop 切换，仅视觉）
+    let drag_hover = use_signal(|| false);
     // 修复 L1：删除未使用的 error signal（之前从未 set，is_empty() 永远为 true）
     let mut loading_projects = use_signal(|| true);
     // 问题一：左栏状态子过滤器当前选中下标（AMan 拍板②：默认「未完成」，见 FILTER_TABS 下标 1）
@@ -183,6 +186,9 @@ pub fn MessageChat(project: Option<String>) -> Element {
     // 附件上传状态
     let mut pending_attachments = use_signal(Vec::<PendingAttachment>::new);
     let mut uploading = use_signal(|| false);
+    // 连续 cmd+V / 拖放时，上传中的后来文件先入队，由单个 worker 串行消费，
+    // 避免旧门闩 `if uploading() { return }` 把后来的文件静默丢弃。
+    let mut upload_queue = use_signal(Vec::<dioxus::html::FileData>::new);
     let toast = use_toast();
     // 全局名称目录：用于将消息 from_id 解析为展示名（用户 / Agent 名字）
     let directory = use_directory();
@@ -922,72 +928,107 @@ pub fn MessageChat(project: Option<String>) -> Element {
         };
     }
 
-    // 处理文件选择：上传到附件服务，把 ID 加入待发送列表
-    let handle_file_select = move |files: Vec<dioxus::html::FileData>| {
-        if uploading() {
-            return;
-        }
-        if files.is_empty() {
-            return;
-        }
-        uploading.set(true);
-        spawn(async move {
-            for fd in files {
-                let file_name = fd.name();
-                let bytes = match fd.read_bytes().await {
-                    Ok(b) => b,
-                    Err(e) => {
-                        toast.error(format!("读取文件 {} 失败: {:?}", file_name, e));
-                        uploading.set(false);
-                        return;
-                    }
-                };
-
-                // 构造 Blob 与 FormData
-                let blob_parts: js_sys::Array = js_sys::Array::new();
-                let uint8_array = js_sys::Uint8Array::new_with_length(bytes.len() as u32);
-                uint8_array.copy_from(&bytes);
-                blob_parts.push(&uint8_array);
-                let blob_bag = web_sys::BlobPropertyBag::new();
-                // ⚠️ Blob 的 type 会变成 multipart part 的 `Content-Type`，写死
-                // `application/octet-stream` 会让后端把每张图都存成泛型类型，图片就再也
-                // 内联不出来（`/file` 带 `nosniff`，浏览器无法纠正）。按后缀给真实类型，
-                // 推断表与后端共用一个（`common::mime`）。
-                blob_bag.set_type(common::mime::infer_mime_type(&file_name));
-                let blob =
-                    web_sys::Blob::new_with_str_sequence_and_options(&blob_parts, &blob_bag).ok();
-
-                // 修复 L_NEW1：FormData::new() 在极端环境可能失败（如 non-Window context），
-                // 改为 ok() + match 避免 panic
-                let form = match web_sys::FormData::new() {
-                    Ok(f) => f,
-                    Err(_) => {
-                        toast.error(format!("无法初始化上传表单: {}", file_name));
-                        uploading.set(false);
-                        return;
-                    }
-                };
-                let _ = form.append_with_str("purpose", "message");
-                if let Some(blob) = blob {
-                    let _ = form.append_with_blob_and_filename("file", &blob, &file_name);
-                }
-
-                match upload_attachment(form).await {
-                    Ok(detail) => {
-                        let mut current = pending_attachments.write();
-                        current.push(PendingAttachment {
-                            id: detail.id,
-                            name: detail.original_name,
-                        });
-                    }
-                    Err(e) => {
-                        toast.error(format!("上传文件 {} 失败: {}", file_name, e));
-                    }
-                }
+    // 处理文件选择：上传到附件服务，把 ID 加入待发送列表。
+    // 用 Callback 包装，供三处共用：回形针 onchange / cmd+V onpaste / 拖放 ondrop。
+    // 三路拿到的都是 Vec<dioxus::html::FileData>，上传逻辑完全一致。
+    //
+    // 队列化：连续粘贴/拖放在上传尚未完成时，文件先入队，由单个 worker 串行消费完；
+    // 旧实现用 `if uploading() { return }` 直接丢弃后来者，而 paste 已 prevent_default，
+    // 会导致「第二张图既没上传也没作为文本粘贴」的静默丢失。
+    let handle_file_select: Callback<Vec<dioxus::html::FileData>> = Callback::new(
+        move |files: Vec<dioxus::html::FileData>| {
+            if files.is_empty() {
+                return;
             }
-            uploading.set(false);
-        });
-    };
+            // 先入队，无论当前是否正在上传 —— 这是「不丢图」的关键。
+            upload_queue.write().extend(files);
+            // 已有 worker 在跑：它会 drain 到刚入队的文件，无需重复启动。
+            // JS 单线程下此处检查与 set(true) 同步完成，不会出现双 worker。
+            if uploading() {
+                return;
+            }
+            uploading.set(true);
+            spawn(async move {
+                // 循环直到队列排空：期间新入队的文件也会被本 worker 一并消费。
+                loop {
+                    let batch: Vec<dioxus::html::FileData> =
+                        upload_queue.write().drain(..).collect();
+                    if batch.is_empty() {
+                        break;
+                    }
+                    for fd in batch {
+                        let file_name = fd.name();
+                        let bytes = match fd.read_bytes().await {
+                            Ok(b) => b,
+                            Err(e) => {
+                                // 剪贴板里从文件管理器复制的文件，浏览器常只给一个读取即失败的
+                                // 占位 File（或缩略图）；引导用户用更可靠的入口，不静默失败。
+                                // 用 continue 而非 return：单个文件失败不影响队列里其它文件。
+                                toast.error(format!(
+                                    "读取文件「{}」失败（{}）：请改用拖拽文件到输入框，或点回形针选择文件",
+                                    file_name, e
+                                ));
+                                continue;
+                            }
+                        };
+                        // 剪贴板占位文件可能读回 0 字节：同样引导用户换入口。
+                        if bytes.is_empty() {
+                            toast.error(format!(
+                                "文件「{}」内容为空：请改用拖拽文件到输入框，或点回形针选择文件",
+                                file_name
+                            ));
+                            continue;
+                        }
+
+                        // 构造 Blob 与 FormData
+                        let blob_parts: js_sys::Array = js_sys::Array::new();
+                        let uint8_array = js_sys::Uint8Array::new_with_length(bytes.len() as u32);
+                        uint8_array.copy_from(&bytes);
+                        blob_parts.push(&uint8_array);
+                        let blob_bag = web_sys::BlobPropertyBag::new();
+                        // ⚠️ Blob 的 type 会变成 multipart part 的 `Content-Type`，写死
+                        // `application/octet-stream` 会让后端把每张图都存成泛型类型，图片就再也
+                        // 内联不出来（`/file` 带 `nosniff`，浏览器无法纠正）。按后缀给真实类型，
+                        // 推断表与后端共用一个（`common::mime`）。
+                        blob_bag.set_type(common::mime::infer_mime_type(&file_name));
+                        let blob = web_sys::Blob::new_with_str_sequence_and_options(
+                            &blob_parts,
+                            &blob_bag,
+                        )
+                        .ok();
+
+                        // 修复 L_NEW1：FormData::new() 在极端环境可能失败（如 non-Window context），
+                        // 改为 ok() + match 避免 panic
+                        let form = match web_sys::FormData::new() {
+                            Ok(f) => f,
+                            Err(_) => {
+                                toast.error(format!("无法初始化上传表单: {}", file_name));
+                                continue;
+                            }
+                        };
+                        let _ = form.append_with_str("purpose", "message");
+                        if let Some(blob) = blob {
+                            let _ = form.append_with_blob_and_filename("file", &blob, &file_name);
+                        }
+
+                        match upload_attachment(form).await {
+                            Ok(detail) => {
+                                let mut current = pending_attachments.write();
+                                current.push(PendingAttachment {
+                                    id: detail.id,
+                                    name: detail.original_name,
+                                });
+                            }
+                            Err(e) => {
+                                toast.error(format!("上传文件 {} 失败: {}", file_name, e));
+                            }
+                        }
+                    }
+                }
+                uploading.set(false);
+            });
+        },
+    );
 
     let mut handle_project_click = move |project_id: String| {
         // URL 即状态：会话选择写入路由（replace 保持历史栈单条），signal 由守卫回流
@@ -1397,6 +1438,7 @@ pub fn MessageChat(project: Option<String>) -> Element {
                 pending_attachments,
                 handle_file_select,
                 toast,
+                drag_hover,
                 messages,
                 mention,
                 mention_tab_list.clone(),
@@ -1678,6 +1720,7 @@ pub fn MessageChat(project: Option<String>) -> Element {
                 pending_attachments,
                 handle_file_select,
                 toast,
+                drag_hover,
                 messages,
                 mention,
                 mention_tab_list.clone(),
@@ -2025,6 +2068,45 @@ fn collapse_avatar_bubble() {
 /// 两个会话分支共用同一个 id，任一时刻 DOM 里只有一个，不会取错。
 const CHAT_INPUT_ID: &str = "chat-input-textarea";
 
+/// 从 paste 事件里取出剪贴板中的文件（cmd+V 截图 / 应用内复制的图片 / Chrome 下复制的文件）。
+///
+/// Dioxus 0.7 的 `ClipboardData` 是空壳，事件 API 取不到 files，需 downcast 回原生
+/// `web_sys::ClipboardEvent` —— 这是官方 `WebEventExt` 支持的公开能力，不是 hack。
+/// 隔离成独立函数：将来整体升 Dioxus 0.8 后（PR #5611 给 `ClipboardData` 补了 `files()`），
+/// 这里可直接换成 `e.files()`，调用处无需改动。
+///
+/// 拿不到原生事件 / 剪贴板无 DataTransfer / 无 files 时返回空 Vec —— 此时 onpaste 走
+/// 默认行为，纯文本粘贴照常工作。单个文件读取器构造失败则跳过该文件。
+fn clipboard_files_from_paste(e: &dioxus::events::ClipboardEvent) -> Vec<dioxus::html::FileData> {
+    use dioxus::web::WebEventExt;
+    use wasm_bindgen::JsCast;
+
+    let Some(raw) = e.try_as_web_event() else {
+        return Vec::new();
+    };
+    let Ok(clipboard) = raw.dyn_into::<web_sys::ClipboardEvent>() else {
+        return Vec::new();
+    };
+    let Some(data) = clipboard.clipboard_data() else {
+        return Vec::new();
+    };
+    let Some(list) = data.files() else {
+        return Vec::new();
+    };
+
+    let mut files = Vec::new();
+    for i in 0..list.length() {
+        if let Some(file) = list.item(i)
+            && let Ok(reader) = web_sys::FileReader::new()
+        {
+            files.push(dioxus::html::FileData::new(dioxus::web::WebFileData::new(
+                file, reader,
+            )));
+        }
+    }
+    files
+}
+
 /// 置底状态气泡文案：与 Agent 运行时状态匹配；None 表示不显示气泡。
 ///
 /// 优先级：Busy（思考中）> Resting（休息中）> 刚发送等待回复 > 不显示。
@@ -2075,8 +2157,9 @@ fn chat_input_area(
     handle_send: Callback,
     uploading: Signal<bool>,
     mut pending_attachments: Signal<Vec<PendingAttachment>>,
-    mut handle_file_select: impl FnMut(Vec<dioxus::html::FileData>) + 'static,
+    handle_file_select: Callback<Vec<dioxus::html::FileData>>,
     toast: crate::store::toast::ToastState,
+    mut drag_hover: Signal<bool>,
     mut messages: Signal<Vec<MessageListItem>>,
     mention: MentionState,
     tabs: Vec<MentionTab>,
@@ -2216,7 +2299,7 @@ fn chat_input_area(
                     class: "hidden",
                     id: "chat-file-input",
                     onchange: move |e| {
-                        handle_file_select(e.files());
+                        handle_file_select.call(e.files());
                     },
                 }
                 button {
@@ -2235,7 +2318,11 @@ fn chat_input_area(
                     } else { "📎" }
                 }
                 textarea {
-                    class: "textarea textarea-bordered w-full resize-none",
+                    class: if drag_hover() {
+                        "textarea textarea-bordered w-full resize-none border-primary ring-2 ring-primary/40"
+                    } else {
+                        "textarea textarea-bordered w-full resize-none"
+                    },
                     rows: "2",
                     id: CHAT_INPUT_ID,
                     value: "{input_text}",
@@ -2244,6 +2331,46 @@ fn chat_input_area(
                         "对方正在思考中，你的消息会排队处理…"
                     } else {
                         "输入消息...（Alt+回车发送，@ 提及 Agent / 任务 / 项目）"
+                    },
+                    onpaste: {
+                        let upload = handle_file_select;
+                        move |e: dioxus::events::ClipboardEvent| {
+                            let files = clipboard_files_from_paste(&e);
+                            if files.is_empty() {
+                                // 剪贴板里没有文件 → 不拦截，纯文本粘贴照常工作
+                                return;
+                            }
+                            // 有文件：拦下默认粘贴（否则图片文件名/占位符也会混进文本），
+                            // 走统一的字节→Blob→FormData→上传链路。
+                            // 读取失败 / 空文件的引导提示在 upload 内部统一处理。
+                            e.prevent_default();
+                            upload.call(files);
+                        }
+                    },
+                    ondrop: {
+                        let upload = handle_file_select;
+                        move |e: dioxus::events::DragEvent| {
+                            // 阻止浏览器把拖进来的文件当文档打开（否则会离开当前页）
+                            e.prevent_default();
+                            drag_hover.set(false);
+                            let files = e.files();
+                            if !files.is_empty() {
+                                upload.call(files);
+                            }
+                        }
+                    },
+                    ondragover: move |e: dioxus::events::DragEvent| {
+                        // HTML5 铁律：不 preventDefault，drop 事件根本不会触发
+                        e.prevent_default();
+                        // dragover 每几十毫秒触发一次：只在状态翻转时 set，避免高频重渲染
+                        if !drag_hover() {
+                            drag_hover.set(true);
+                        }
+                    },
+                    ondragleave: move |_| {
+                        if drag_hover() {
+                            drag_hover.set(false);
+                        }
                     },
                     oninput: move |e| {
                         let value = e.value();

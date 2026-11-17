@@ -472,7 +472,7 @@ pub fn OrganizationInfo() -> Element {
                                 // ⚠️ 长描述不能用 DaisyUI `.label`（v5 带 white-space:nowrap，
                                 // 无头实测 720px 列下文本列被撑到 1302px、按钮被推出面板外）
                                 p { class: "text-sm text-base-content/60 mt-1",
-                                    "对全部 7 类实体（Agent / 记忆 / 技能 / 任务 / 项目 / 消息 / 工具）的语义向量索引做全量重建，分页逐条重新向量化。"
+                                    "对全部 8 类实体（Agent / 记忆 / 技能 / 任务 / 项目 / 消息 / 工具 / 附件）的语义向量索引做全量重建，分页逐条重新向量化。"
                                     "源数据不受影响，但会全量调用 Embedding 接口（可能产生费用），数据量大时持续数分钟。"
                                 }
                             }
