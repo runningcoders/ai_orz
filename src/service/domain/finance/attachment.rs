@@ -131,6 +131,14 @@ impl AttachmentManage for FinanceDomainImpl {
         self.attachment_dal.query(ctx, query).await
     }
 
+    async fn search_attachments(
+        &self,
+        ctx: RequestContext,
+        search: crate::service::dao::attachment::AttachmentSearch,
+    ) -> Result<common::api::PagedResult<Attachment>> {
+        self.attachment_dal.search(ctx, search).await
+    }
+
     async fn delete_attachment(&self, ctx: RequestContext, id: &str) -> Result<()> {
         self.attachment_dal.delete(ctx, id).await
     }

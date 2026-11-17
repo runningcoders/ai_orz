@@ -704,6 +704,13 @@ pub trait AttachmentManage: Send + Sync {
         query: crate::service::dao::attachment::AttachmentQuery,
     ) -> Result<common::api::PagedResult<Attachment>>;
 
+    /// 混合搜索附件（FTS5 关键词 + 向量语义）。
+    async fn search_attachments(
+        &self,
+        ctx: RequestContext,
+        search: crate::service::dao::attachment::AttachmentSearch,
+    ) -> Result<common::api::PagedResult<Attachment>>;
+
     /// 删除上传文件资产。
     async fn delete_attachment(&self, ctx: RequestContext, id: &str) -> Result<()>;
 

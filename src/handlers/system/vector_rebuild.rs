@@ -3,7 +3,7 @@
 //! 仅 SuperAdmin 可调用（handler 内部二次校验）。
 //! 路由层 `require_role_middleware(UserRole::Admin)` 已确保 Admin/SuperAdmin 可进入。
 //!
-//! 语义：对 7 类实体（agent/memory/skill/task/project/message/tool）的向量索引
+//! 语义：对 8 类实体（agent/memory/skill/task/project/message/tool/attachment）的向量索引
 //! 做重建（分页逐条重新 embedding 并 upsert）。可用 `entities` 收窄范围
 //! （技能库页面的「重建索引」按钮只传 `["skill"]`），`mode` 决定重建形态
 //! （`auto` 幂等 / `missing` 查漏补缺 / `force` 强制全量）。

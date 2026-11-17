@@ -340,9 +340,9 @@ pub struct AopStatsDistributionResponse {
 /// 展示进度条。
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct RebuildVectorsRequest {
-    /// 只重建这些实体；`None` 或空数组 = 全部 7 类。
+    /// 只重建这些实体；`None` 或空数组 = 全部 8 类。
     ///
-    /// 合法值：`agent` / `memory` / `skill` / `task` / `project` / `message` / `tool`。
+    /// 合法值：`agent` / `memory` / `skill` / `task` / `project` / `message` / `tool` / `attachment`。
     /// 未知值直接报错（不静默忽略）：拼错一个字母就「成功但一条没重建」是最难查的故障。
     ///
     /// 技能列表页只重建技能时传 `["skill"]`，任务步骤数随之变成 1。

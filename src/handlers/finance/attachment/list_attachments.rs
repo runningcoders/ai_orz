@@ -37,6 +37,7 @@ pub async fn list_attachments(
                 purpose: params.purpose.clone(),
                 file_type: params.file_type,
                 pagination: params.pagination,
+                ..Default::default()
             },
         )
         .await?;

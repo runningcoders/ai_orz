@@ -7,7 +7,11 @@ use crate::models::attachment::{
 };
 use crate::pkg::RequestContext;
 use crate::service::dao::attachment;
-use crate::service::dao::attachment::{AttachmentDao, AttachmentQuery};
+use crate::service::dao::attachment::{
+    AttachmentDao, AttachmentQuery, AttachmentSearch, AttachmentVectorDao,
+};
+use crate::service::dao::cortex::CortexDao;
+use crate::service::dao::model_provider::ModelProviderDao;
 use common::enums::FileType;
 use common::error::{Result, bail_err, err};
 use std::path::Path;
@@ -22,9 +26,14 @@ pub fn dal() -> Arc<dyn AttachmentDal + Send + Sync> {
     ATTACHMENT_DAL.get().cloned().unwrap()
 }
 
-/// 初始化 Attachment DAL。
+/// 初始化 Attachment DAL（生产入口：注入完整向量依赖）。
 pub fn init() {
-    let _ = ATTACHMENT_DAL.set(new(attachment::dao()));
+    let _ = ATTACHMENT_DAL.set(new_with_vector(
+        attachment::dao(),
+        Some(attachment::vector_dao()),
+        Some(crate::service::dao::cortex::dao()),
+        Some(crate::service::dao::model_provider::dao()),
+    ));
 }
 
 /// 测试专用：设置一个全新的 Attachment DAL 单例（绕过 init 流程，便于测试隔离）
@@ -35,14 +44,37 @@ pub fn set_for_test(dal: Arc<dyn AttachmentDal + Send + Sync>) {
     let _ = ATTACHMENT_DAL.set(dal);
 }
 
-/// 创建 Attachment DAL（返回 trait 对象）。
+/// 创建 Attachment DAL（向量能力关闭，供只测元数据/文件的单元测试使用）。
 pub fn new(
     attachment_dao: Arc<dyn AttachmentDao + Send + Sync>,
 ) -> Arc<dyn AttachmentDal + Send + Sync> {
-    Arc::new(AttachmentDalImpl { attachment_dao })
+    new_with_vector(attachment_dao, None, None, None)
+}
+
+/// 创建带向量能力的 Attachment DAL（生产 init 使用）。
+///
+/// 三个向量依赖均为 Option：任一缺失时向量索引/搜索自动降级（不 panic、不阻塞主链路）。
+pub fn new_with_vector(
+    attachment_dao: Arc<dyn AttachmentDao + Send + Sync>,
+    vector_dao: Option<Arc<dyn AttachmentVectorDao + Send + Sync>>,
+    cortex_dao: Option<Arc<dyn CortexDao + Send + Sync>>,
+    model_provider_dao: Option<Arc<dyn ModelProviderDao + Send + Sync>>,
+) -> Arc<dyn AttachmentDal + Send + Sync> {
+    Arc::new(AttachmentDalImpl {
+        attachment_dao,
+        attachment_vector_dao: vector_dao,
+        cortex_dao,
+        model_provider_dao,
+    })
 }
 
 // ==================== DAL 接口 ====================
+
+mod search;
+mod vector;
+
+#[cfg(test)]
+mod search_test;
 
 /// Attachment DAL 接口。
 #[async_trait::async_trait]
@@ -70,6 +102,21 @@ pub trait AttachmentDal: Send + Sync {
         ctx: RequestContext,
         query: AttachmentQuery,
     ) -> Result<common::api::PagedResult<Attachment>>;
+
+    /// 混合搜索：向量语义召回（增强路，失败降级）+ FTS5 关键词召回 → 去重 → 三态标注 → 排序。
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: AttachmentSearch,
+    ) -> Result<common::api::PagedResult<Attachment>>;
+
+    /// 重建附件向量索引（供向量重建任务调用）。
+    async fn rebuild_vectors(
+        &self,
+        ctx: RequestContext,
+        progress: &crate::pkg::background_task::TaskProgressCounter,
+        mode: common::enums::VectorRebuildMode,
+    ) -> Result<()>;
 
     /// 删除 Attachment（软删除元数据，不物理删除文件）。
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()>;
@@ -99,6 +146,10 @@ pub trait AttachmentDal: Send + Sync {
 /// Attachment DAL 实现。
 struct AttachmentDalImpl {
     attachment_dao: Arc<dyn AttachmentDao + Send + Sync>,
+    /// 向量索引依赖（缺失时向量路整体降级，主链路不受影响）。
+    attachment_vector_dao: Option<Arc<dyn AttachmentVectorDao + Send + Sync>>,
+    cortex_dao: Option<Arc<dyn CortexDao + Send + Sync>>,
+    model_provider_dao: Option<Arc<dyn ModelProviderDao + Send + Sync>>,
 }
 
 #[async_trait::async_trait]
@@ -147,6 +198,9 @@ impl AttachmentDal for AttachmentDalImpl {
             .write_file(&relative_path, &upload.bytes)?;
         self.attachment_dao.insert(ctx.clone(), &po).await?;
 
+        // 向量索引（增强路，失败只 warn 降级；无 provider / 未注入依赖时跳过）。
+        self.reindex_vector(&ctx, &po).await;
+
         // 落库后回读「真正的 PO」：DAO 会用它自己注入的 `attachments_dir` 回填绝对路径
         // （见 `AttachmentPo::abs_path`），因此返回的实体是完成态——不会出现「刚创建的
         // 对象取不到 file_abs_path」这种半成品。代价是一次主键 SELECT；创建路径频率低，
@@ -192,8 +246,32 @@ impl AttachmentDal for AttachmentDalImpl {
         Ok(page.map(Attachment::from_po))
     }
 
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: AttachmentSearch,
+    ) -> Result<common::api::PagedResult<Attachment>> {
+        self.search_impl(ctx, search).await
+    }
+
+    async fn rebuild_vectors(
+        &self,
+        ctx: RequestContext,
+        progress: &crate::pkg::background_task::TaskProgressCounter,
+        mode: common::enums::VectorRebuildMode,
+    ) -> Result<()> {
+        self.rebuild_vectors_impl(ctx, progress, mode).await
+    }
+
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()> {
-        self.attachment_dao.delete(ctx, id).await
+        self.attachment_dao.delete(ctx.clone(), id).await?;
+        // 向量随元数据软删一并移除（失败只 warn，不影响主删除）。
+        if let Some(vector_dao) = &self.attachment_vector_dao
+            && let Err(e) = vector_dao.delete_vector(ctx.clone(), id).await
+        {
+            log_warn!(ctx, "vector_index", attachment_id = %id, error = ?e, "附件向量删除失败，已降级");
+        }
+        Ok(())
     }
 
     async fn describe_attachment(
@@ -217,6 +295,15 @@ impl AttachmentDal for AttachmentDalImpl {
         self.attachment_dao
             .update_description(ctx.clone(), id, &update)
             .await?;
+
+        // 摘要是向量化文本的核心，写入后必须重索引（三态比对：文本变了→FullReindex）。
+        let fresh_po = self
+            .attachment_dao
+            .find_by_id(ctx.clone(), id)
+            .await?
+            .ok_or_else(|| err!(NotFound, "Attachment {} not found", id))?;
+        self.reindex_vector(&ctx, &fresh_po).await;
+
         self.get_by_id(ctx, id)
             .await?
             .ok_or_else(|| err!(NotFound, "Attachment {} not found", id))

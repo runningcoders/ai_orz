@@ -2,7 +2,7 @@
 
 use super::{ALL_ENTITIES, resolve_entities};
 
-/// 不传 `entities` 时保持历史语义（全部 7 类）。
+/// 不传 `entities` 时保持语义：全部 8 类。
 #[test]
 fn missing_entities_means_all() {
     let all = resolve_entities(None).expect("None 应解析为全量");

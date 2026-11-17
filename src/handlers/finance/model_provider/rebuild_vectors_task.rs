@@ -16,7 +16,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// 可重建的实体清单：(key, 展示名)。顺序即执行顺序。
-pub const ALL_ENTITIES: [(&str, &str); 7] = [
+pub const ALL_ENTITIES: [(&str, &str); 8] = [
     ("agent", "Agent"),
     ("memory", "Memory"),
     ("skill", "Skill"),
@@ -24,11 +24,12 @@ pub const ALL_ENTITIES: [(&str, &str); 7] = [
     ("project", "Project"),
     ("message", "Message"),
     ("tool", "Tool"),
+    ("attachment", "Attachment"),
 ];
 
 /// 把请求里的实体名解析成执行清单。
 ///
-/// `None` 或空 → 全部 7 类（向后兼容：老前端不传该字段）。
+/// `None` 或空 → 全部 8 类（向后兼容：老前端不传该字段）。
 /// 未知名字**报错**而不是忽略：拼错一个字母就「任务成功但一条都没重建」，
 /// 是最难排查的那类静默失败。
 pub fn resolve_entities(names: Option<&[String]>) -> Result<Vec<(&'static str, &'static str)>> {
@@ -64,7 +65,7 @@ pub struct RebuildVectorsTask {
     task_id: String,
     /// 请求上下文（包含用户/组织信息，供 DAL 日志与权限校验使用）
     ctx: RequestContext,
-    /// 本次要重建的实体（缺省为全部 7 类）
+    /// 本次要重建的实体（缺省为全部 8 类）
     entities: Vec<(&'static str, &'static str)>,
     /// 重建模式（`auto` 幂等 / `missing` 查漏补缺 / `force` 强制全量）
     mode: VectorRebuildMode,
@@ -246,6 +247,11 @@ impl BackgroundTask for RebuildVectorsTask {
                     }
                     "tool" => {
                         dal::tool::dal()
+                            .rebuild_vectors(self.ctx.clone(), &self.progress, self.mode)
+                            .await?
+                    }
+                    "attachment" => {
+                        dal::attachment::dal()
                             .rebuild_vectors(self.ctx.clone(), &self.progress, self.mode)
                             .await?
                     }

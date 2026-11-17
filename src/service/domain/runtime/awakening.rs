@@ -910,7 +910,14 @@ fn append_attachment_description_guidance(message: &Message, lines: &mut Vec<Str
     }
 
     lines.push(format!(
-        "附件摘要要求：资源行已带「摘要」的附件**默认直接复用**，不必重复识别；但如果结合当前用户文字或上下文判断摘要可能失准（与附件实际内容不符，或用途已随本次意图变化），应重新识别并调用工具 `save_attachment_description` 覆盖。没有摘要的附件请在识别后调用该工具写入——`attachment_id` 取资源行括号内的附件 id；`content` 写客观内容摘要，`usage` 写结合当前用户文字推断的用途，`message_id` 填当前消息 ID `{}`。调用再次发生即覆盖旧摘要；需要完整摘要或用途时用 `get_attachment` 查询（`get_attachment_content` 取文件内容）。",
+        concat!(
+            "附件描述与用途要求：每一条资源行里的附件都应补全摘要，便于以后按内容搜索和复用。" ,
+            "① 已带「摘要」的附件默认直接复用，不必重复识别；但若结合本次用户文字或上下文判断摘要失准（与实际内容不符、或用途已变化），应重新识别并调用工具 `save_attachment_description` 覆盖。" ,
+            "② 没有摘要的附件，识别后调用该工具写入——`attachment_id` 取资源行括号内的 id；`content` 写客观内容描述，`usage` 写结合用户文字推断的用途，`message_id` 填当前消息 ID `{}`；再次调用即覆盖旧值。" ,
+            "③ 按文件类型取信息：图片已内联为视觉输入，可直接看图描述；文本类（md/txt/json/csv/代码等）用 `get_attachment_content` 读内容（仅 UTF-8 文本、上限 64KB）后再写；视频/音频/PDF/压缩包及其它二进制文件无法读取内容，也要基于文件名、MIME、大小与用户上下文写客观的可见信息，并在描述里如实说明「内容未能读取」——**禁止凭空编造没有依据的内容**。" ,
+            "④ 无论哪种类型都尽量把 `content`（描述）和 `usage`（用途）都写上，确实无法判断用途时可留空但描述必填。" ,
+            "需要完整摘要或用途时用 `get_attachment` 查询；`get_attachment_content` 只读文本文件。"
+        ),
         message.po.id
     ));
 }

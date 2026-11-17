@@ -8,6 +8,7 @@ pub mod get_attachment_content;
 pub mod get_attachment_file;
 pub mod list_attachments;
 pub mod save_attachment_description;
+pub mod search_attachments;
 pub mod update_attachment_content;
 pub mod upload_attachment;
 
@@ -20,5 +21,6 @@ pub use get_attachment_content::get_attachment_content;
 pub use get_attachment_file::get_attachment_file;
 pub use list_attachments::list_attachments;
 pub use save_attachment_description::save_attachment_description;
+pub use search_attachments::search_attachments;
 pub use update_attachment_content::update_attachment_content;
 pub use upload_attachment::upload_attachment;
