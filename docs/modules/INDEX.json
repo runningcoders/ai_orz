@@ -3,7 +3,7 @@
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
   "total": 674,
-  "total_bytes": 14279571,
+  "total_bytes": 14281382,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -5779,7 +5779,7 @@
           "path": "13-数据模型/C-知识/文件存储模型.md",
           "name": "文件存储模型",
           "title": "文件存储模型",
-          "bytes": 18327
+          "bytes": 20138
         },
         {
           "tier": "C-知识",
