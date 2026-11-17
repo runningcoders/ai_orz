@@ -40,8 +40,8 @@ impl RuntimeDomainImpl {
 
         let scoped = ctx.to_builder().agent_id(agent_id).build();
         let anchor = normalize_timestamp_secs(anchor_ts);
-        // `created_at DESC, id ASC` 的分页次序在 DAO 里已固定，跨页相对次序确定，
-        // 不会因同秒写入而漏行（见 short_term.rs 的 ORDER BY 注释）。
+        // `created_at DESC, rowid DESC` 的分页次序在 DAO 里已固定，跨页相对次序确定，
+        // 不会因同秒写入而漏行或乱序（见 short_term.rs / MemorySortOrder 的注释）。
         let mut picked: Vec<Memory> = Vec::new(); // DESC 页序
 
         for page in 0..MEMORY_INDEX_MAX_PAGES {

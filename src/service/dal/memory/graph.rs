@@ -404,8 +404,13 @@ impl MemoryDalImpl {
                 for id in &batch_ids {
                     fetched.insert(id.clone());
                 }
-                // 每条边挂到双端点名下的缓存；batch 内未被任何边引用的节点补空条目，
-                // 保证 fetched 节点必有缓存条目，pop 时不会误判为「未拉取」重复查询
+                // 本批节点的边已完整拉全：**覆盖**旧的部分缓存（这些节点可能此前只作为
+                // 别的批次的边端点出现过），保证 pop 时拿到的是按 SQL 优先级排序的完整
+                // 列表，而不是多次 append 拼出来的混合顺序。
+                for id in &batch_ids {
+                    edge_cache.insert(id.clone(), Vec::new());
+                }
+                // 每条边挂到双端点名下的缓存；batch 内未被任何边引用的节点已有空条目
                 for rel in batch_relations {
                     edge_cache
                         .entry(rel.source_node_id.clone())
@@ -416,16 +421,15 @@ impl MemoryDalImpl {
                         .or_default()
                         .push(rel);
                 }
-                for id in &batch_ids {
-                    edge_cache.entry(id.clone()).or_default();
-                }
             }
 
             // batch 内两节点之间的边会挂到双方名下，pop 时可能取到重复边：
-            // 按 id 去重，避免重复边占用 take(max_breadth) 名额（旧实现单查无重复）
+            // 保序去重（HashSet 记录已见 id），避免重复边占用 take(max_breadth) 名额。
+            // ⚠️ 不能再按 created_at 重排：选边优先级由 DAO 的 RELATION_ORDER_BY 决定
+            // （强度 → 最近更新 → 插入顺序），这里重排会把 SQL 语义覆盖掉。
             let mut node_relations = edge_cache.remove(&node_id).unwrap_or_default();
-            node_relations.sort_by_key(|rel| rel.created_at);
-            node_relations.dedup_by(|a, b| a.id == b.id);
+            let mut seen_relation_ids: HashSet<String> = HashSet::new();
+            node_relations.retain(|rel| seen_relation_ids.insert(rel.id.clone()));
 
             let limited_relations: Vec<KnowledgeNodeRelationPo> = if max_breadth > 0 {
                 node_relations

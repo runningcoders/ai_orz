@@ -429,12 +429,83 @@ fn sort_order_to_sql_is_stable() {
     use crate::service::dao::memory::MemorySortOrder;
     assert_eq!(
         MemorySortOrder::RecentFirst.to_sql(),
-        " ORDER BY created_at DESC"
+        " ORDER BY created_at DESC, rowid DESC"
     );
     assert_eq!(
         MemorySortOrder::OldestFirst.to_sql(),
-        " ORDER BY created_at ASC"
+        " ORDER BY created_at ASC, rowid ASC"
     );
     // 默认值必须是最近优先，保持历史行为不变
     assert_eq!(MemorySortOrder::default(), MemorySortOrder::RecentFirst);
+}
+
+/// 同秒写入（`created_at` 相同）时，`rowid` 兜底保证后写入的排在前面。
+///
+/// 回归背景：历史短期记忆 ID 是内容哈希（`st_{sha256}`），新数据已统一为 UUIDv7；
+/// 无论哪种格式，`id ASC/DESC` 都不能替代插入顺序（旧数据无时间语义），而生产侧
+/// `created_at` 是秒级，同秒多条是常态，必须用 `rowid` 兜底。
+#[sqlx::test]
+async fn query_short_term_breaks_created_at_ties_by_insertion_order(pool: SqlitePool) {
+    crate::config::init().unwrap();
+    let dao = MemoryDaoSqliteImpl::new();
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
+
+    let same_second = chrono::Utc::now().timestamp();
+    // 同一秒内先后写入三条：st-first → st-second → st-third
+    for id in ["st-first", "st-second", "st-third"] {
+        let index = ShortTermMemoryIndexPo {
+            id: id.to_string(),
+            agent_id: "agent-tie".to_string(),
+            task_id: None,
+            role: "user".to_string(),
+            summary: format!("摘要 {id}"),
+            tags: "[]".to_string(),
+            trace_ids: "[]".to_string(),
+            status: MemoryStatus::Active,
+            created_at: same_second,
+            updated_at: same_second,
+        };
+        dao.create_short_term_index(ctx.clone(), index)
+            .await
+            .unwrap();
+    }
+
+    use crate::service::dao::memory::{MemoryQuery, MemorySortOrder};
+
+    let recent = dao
+        .query_short_term(
+            ctx.clone(),
+            MemoryQuery {
+                agent_id: Some("agent-tie".to_string()),
+                memory_type: Some(common::enums::MemoryType::ShortTerm),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let recent_ids: Vec<&str> = recent.iter().map(|m| m.id.as_str()).collect();
+    assert_eq!(
+        recent_ids,
+        vec!["st-third", "st-second", "st-first"],
+        "最近优先：同秒写入时后插入的必须在前"
+    );
+
+    let oldest = dao
+        .query_short_term(
+            ctx,
+            MemoryQuery {
+                agent_id: Some("agent-tie".to_string()),
+                memory_type: Some(common::enums::MemoryType::ShortTerm),
+                order: MemorySortOrder::OldestFirst,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let oldest_ids: Vec<&str> = oldest.iter().map(|m| m.id.as_str()).collect();
+    assert_eq!(
+        oldest_ids,
+        vec!["st-first", "st-second", "st-third"],
+        "最早优先：同秒写入时先插入的必须在前"
+    );
 }

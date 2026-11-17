@@ -8,6 +8,40 @@ use common::enums::{KnowledgeRelationStatus, MemoryStatus};
 use common::error::{Result, bail_err};
 use common::ontology::normalize;
 
+/// 关系边所有读路径共用的优先级排序键
+///
+/// 排序意图（从高到低）：
+/// 1. 标注过强度的边优先（`weight IS NULL` 升序，NULL 排最后）；
+/// 2. 强度越大越前；
+/// 3. 最近确认/修正的边优先（修正 = 旧边降级 + 插入新行，`updated_at` 会更新）；
+/// 4. 最后按插入顺序（`rowid`）兜底：同秒写入时后插入的边在前，图遍历按
+///    `max_breadth` 截断时新边不会被老边饿死，分页次序也确定。
+///
+/// ⚠️ 下面几处 `sqlx::query!` 是编译期 SQL，无法引用本常量；宏内字面量必须与
+/// 这里逐字一致。QueryBuilder 路径统一引用常量，避免多处漂移。
+const RELATION_ORDER_BY: &str =
+    r#" ORDER BY (weight IS NULL) ASC, weight DESC, updated_at DESC, created_at DESC, rowid DESC"#;
+
+/// 关系边优先级比较（与 [`RELATION_ORDER_BY`] 的前三档同口径）
+///
+/// PO 不带 `rowid`，跨块合并时由调用方在末尾补 `rowid DESC` 作为最终次序键。
+fn relation_priority_cmp(
+    a: &KnowledgeNodeRelationPo,
+    b: &KnowledgeNodeRelationPo,
+) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+
+    a.weight
+        .is_none()
+        .cmp(&b.weight.is_none())
+        .then_with(|| match (a.weight, b.weight) {
+            (Some(x), Some(y)) => y.partial_cmp(&x).unwrap_or(Ordering::Equal),
+            _ => Ordering::Equal,
+        })
+        .then_with(|| b.updated_at.cmp(&a.updated_at))
+        .then_with(|| b.created_at.cmp(&a.created_at))
+}
+
 impl MemoryDaoSqliteImpl {
     /// 关系边行 → PO（动态 SQL 通用映射；status 按 KnowledgeRelationStatus 解码）
     fn knowledge_relation_from_row(row: &sqlx::sqlite::SqliteRow) -> KnowledgeNodeRelationPo {
@@ -27,16 +61,19 @@ impl MemoryDaoSqliteImpl {
     }
 
     /// `list_relations_batch` 的单块查询（调用方保证 chunk 长度 ≤ IN_CLAUSE_CHUNK）
+    ///
+    /// 返回 `(rowid, 边)`：跨块拼接后要按同一优先级键重排，而优先级最后一档正是
+    /// 插入顺序 `rowid`——PO 里没有这一列，必须随行带出。
     async fn list_relations_batch_chunk(
         &self,
         ctx: RequestContext,
         node_ids: &[String],
-    ) -> Result<Vec<KnowledgeNodeRelationPo>> {
+    ) -> Result<Vec<(i64, KnowledgeNodeRelationPo)>> {
         use sqlx::QueryBuilder;
 
         let pool = self.pool(ctx);
         let mut builder = QueryBuilder::new(
-            r#"SELECT id, source_node_id, target_node_id, relation_type, weight, "status", created_at, updated_at
+            r#"SELECT rowid, id, source_node_id, target_node_id, relation_type, weight, "status", created_at, updated_at
 FROM knowledge_node_relation
 WHERE (source_node_id IN ("#,
         );
@@ -52,17 +89,19 @@ WHERE (source_node_id IN ("#,
             separated.push_bind(id);
         }
         // 双闭括号：先闭 IN( 再闭外层分组(，保证 status 过滤作用于整个 OR 表达式
-        separated.push_unseparated(")) AND \"status\" = 1 ORDER BY created_at ASC");
+        separated.push_unseparated(")) AND \"status\" = 1");
+        separated.push_unseparated(RELATION_ORDER_BY);
 
         let rows = builder.build().fetch_all(&pool).await?;
 
-        let mut result = Vec::new();
-        for row in rows {
-            // 关系类型原样带出（落库存的就是原文，读取侧不做任何枚举归一）
-            result.push(Self::knowledge_relation_from_row(&row));
-        }
-
-        Ok(result)
+        use sqlx::Row;
+        Ok(rows
+            .iter()
+            .map(|row| {
+                let rowid: i64 = row.get("rowid");
+                (rowid, Self::knowledge_relation_from_row(row))
+            })
+            .collect())
     }
 
     /// `query_knowledge_relations` 的单块查询（调用方保证 chunk 长度 ≤ IN_CLAUSE_CHUNK）
@@ -84,7 +123,8 @@ WHERE id IN ("#,
         for id in ids {
             separated.push_bind(id);
         }
-        separated.push_unseparated(") AND \"status\" = 1 ORDER BY created_at ASC");
+        separated.push_unseparated(") AND \"status\" = 1");
+        separated.push_unseparated(RELATION_ORDER_BY);
 
         let rows = builder.build().fetch_all(&pool).await?;
 
@@ -310,7 +350,7 @@ ON CONFLICT(id) DO UPDATE SET
 SELECT id, source_node_id, target_node_id, relation_type, weight, "status" as "status: KnowledgeRelationStatus", created_at, updated_at
 FROM knowledge_node_relation
 WHERE source_node_id = ? AND "status" = 1
-ORDER BY created_at ASC
+ORDER BY (weight IS NULL) ASC, weight DESC, updated_at DESC, created_at DESC, rowid DESC
 "#,
             source_id
         )
@@ -347,7 +387,7 @@ ORDER BY created_at ASC
 SELECT id, source_node_id, target_node_id, relation_type, weight, "status" as "status: KnowledgeRelationStatus", created_at, updated_at
 FROM knowledge_node_relation
 WHERE target_node_id = ? AND "status" = 1
-ORDER BY created_at ASC
+ORDER BY (weight IS NULL) ASC, weight DESC, updated_at DESC, created_at DESC, rowid DESC
 "#,
             target_id
         )
@@ -384,7 +424,7 @@ ORDER BY created_at ASC
 SELECT id, source_node_id, target_node_id, relation_type, weight, "status" as "status: KnowledgeRelationStatus", created_at, updated_at
 FROM knowledge_node_relation
 WHERE (source_node_id = ? OR target_node_id = ?) AND "status" = 1
-ORDER BY created_at ASC
+ORDER BY (weight IS NULL) ASC, weight DESC, updated_at DESC, created_at DESC, rowid DESC
 "#,
             node_id,
             node_id
@@ -421,15 +461,17 @@ ORDER BY created_at ASC
         }
 
         // SQLite 绑定参数上限 999：每 ID 占 2 绑定，按 IN_CLAUSE_CHUNK 分块避免超限
-        let mut result = Vec::new();
+        let mut result: Vec<(i64, KnowledgeNodeRelationPo)> = Vec::new();
         for chunk in node_ids.chunks(IN_CLAUSE_CHUNK) {
             result.extend(self.list_relations_batch_chunk(ctx.clone(), chunk).await?);
         }
-        // 跨块拼接后重排，保持 created_at ASC 的有序契约；
-        // 两端点分属不同块的边会在两块中各命中一次，按 id 去重（稳定排序后重复项相邻）
-        result.sort_by_key(|rel| rel.created_at);
-        result.dedup_by(|a, b| a.id == b.id);
-        Ok(result)
+        // 跨块拼接后按完整优先级键重排（含 rowid 兜底），保持与单块 SQL 同序；
+        // 两端点分属不同块的边会在两块中各命中一次，稳定排序后按 id 去重。
+        result.sort_by(|(rowid_a, a), (rowid_b, b)| {
+            relation_priority_cmp(a, b).then_with(|| rowid_b.cmp(rowid_a))
+        });
+        result.dedup_by(|(_, a), (_, b)| a.id == b.id);
+        Ok(result.into_iter().map(|(_, rel)| rel).collect())
     }
 
     pub(super) async fn query_knowledge_relations(
@@ -528,7 +570,7 @@ WHERE id = ? AND "status" = 1
 SELECT id, source_node_id, target_node_id, relation_type, weight, "status" as "status: KnowledgeRelationStatus", created_at, updated_at
 FROM knowledge_node_relation
 WHERE source_node_id = ? AND relation_type = ? AND "status" = 1
-ORDER BY created_at ASC
+ORDER BY (weight IS NULL) ASC, weight DESC, updated_at DESC, created_at DESC, rowid DESC
 "#,
             source_id,
             relation_type
