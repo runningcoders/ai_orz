@@ -165,9 +165,10 @@ async fn rejects_embedding_provider(pool: SqlitePool) {
     assert!(err.to_string().contains("only Agent capability"), "{err}");
 }
 
-/// 授权边界的工具侧表达：只能挂 `admin`，不能同时挂出生可达包。
+/// 授权边界的工具侧表达：只挂 `admin`（批量授权面），不得挂出生可达包；
+/// 单工具绑定同样是合法授权路径，见下一条用例。
 #[test]
-fn tool_is_gated_by_admin_pack_only() {
+fn tool_only_carries_admin_tag_for_batch_grant() {
     let registry = crate::pkg::tool_registry::get_registry();
     let factory = registry
         .get_builtin_factory("update_agent_model_provider")
@@ -176,5 +177,54 @@ fn tool_is_gated_by_admin_pack_only() {
         factory.create_po().get_tags(),
         vec!["admin".to_string()],
         "挂到 neural / tool_management 会让所有 Agent 都能改模型绑定"
+    );
+}
+
+/// 「有这个工具」即准入：未装任何工具包（含 `admin`）的 Agent，只要该工具被
+/// 单独绑定，就会进入它的工具面，不需要整包装。
+/// 反事实：若可达性只认工具包 tag，这里的工具面里就不会有本工具。
+#[sqlx::test]
+async fn single_tool_binding_grants_access_without_admin_pack(pool: SqlitePool) {
+    let ctx = init_env(pool);
+    let (agent_id, _) = insert_agent(&ctx, "grant").await;
+
+    let tool_po = crate::pkg::tool_registry::get_registry()
+        .get_builtin_factory("update_agent_model_provider")
+        .expect("必须注册为内置工具")
+        .create_po();
+    let tool_id = tool_po.id.clone();
+    crate::service::dao::tool::dao()
+        .create_tool(ctx.clone(), &tool_po)
+        .await
+        .expect("insert builtin tool");
+
+    crate::service::domain::finance::domain()
+        .tool_provider_manage()
+        .bind_tool_to_agent(ctx.clone(), &agent_id, &tool_id)
+        .await
+        .expect("管理员单独绑定该工具应放行");
+
+    let agent = domain()
+        .agent_manage()
+        .get_agent(
+            ctx.clone(),
+            &agent_id,
+            crate::service::dal::agent::AgentFetchOptions {
+                with_tools: Some(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("get agent")
+        .expect("agent exists");
+
+    assert!(
+        agent.po.get_installed_tags().is_empty(),
+        "本用例前提：未装任何工具包（含 admin），实际 {:?}",
+        agent.po.get_installed_tags()
+    );
+    assert!(
+        agent.tools().iter().any(|t| t.po.id == tool_id),
+        "单独绑定的工具必须进入 Agent 工具面"
     );
 }
