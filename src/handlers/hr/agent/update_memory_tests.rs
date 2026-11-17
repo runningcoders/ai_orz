@@ -500,8 +500,8 @@ async fn mixed_batch_relations_receipt_has_keys_and_real_ids(pool: sqlx::SqliteP
         .clone()
         .expect("成功项必须带 relation_id");
     assert!(
-        real_id.starts_with("kr_"),
-        "落库边 ID 应为 kr_ 前缀: {real_id}"
+        real_id.starts_with("krel_"),
+        "落库边 ID 应为 krel_ 前缀: {real_id}"
     );
 
     assert_eq!(results[1].status, RelationWriteStatus::Failed);

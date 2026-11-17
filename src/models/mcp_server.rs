@@ -5,7 +5,6 @@
 
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Type};
-use uuid::Uuid;
 
 pub const REDACTED_CONFIG_VALUE: &str = "[REDACTED]";
 
@@ -301,7 +300,7 @@ impl McpServerPo {
         creator: Option<String>,
     ) -> Self {
         let id = if id.is_empty() {
-            Uuid::now_v7().to_string()
+            common::new_id!(McpServer)
         } else {
             id
         };

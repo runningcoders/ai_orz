@@ -84,7 +84,7 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
             return Ok(ToolExecutionResult::new(
                 crate::pkg::credential::credential_missing_json(missing),
                 tool_id.clone(),
-                format!("credential_missing_{}", uuid::Uuid::now_v7()),
+                format!("credential_missing_{}", common::id::TimeId::generate()),
             ));
         };
 
@@ -197,7 +197,7 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
             format!(
                 "manual_dispatch_{}_{}",
                 special_tool_id,
-                uuid::Uuid::now_v7()
+                common::id::TimeId::generate()
             ),
         ))
     }

@@ -20,8 +20,8 @@
 //!
 //! - `NAME` = `agents.role[0]`（JSON 数组首元素，如 `tech_lead`）
 //! - `EMAIL` = `<role_slug>@agents.ai-orz.local`
-//! - 同 role 有多个在用 Agent 时 → `<role_slug>+<agent_id 前 8>@agents.ai-orz.local`
-//!   （当前各 role 唯一，此分支为将来预留）
+//! - 同 role 有多个在用 Agent 时 → `<role_slug>+<agent_id 后 8>@agents.ai-orz.local`
+//!   （取 UUIDv7 尾部随机位；前 8 位是时间/固定前缀，区分度不足）
 //! - 无 role / role 非法 → `None`（**不凭空造值**）
 //!
 //! `agents` 表没有 email 列（零迁移约束），`agents.ai-orz.local` 是本地占位域：
@@ -50,7 +50,11 @@ pub fn derive_identity(
 ) -> Option<AgentGitIdentity> {
     let slug = first_role_slug(role_json)?;
     let email = if peers > 1 {
-        let short: String = agent_id.trim().chars().take(8).collect();
+        // UUIDv7 / 旧时间戳 ID 的高位都是时间，前缀更是固定的（如 `agent_`），
+        // 取前 8 位几乎无法区分 Agent；随机位在尾部，因此取后 8 位。
+        let trimmed = agent_id.trim();
+        let skip = trimmed.chars().count().saturating_sub(8);
+        let short: String = trimmed.chars().skip(skip).collect();
         format!("{slug}+{short}@{EMAIL_DOMAIN}")
     } else {
         format!("{slug}@{EMAIL_DOMAIN}")

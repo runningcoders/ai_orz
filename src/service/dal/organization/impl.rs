@@ -259,7 +259,7 @@ impl OrganizationDalImpl {
         }
 
         // 与 HTTP 路径完全相同的参数形状（对端 consumer 反序列化同一 DTO）
-        let task_id = uuid::Uuid::now_v7().to_string();
+        let task_id = common::id::A2aTaskId::generate().to_string();
         let params = SendTaskParams {
             id: task_id.clone(),
             message: A2aMessage {
@@ -283,7 +283,7 @@ impl OrganizationDalImpl {
                 ))));
             }
         };
-        let correlation_id = uuid::Uuid::now_v7().to_string();
+        let correlation_id = common::id::TimeId::generate().to_string();
 
         match ws::request_over_ws(
             &peer_org,

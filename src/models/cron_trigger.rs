@@ -5,7 +5,6 @@
 use common::enums::TriggerType;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-use uuid::Uuid;
 
 /// CronTriggerPo 持久化对象。
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
@@ -35,7 +34,7 @@ impl CronTriggerPo {
         creator: Option<String>,
     ) -> Self {
         let id = if id.is_empty() {
-            Uuid::now_v7().to_string()
+            common::new_id!(CronTrigger)
         } else {
             id
         };

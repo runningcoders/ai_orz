@@ -231,12 +231,10 @@ FROM short_term_memory_index WHERE 1=1"#,
             builder.push_bind(task_id);
         }
 
-        // 排序方向：默认最近优先（历史行为），队列类查询显式指定最早优先
-        // 排序方向：默认最近优先（历史行为），队列类查询显式指定最早优先
+        // 排序方向：默认最近优先（历史行为），队列类查询显式指定最早优先。
+        // 次序键（rowid）已包含在 `to_sql()` 里：`created_at` 是秒级，同秒写入很常见，
+        // 必须用插入顺序兜底，否则「最近 N 条」与分页（OFFSET）的次序都不确定。
         builder.push(query.order.to_sql());
-        // `created_at` 毫秒级可能同值，补 `id` 作次序键：分页（OFFSET）要求排序确定，
-        // 否则同值行在不同页查询间相对次序可能变化，导致漏行。
-        builder.push(", id ASC");
 
         // SQLite 语法要求 OFFSET 必须跟在 LIMIT 之后；只给 offset 时用 `LIMIT -1`
         // 表达「不限上限」。两者都不给则维持原有的「无分页子句」行为。
@@ -360,7 +358,7 @@ LIMIT ?
         }
 
         // 路径二：短词元（<3 字符，trigram 无法形成 token）LIKE 兜底，
-        // 直接查主表列，BM25 不可用，改按 updated_at 排序
+        // 直接查主表列，BM25 不可用，改按 updated_at + rowid（插入顺序）排序
         if !plan.like_patterns.is_empty()
             && let Some((like_clause, like_params)) =
                 build_fts5_like_clause("m", &["summary", "tags"], &plan.like_patterns)
@@ -373,7 +371,7 @@ SELECT m.id, m.agent_id, m.task_id, m.role, m.summary, m.tags, m.trace_ids,
 FROM short_term_memory_index m
 WHERE ({like_clause})
   AND m.status != 0{agent_clause}{tags_clause}{task_id_clause}
-ORDER BY m.updated_at DESC, m.id DESC
+ORDER BY m.updated_at DESC, m.rowid DESC
 LIMIT ?
 "#
             );

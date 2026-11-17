@@ -51,8 +51,8 @@ async fn test_append_trace_and_create_short_term_index(pool: SqlitePool) {
 }
 
 #[test]
-fn test_memory_trace_id_is_trace_prefix() {
-    // 验证 MemoryTrace 的 ID 格式是 trace-{agent_id}-{timestamp}
+fn test_memory_trace_id_is_uuid_v7_simple() {
+    // 验证 MemoryTrace 的 ID 格式是 trace_{uuid_v7_simple}（无横杠）
     let trace = MemoryTrace::new(
         "test-agent-1".to_string(),
         "log-1".to_string(),
@@ -63,15 +63,16 @@ fn test_memory_trace_id_is_trace_prefix() {
         None,
     );
 
-    // ID 应该以 trace- 开头
-    assert!(trace.id.starts_with("trace-"));
-
-    // 应该包含 agent_id
-    assert!(trace.id.contains("test-agent-1"));
-
-    // 最后一部分应该是数字（timestamp）
-    let parts: Vec<&str> = trace.id.rsplitn(2, '-').collect();
-    assert!(parts[0].parse::<u64>().is_ok());
+    let parsed = common::id::EntityId::parse(&trace.id)
+        .unwrap_or_else(|e| panic!("trace ID 解析失败: {} ({e})", trace.id));
+    assert_eq!(
+        parsed.prefix(),
+        &common::id::IdPrefix::Trace,
+        "trace ID 前缀错误: {}",
+        trace.id
+    );
+    assert_eq!(parsed.uuid().get_version_num(), 7, "trace ID 应使用 UUIDv7");
+    assert!(!trace.id.contains('-'), "trace ID 不能带横杠: {}", trace.id);
 }
 
 #[test]

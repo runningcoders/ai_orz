@@ -2,7 +2,6 @@
 
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CreateMcpServerRequest, CreateMcpServerResponse};
-use uuid::Uuid;
 
 use crate::models::mcp_server::McpServer;
 use crate::pkg::RequestContext;
@@ -32,7 +31,7 @@ pub async fn create_mcp_server(
         common::models::mcp_transport_scope(params.transport),
     )?;
     let server = McpServer::new(
-        Uuid::now_v7().to_string(),
+        common::new_id!(McpServer),
         params.name,
         transport,
         config,

@@ -22,7 +22,6 @@ use common::enums::organization::OrganizationLinkStatus;
 use common::enums::{OrganizationStatus, UserRole};
 use common::error::{Error, Result, err};
 use rand::Rng;
-use uuid::Uuid;
 
 /// 联邦签名时间窗（秒，§四：两端 NTP 基本同步的容错上限）
 const SIGNATURE_TIMESTAMP_WINDOW_SECS: i64 = 300;
@@ -68,32 +67,6 @@ fn verify_handshake_signature(
         signature,
     )
     .map_err(|e| Error::unauthorized(format!("建联交叉签名验证失败: {}", e)))
-}
-
-/// 生成组织 ID（12 位大写字母 + 数字）
-fn generate_org_id() -> String {
-    const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    const LEN: usize = 12;
-    let mut rng = rand::thread_rng();
-    (0..LEN)
-        .map(|_| {
-            let idx = rng.gen_range(0..CHARSET.len());
-            CHARSET[idx] as char
-        })
-        .collect()
-}
-
-/// 生成用户 ID（16 位大写字母 + 数字）
-pub(super) fn generate_user_id() -> String {
-    const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    const LEN: usize = 16;
-    let mut rng = rand::thread_rng();
-    (0..LEN)
-        .map(|_| {
-            let idx = rng.gen_range(0..CHARSET.len());
-            CHARSET[idx] as char
-        })
-        .collect()
 }
 
 /// 加载 ctx 当前所属组织（邀请码签发/轮换等「只操作自己组织」场景共用）
@@ -219,7 +192,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
     ) -> Result<(String, String)> {
         // 1. 创建组织（S1 密钥底座：Local 组织创建即生成联邦身份密钥对，私钥加密落库；
         //    主密钥不可用的环境保持 NULL，由启动自检兜底补齐）
-        let org_id = generate_org_id();
+        let org_id = common::id::OrgId::generate().to_string();
         let mut org = OrganizationPo::new(
             org_id.clone(),
             params.organization_name,
@@ -235,7 +208,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
         self.org_dal.create(ctx.clone(), &org).await?;
 
         // 2. 创建超级管理员用户
-        let user_id = generate_user_id();
+        let user_id = common::id::UserId::generate().to_string();
         let user = UserPo::new(
             user_id.clone(),
             org_id.clone(),
@@ -390,7 +363,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
             .insert(
                 ctx.clone(),
                 &OrganizationPairingCodePo {
-                    id: Uuid::now_v7().to_string(),
+                    id: common::id::UuidId::generate().to_string(),
                     org_id: org_id.clone(),
                     code_hash,
                     expires_at,
@@ -485,7 +458,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
             existing
                 .as_ref()
                 .map(|l| l.id.clone())
-                .unwrap_or_else(|| Uuid::now_v7().to_string()),
+                .unwrap_or_else(|| common::id::UuidId::generate().to_string()),
             org_id.clone(),
             req.local_org.id.clone(),
             req.local_endpoint.clone(),
@@ -651,7 +624,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
             existing
                 .as_ref()
                 .map(|l| l.id.clone())
-                .unwrap_or_else(|| Uuid::now_v7().to_string()),
+                .unwrap_or_else(|| common::id::UuidId::generate().to_string()),
             org_id.clone(),
             resp.peer_org.id.clone(),
             peer_endpoint.clone(),

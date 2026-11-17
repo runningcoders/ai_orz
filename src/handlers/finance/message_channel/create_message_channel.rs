@@ -2,7 +2,6 @@
 
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CreateMessageChannelRequest, CreateMessageChannelResponse};
-use uuid::Uuid;
 
 use crate::models::message_channel::{ChannelConfig, MessageChannel, MessageChannelPo};
 use crate::models::user_credential::UserCredential;
@@ -221,7 +220,7 @@ pub async fn create_message_channel(
     let agent_id = fold_clear_sentinel(params.agent_id.clone());
 
     let channel_po = MessageChannelPo::new(
-        Uuid::now_v7().to_string(),
+        common::new_id!(MessageChannel),
         org_id,
         user_id,
         agent_id,

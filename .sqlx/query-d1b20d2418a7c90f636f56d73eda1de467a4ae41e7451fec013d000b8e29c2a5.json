@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, source_node_id, target_node_id, relation_type, weight, \"status\" as \"status: KnowledgeRelationStatus\", created_at, updated_at\nFROM knowledge_node_relation\nWHERE (source_node_id = ? OR target_node_id = ?) AND \"status\" = 1\nORDER BY created_at ASC\n",
+  "query": "\nSELECT id, source_node_id, target_node_id, relation_type, weight, \"status\" as \"status: KnowledgeRelationStatus\", created_at, updated_at\nFROM knowledge_node_relation\nWHERE source_node_id = ? AND relation_type = ? AND \"status\" = 1\nORDER BY (weight IS NULL) ASC, weight DESC, updated_at DESC, created_at DESC, rowid DESC\n",
   "describe": {
     "columns": [
       {
@@ -58,5 +58,5 @@
       false
     ]
   },
-  "hash": "a3326c6f67f98158cb95fbd1deb1286ad14fc61623808b3a99ecf00ddc060fc2"
+  "hash": "d1b20d2418a7c90f636f56d73eda1de467a4ae41e7451fec013d000b8e29c2a5"
 }

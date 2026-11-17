@@ -705,7 +705,7 @@ impl LarkDalImpl {
         }
         let now = chrono::Utc::now().timestamp_millis();
         let binding = crate::models::message_channel_conversation::MessageChannelConversationPo {
-            id: uuid::Uuid::now_v7().to_string(),
+            id: common::new_id!(MessageChannelConversation),
             channel_type: ChannelType::Lark,
             external_app_id: app_id.to_string(),
             external_tenant_key: tenant_key.to_string(),

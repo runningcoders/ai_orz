@@ -290,8 +290,8 @@ ORDER BY updated_at DESC
             );
         }
 
-        // Generate new unique skill id internally (using v7 uuid for time ordering)
-        let new_skill_id = uuid::Uuid::now_v7().to_string();
+        // Generate new unique skill id internally (UUIDv7 simple, no hyphens)
+        let new_skill_id = common::new_id!(Skill);
 
         // Calculate relative content path for agent-owned draft skill
         // Format: agents/{agent_id}/skills/{skill_id}

@@ -24,8 +24,10 @@ pub async fn save_short_term_memory(
     let tags_json = serde_json::to_string(&params.tags.unwrap_or_default())?;
     let trace_ids_json = serde_json::to_string(&params.trace_ids.unwrap_or_default())?;
 
-    let id_content = format!("{}{}", params.summary, now);
-    let id = format!("st_{}", sha256::digest(id_content));
+    // 短期记忆 ID 统一为 UUIDv7 simple（无横杠），与知识节点/关系/属性一致。
+    // 旧实现用 `sha256(summary + 秒级时间戳)`：同秒同摘要会撞主键，且一个实体
+    // 出现「哈希 / UUID」两种格式。历史数据保留原 ID，新数据一律走统一生成器。
+    let id = common::new_id!(ShortTerm);
 
     let agent_id = ctx.agent_id().cloned().unwrap_or_default();
 

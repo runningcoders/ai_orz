@@ -305,7 +305,8 @@ pub struct UpdateAgentRequest {
 ///
 /// ⚠️ 与 [`UpdateAgentRequest`] 的区别：后者挂在 `neural` 包，Agent 上下文会
 /// **静默忽略** `model_provider_id`；本 DTO 配套 `update_agent_model_provider`
-/// （`admin` 包），只暴露模型绑定一个字段，Agent 上下文正常写入。
+/// （带 `admin` tag，拥有该工具即可调用：单独绑定或 admin 包批量授权），只暴露
+/// 模型绑定一个字段，Agent 上下文正常写入。
 /// 别把本接口包装成对 `update_agent` 的转发调用，那会让字段在 Agent 侧被丢掉。
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct UpdateAgentModelProviderRequest {

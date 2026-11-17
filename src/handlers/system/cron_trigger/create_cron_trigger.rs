@@ -3,7 +3,6 @@
 use ai_orz_macros::generate_http_handler;
 use common::enums::TriggerType;
 use common::error::Result;
-use uuid::Uuid;
 
 use crate::models::cron_trigger::CronTriggerPo;
 use crate::pkg::RequestContext;
@@ -42,7 +41,7 @@ pub async fn create_cron_trigger(
     };
 
     let mut trigger = CronTriggerPo::new(
-        Uuid::now_v7().to_string(),
+        common::new_id!(CronTrigger),
         params.name,
         params.trigger_type,
         next_run_at,

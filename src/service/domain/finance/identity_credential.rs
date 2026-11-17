@@ -203,7 +203,7 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
 
         let user_dal = self.user_dal()?.clone();
         self.ensure_user_exists(ctx.clone(), user_id).await?;
-        let credential_id = uuid::Uuid::now_v7().to_string();
+        let credential_id = common::new_id!(UserCredential);
         let mut po = UserCredentialPo::new(
             credential_id.clone(),
             ctx.organization_id().cloned().unwrap_or_default(),

@@ -28,12 +28,16 @@ use std::collections::HashMap;
 /// `updated_at DESC`（最近修改优先，便于捞回刚更新的节点），不受此字段影响。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum MemorySortOrder {
-    /// 最近优先：`ORDER BY created_at DESC`
+    /// 最近优先：`ORDER BY created_at DESC, rowid DESC`
     ///
     /// 适用于「给我最近 N 条」的上下文类查询。
+    ///
+    /// 次序键用 `rowid` 而不是 `id`：历史短期记忆 ID 是内容哈希（`st_{sha256}`），
+    /// 新数据已统一为 UUIDv7；但 `created_at` 是秒级，同秒写入很常见，只有 `rowid`
+    /// （插入顺序）对**新旧两种 ID 格式**都能保证同秒内后写入的排在前面。
     #[default]
     RecentFirst,
-    /// 最早优先：`ORDER BY created_at ASC`
+    /// 最早优先：`ORDER BY created_at ASC, rowid ASC`
     ///
     /// 适用于「给我最早未处理的 N 条」的队列类查询（如沉淀队列、待整理队列），
     /// 保证先进先出，不会饿死老数据。
@@ -42,10 +46,14 @@ pub enum MemorySortOrder {
 
 impl MemorySortOrder {
     /// 渲染为 SQL 的 ORDER BY 子句（含前导空格）
+    ///
+    /// `rowid` 是 SQLite 的插入顺序，方向必须与主序一致：最近优先取 `DESC`，
+    /// 最早优先取 `ASC`。分页（OFFSET）依赖这个确定的次序键，否则同秒行
+    /// 在不同页之间的相对次序可能变化，导致漏行或重复。
     pub fn to_sql(&self) -> &'static str {
         match self {
-            MemorySortOrder::RecentFirst => " ORDER BY created_at DESC",
-            MemorySortOrder::OldestFirst => " ORDER BY created_at ASC",
+            MemorySortOrder::RecentFirst => " ORDER BY created_at DESC, rowid DESC",
+            MemorySortOrder::OldestFirst => " ORDER BY created_at ASC, rowid ASC",
         }
     }
 }

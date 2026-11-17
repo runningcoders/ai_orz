@@ -642,8 +642,9 @@ fn hr_routes() -> Router {
             "/agents/{id}/status",
             put(handlers::hr::agent::update_agent_status_handler),
         )
-        // 管理面窄接口：只改模型绑定。Agent 侧经同名内置工具（admin 包）直调 handler，
-        // 不经过 axum 中间件；这里的 require_role 只作 HTTP 入口的纵深防御。
+        // 管理面窄接口：只改模型绑定。Agent 侧经同名内置工具直调 handler
+        // （拥有该工具即可：单独绑定或 admin 包），不经过 axum 中间件；
+        // 这里的 require_role 只作 HTTP 入口的纵深防御。
         .route(
             "/agents/{id}/model-provider",
             put(handlers::hr::agent::update_agent_model_provider_handler).layer(

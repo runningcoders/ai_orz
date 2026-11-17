@@ -83,7 +83,7 @@ async fn test_traverse_bfs_layered(pool: SqlitePool) -> Result<()> {
 }
 
 /// DFS 分支图 + max_breadth 限宽：守护预取缓存后的选边语义不变
-///（按 created_at ASC take，重复边不占限宽名额）
+///（按 weight → updated_at → rowid 优先级 take，重复边不占限宽名额）
 #[sqlx::test]
 async fn test_traverse_dfs_branching_with_breadth_limit(pool: SqlitePool) -> Result<()> {
     use crate::service::dal::memory::TraversalStrategy;
@@ -103,10 +103,10 @@ async fn test_traverse_dfs_branching_with_breadth_limit(pool: SqlitePool) -> Res
             .map(|id| traverse_node(id, now))
             .collect(),
         vec![
-            traverse_rel("dr-ab", "dA", "dB", now), // 早创建，限宽 1 时应被选中
-            traverse_rel("dr-ac", "dA", "dC", now + 10), // 晚创建，应被限宽丢弃
-            traverse_rel("dr-bd", "dB", "dD", now - 10), // dB 最早的边：限宽 1 时应被选中
-                                                    //（dr-ab 作为双端点边会同时挂在 dA/dB 缓存名下，若去重失效会抢占此名额）
+            traverse_rel("dr-ab", "dA", "dB", now),      // 较早更新
+            traverse_rel("dr-ac", "dA", "dC", now + 10), // 最近更新，限宽 1 时应被选中
+            traverse_rel("dr-bd", "dB", "dD", now - 10), // 更早；dA 不选 dB 时不可达
+                                                         //（dr-ab 作为双端点边会同时挂在 dA/dB 缓存名下，若去重失效会抢占此名额）
         ],
     )
     .await?;
@@ -124,12 +124,61 @@ async fn test_traverse_dfs_branching_with_breadth_limit(pool: SqlitePool) -> Res
 
     assert_eq!(
         node_ids_of(&results),
-        HashSet::from(["dA".to_string(), "dB".to_string(), "dD".to_string()]),
-        "限宽 1 时 DFS 应沿最早创建的边深入，C 不可达"
+        HashSet::from(["dA".to_string(), "dC".to_string()]),
+        "限宽 1 时应沿最近更新的边深入，B/D 不可达"
+    );
+    assert_eq!(rel_ids_of(&results), HashSet::from(["dr-ac".to_string()]));
+
+    Ok(())
+}
+
+/// 限宽选边优先级：显式强度优先于更新时间，未标注强度的新边不能仅凭时间挤掉强边
+#[sqlx::test]
+async fn test_traverse_prefers_strong_edges_over_recent_weak_ones(pool: SqlitePool) -> Result<()> {
+    use crate::service::dal::memory::TraversalStrategy;
+    use std::collections::HashSet;
+
+    init_test_tables(&pool).await;
+    let dal = init_test(pool.clone()).await;
+    let mut ctx = create_test_ctx(pool.clone());
+    ctx.agent_id = Some("agent-001".to_string());
+    let now = chrono::Utc::now().timestamp();
+
+    let mut strong_old = traverse_rel("wr-strong", "wA", "wB", now);
+    strong_old.weight = Some(0.9);
+    let mut weak_new = traverse_rel("wr-weak", "wA", "wC", now + 10);
+    weak_new.weight = Some(0.2);
+
+    seed_graph(
+        &dal,
+        &ctx,
+        ["wA", "wB", "wC"]
+            .iter()
+            .map(|id| traverse_node(id, now))
+            .collect(),
+        vec![strong_old, weak_new],
+    )
+    .await?;
+
+    let results = dal
+        .traverse_knowledge_graph(
+            ctx.clone(),
+            &["wA".to_string()],
+            1,
+            1,
+            TraversalStrategy::BreadthFirst,
+            false,
+        )
+        .await?;
+
+    assert_eq!(
+        node_ids_of(&results),
+        HashSet::from(["wA".to_string(), "wB".to_string()]),
+        "强度 0.9 的旧边应优先于强度 0.2 的新边"
     );
     assert_eq!(
         rel_ids_of(&results),
-        HashSet::from(["dr-ab".to_string(), "dr-bd".to_string()])
+        HashSet::from(["wr-strong".to_string()])
     );
 
     Ok(())

@@ -136,7 +136,7 @@ impl SyncPresetAgentsTask {
     pub fn new(ctx: RequestContext, params: SyncPresetAgentsRequest) -> Self {
         let total_steps = default::embedded_default_snapshot().agents.len();
         Self {
-            task_id: uuid::Uuid::new_v4().to_string(),
+            task_id: common::id::TimeId::generate().to_string(),
             ctx,
             params,
             status: Mutex::new(TaskStatus::Pending),

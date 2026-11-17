@@ -22,7 +22,7 @@ use std::collections::HashMap;
 /// 所有字段都使用统一的 trace_id 贯穿，模型可以看到 trace_id 并自引用
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryTrace {
-    /// 唯一 ID = trace-{agent_id}-{timestamp}
+    /// 唯一 ID = `trace_{uuid_v7_simple}`（无横杠，避免 Agent 把 ID 拆开）
     pub id: String,
     /// 所属 Agent ID
     pub agent_id: String,
@@ -62,7 +62,7 @@ pub struct MemoryTrace {
 /// - 后续创建 `ShortTermMemoryIndexPo` 时关联 trace_ids
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MemoryTracePosition {
-    /// trace 的内容 hash ID
+    /// trace ID
     pub trace_id: String,
     /// 日期文件名，如 "20260512.jsonl"
     pub date_filename: String,
@@ -73,7 +73,10 @@ pub struct MemoryTracePosition {
 impl MemoryTrace {
     /// 创建新的 MemoryTrace（思考闭环）
     ///
-    /// 自动生成 trace_id = trace-{agent_id}-{timestamp}
+    /// 自动生成 trace_id = `trace_{uuid_v7_simple}`
+    ///
+    /// 不再拼接 `agent_id/timestamp`：这些信息已分别存在于 `agent_id` / `created_at`
+    /// 字段；ID 保持单一 token，避免 Agent 把横杠当分隔符导致回传截断。
     pub fn new(
         agent_id: String,
         log_id: String,
@@ -85,13 +88,7 @@ impl MemoryTrace {
     ) -> Self {
         let now = chrono::Utc::now();
         let created_at = now.timestamp();
-        // 加随机后缀避免同一 agent 并发处理两条消息时 timestamp_nanos 相同导致 trace_id 碰撞
-        let trace_id = format!(
-            "trace-{}-{}-{}",
-            agent_id,
-            now.timestamp_nanos_opt().unwrap_or(0),
-            rand::random::<u16>()
-        );
+        let trace_id = common::new_id!(Trace);
         Self {
             id: trace_id,
             agent_id,
@@ -431,7 +428,9 @@ impl KnowledgePropertyPo {
         let data_type = value.data_type().as_str().to_string();
         let cols = value.into_columns();
         Self {
-            id: uuid::Uuid::now_v7().to_string(),
+            // 记忆域 ID 统一为 UUIDv7 simple（无横杠）并带实体前缀（如 kp_）：
+            // 横杠会被部分 Agent 当作分隔符，导致参数传不全。
+            id: common::new_id!(KnowledgeProperty),
             target_type: target_type.as_str().to_string(),
             target_id: target_id.into(),
             term_key: term_key.into(),

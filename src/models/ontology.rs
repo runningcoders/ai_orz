@@ -48,7 +48,7 @@ impl OntologyClassPo {
     ) -> Self {
         let now = common::constants::utils::current_timestamp();
         Self {
-            id: uuid::Uuid::now_v7().to_string(),
+            id: common::new_id!(OntologyClass),
             term_key: term_key.into(),
             display_name: display_name.into(),
             description: description.into(),
@@ -139,7 +139,7 @@ impl OntologyRelationTypePo {
     ) -> Self {
         let now = common::constants::utils::current_timestamp();
         Self {
-            id: uuid::Uuid::now_v7().to_string(),
+            id: common::new_id!(OntologyRelationType),
             term_key: term_key.into(),
             display_name: display_name.into(),
             description: description.into(),
@@ -225,7 +225,7 @@ impl OntologyClassRelationPo {
     ) -> Self {
         let now = common::constants::utils::current_timestamp();
         Self {
-            id: uuid::Uuid::now_v7().to_string(),
+            id: common::new_id!(OntologyClassRelation),
             subject_class_key: subject_class_key.into(),
             relation_key: relation_key.into(),
             object_class_key: object_class_key.into(),
@@ -341,7 +341,7 @@ impl OntologyPropertyPo {
     ) -> Self {
         let now = common::constants::utils::current_timestamp();
         Self {
-            id: uuid::Uuid::now_v7().to_string(),
+            id: common::new_id!(OntologyProperty),
             term_key: term_key.into(),
             display_name: display_name.into(),
             description: description.into(),
@@ -464,7 +464,7 @@ impl OntologySynonymMappingPo {
         target_key: impl Into<String>,
     ) -> Self {
         Self {
-            id: uuid::Uuid::now_v7().to_string(),
+            id: common::new_id!(OntologySynonym),
             raw_term: raw_term.into(),
             target_kind: target_kind.into(),
             target_key: target_key.into(),

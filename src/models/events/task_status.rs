@@ -55,7 +55,7 @@ impl TaskStatusChangedEvent {
         trigger_message_id: &str,
     ) -> Self {
         Self {
-            event_id: uuid::Uuid::now_v7().to_string(),
+            event_id: common::id::TimeId::generate().to_string(),
             task_id: task_id.to_string(),
             task_title: task_title.to_string(),
             project_id: project_id.map(|s| s.to_string()),

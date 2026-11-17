@@ -55,7 +55,7 @@ pub async fn save_long_term_memory(
     let user_tags_json = serde_json::to_string(&user_tags)?;
     let tags_json = legacy_tags_json(&user_tags, is_published)?;
 
-    let node_id = format!("kn_{}", uuid::Uuid::now_v7().simple());
+    let node_id = common::new_id!(KnowledgeNode);
 
     let agent_id = ctx.agent_id().cloned().unwrap_or_default();
 
@@ -212,7 +212,7 @@ async fn build_knowledge_references(
     for (short_term_id, trace_id) in pairs {
         let position = positions.get(&trace_id);
         references.push(KnowledgeReferencePo {
-            id: format!("kr_{}", uuid::Uuid::now_v7().simple()),
+            id: common::new_id!(KnowledgeReference),
             knowledge_id: knowledge_id.to_string(),
             short_term_id,
             trace_id,

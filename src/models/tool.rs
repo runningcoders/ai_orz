@@ -9,7 +9,6 @@ use dyn_clone::DynClone;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::FromRow;
-use uuid::Uuid;
 
 /// Re-export
 pub use common::models::ToolCallTraceRef;
@@ -263,7 +262,7 @@ impl ToolPo {
         creator: Option<String>,
     ) -> Self {
         let id = if id.is_empty() {
-            Uuid::now_v7().to_string()
+            common::new_id!(Tool)
         } else {
             id
         };

@@ -73,6 +73,52 @@ async fn test_add_knowledge_relation(pool: SqlitePool) {
     assert_eq!(relations[0].weight, Some(0.75));
 }
 
+/// 关系边读取顺序：强度 → 最近更新 → 插入顺序（同秒新边不能被限宽/展示挤到最后）
+#[sqlx::test]
+async fn test_list_relations_orders_by_weight_then_recency(pool: SqlitePool) {
+    crate::config::init().unwrap();
+    let dao = MemoryDaoSqliteImpl::new();
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
+
+    let mk = |id: &str, target: &str, weight: Option<f32>, ts: i64| KnowledgeNodeRelationPo {
+        id: id.to_string(),
+        source_node_id: "order-src".to_string(),
+        target_node_id: target.to_string(),
+        relation_type: "related".to_string(),
+        weight,
+        status: KnowledgeRelationStatus::Active,
+        created_at: ts,
+        updated_at: ts,
+    };
+    let now = chrono::Utc::now().timestamp();
+    // 插入顺序：unlabeled-1 → weak → strong → unlabeled-2
+    for rel in [
+        mk("rel-unlabeled-1", "t1", None, now),
+        mk("rel-weak", "t2", Some(0.2), now - 100),
+        mk("rel-strong", "t3", Some(0.9), now - 200),
+        mk("rel-unlabeled-2", "t4", None, now),
+    ] {
+        dao.add_knowledge_relation(ctx.clone(), &rel).await.unwrap();
+    }
+
+    let relations = dao
+        .list_outgoing_relations(ctx.clone(), "order-src")
+        .await
+        .unwrap();
+    let ids: Vec<&str> = relations.iter().map(|r| r.id.as_str()).collect();
+    assert_eq!(
+        ids,
+        vec![
+            "rel-strong",
+            "rel-weak",
+            // 同强度（都未标注）、同 updated_at：按 rowid 倒序，后插入的在前
+            "rel-unlabeled-2",
+            "rel-unlabeled-1",
+        ],
+        "应先按强度降序，未标注强度的边排最后并按插入顺序倒序"
+    );
+}
+
 #[sqlx::test]
 async fn test_knowledge_relations(pool: SqlitePool) {
     crate::config::init().unwrap();
@@ -380,7 +426,7 @@ async fn test_batch_add_knowledge_relations_rejects_inactive_endpoint(pool: Sqli
 }
 
 /// list_relations_batch 分块：600 个 ID（每 ID 2 绑定 = 1200 > SQLite 999 上限），
-/// 分块后不应报错，跨块关系应命中，且跨块拼接后保持 created_at ASC
+/// 分块后不应报错，跨块关系应命中，且跨块拼接后保持优先级顺序
 #[sqlx::test]
 async fn test_list_relations_batch_chunking(pool: SqlitePool) {
     crate::config::init().unwrap();
@@ -426,9 +472,9 @@ async fn test_list_relations_batch_chunking(pool: SqlitePool) {
 
     let results = dao.list_relations_batch(ctx, &ids).await.unwrap();
     assert_eq!(results.len(), 2, "两条关系都应命中（含跨块）");
-    // 跨块拼接后仍按 created_at ASC 有序
-    assert_eq!(results[0].id, "chunk-rel-early");
-    assert_eq!(results[1].id, "chunk-rel-cross");
+    // 跨块拼接后仍按优先级有序：未标注强度时 updated_at DESC（新边在前）
+    assert_eq!(results[0].id, "chunk-rel-cross");
+    assert_eq!(results[1].id, "chunk-rel-early");
 }
 
 /// 关系类型**原文**必须原样往返：词表外的标注不能被归一化成 `custom`。

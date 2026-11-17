@@ -29,7 +29,7 @@ pub async fn send_tool_call_message(
         .ok_or_else(|| common::error::err!(InvalidRequest, "当前请求缺少 Agent 上下文"))?
         .clone();
 
-    let request_id = uuid::Uuid::now_v7().to_string();
+    let request_id = common::id::TimeId::generate().to_string();
 
     let cmd = SendToolCallRequestCommand {
         request_id: &request_id,

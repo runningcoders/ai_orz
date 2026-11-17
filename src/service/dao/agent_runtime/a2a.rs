@@ -222,7 +222,7 @@ pub async fn execute_a2a_send(
     auth_token: &Option<String>,
     prompt: &str,
 ) -> Result<String> {
-    let task_id = uuid::Uuid::now_v7().to_string();
+    let task_id = common::id::A2aTaskId::generate().to_string();
 
     let message = common::api::a2a::A2aMessage {
         role: "user".to_string(),
@@ -336,7 +336,7 @@ pub async fn execute_federated_agent_call(
 ) -> Result<String> {
     use crate::pkg::crypto::task_token::{TaskTokenClaims, issue_task_token};
 
-    let task_id = uuid::Uuid::now_v7().to_string();
+    let task_id = common::id::A2aTaskId::generate().to_string();
 
     // 本端 DID（key_id 由签名推导；任务令牌 iss 与之同源）
     let local_did = crate::pkg::crypto::did::did_from_signing_key(&config.signing_key)?;

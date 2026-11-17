@@ -184,7 +184,7 @@ impl super::UserManage for super::OrganizationDomainImpl {
 
         // 4. 创建 Member 用户（created_by 使用自身 ID，表示自注册）
         let display_name = req.display_name.unwrap_or_default().trim().to_string();
-        let user_id = super::org::generate_user_id();
+        let user_id = common::id::UserId::generate().to_string();
         let user = UserPo::new(
             user_id.clone(),
             org.id,

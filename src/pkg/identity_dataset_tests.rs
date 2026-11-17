@@ -99,7 +99,7 @@ async fn agent_dataset_email_carries_short_code_when_role_shared() {
         .expect("dataset should hit");
     assert_eq!(dataset.git_name, "frontend_developer");
     assert!(dataset.email.starts_with("frontend_developer+"));
-    assert!(dataset.email.contains("agent-sh"));
+    assert!(dataset.email.contains("shared-1"));
     assert!(dataset.email.ends_with("@agents.ai-orz.local"));
 }
 

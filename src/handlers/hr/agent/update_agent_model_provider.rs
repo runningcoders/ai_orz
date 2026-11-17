@@ -12,13 +12,17 @@ use common::error::{Result, ensure_err, err};
 ///
 /// 与 `update_agent` 的关系：复用其 domain 路径，但**不能**包装调用 ——
 /// `update_agent` 在 Agent 上下文会静默忽略 `model_provider_id`。本 handler
-/// 只暴露这一个字段并挂 `admin` 工具包，因此对 Agent 上下文正常写入；
-/// 可达性完全由「管理员显式授予 admin 包」决定（另见 `bind_tool_to_agent`
-/// 的受限工具封堵，堵住 Agent 自行绑定的旁路）。
+/// 只暴露这一个字段，因此对 Agent 上下文正常写入。
+///
+/// Agent 侧的可达性判据是「调用者拥有这个工具」：管理员单独绑定本工具，或
+/// 整包授予 `admin` 工具包均可（`get_agent(with_tools)` 的工具面是「绑定工具
+/// ∪ neural ∪ 已装包 tag」的并集）。`admin` tag 只是批量授权面，不是调用
+/// 前提；另见 `bind_tool_to_agent` 的受限工具封堵，堵住 Agent 自行绑定的
+/// 旁路。HTTP 入口另有 `require_role(Admin)` 门闩，与本判据互不替代。
 #[register_handler_tool(
     id = "update_agent_model_provider",
     name = "Set Agent Model Provider",
-    description = "Rebind an agent's chat model to another model provider by id. Only this field changes; all other agent fields are preserved. The provider must exist and have Agent capability (Embedding and Decision providers are rejected). Administrative tool: only agents explicitly granted the admin tool pack by a human administrator can call it.",
+    description = "Rebind an agent's chat model to another model provider by id. Only this field changes; all other agent fields are preserved. The provider must exist and have Agent capability (Embedding and Decision providers are rejected). Administrative tool: callable by an agent that has it — either bound individually by a human administrator or granted through the admin tool pack.",
     params = "common::api::UpdateAgentModelProviderRequest",
     tags = "admin"
 )]

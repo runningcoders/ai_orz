@@ -46,7 +46,7 @@ impl FederationContractPo {
     pub fn new(local_org_id: String, peer_org_id: String) -> Self {
         let now = utils::current_timestamp_ms();
         Self {
-            id: uuid::Uuid::now_v7().to_string(),
+            id: common::id::UuidId::generate().to_string(),
             local_org_id,
             peer_org_id,
             kind: FederationContractKind::Basic,

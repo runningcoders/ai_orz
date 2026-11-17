@@ -13,7 +13,6 @@ use common::error::{Result, bail_err};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use sqlx::types::Json;
-use uuid::Uuid;
 
 use crate::models::file::FileMeta;
 use crate::pkg::paths;
@@ -243,7 +242,7 @@ impl ArtifactPo {
     ) -> Self {
         let now = common::constants::utils::current_timestamp_ms();
         Self {
-            id: Uuid::now_v7().to_string(),
+            id: common::new_id!(Artifact),
             project_id,
             task_id: None,
             name,
@@ -296,7 +295,7 @@ impl ArtifactPo {
     ) -> Self {
         let now = common::constants::utils::current_timestamp_ms();
         Self {
-            id: Uuid::now_v7().to_string(),
+            id: common::new_id!(Artifact),
             project_id,
             task_id: Some(task_id),
             name,
