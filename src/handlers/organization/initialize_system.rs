@@ -84,7 +84,7 @@ impl InitializeSystemTask {
             + usize::from(params.decision_model.is_some())
             + usize::from(params.embedding_model.is_some());
         Self {
-            task_id: uuid::Uuid::new_v4().to_string(),
+            task_id: common::id::TimeId::generate().to_string(),
             ctx,
             params,
             status: Mutex::new(TaskStatus::Pending),

@@ -559,7 +559,7 @@ impl RuntimeDomainImpl {
         parent_trace_id: &str,
     ) -> Option<String> {
         let now = common::constants::utils::current_timestamp_ms();
-        let memory_id = uuid::Uuid::now_v7().to_string();
+        let memory_id = common::new_id!(ShortTerm);
         let index = ShortTermMemoryIndexPo {
             id: memory_id.clone(),
             agent_id: agent_id.to_string(),

@@ -606,29 +606,9 @@ pub struct RemoteAgentConfig {
     pub timeout_secs: u64,
 }
 
+/// Agent ID 统一为 UUIDv7 simple（无横杠），避免 Agent 把 ID 当分隔符拆开。
 fn generate_id() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-    let random = rand_u32();
-    format!("{:016x}{:08x}", timestamp, random)
-}
-
-fn rand_u32() -> u32 {
-    use std::collections::hash_map::RandomState;
-    use std::hash::{BuildHasher, Hash, Hasher};
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let state = RandomState::new();
-    let mut hasher = state.build_hasher();
-    SystemTime::now().hash(&mut hasher);
-    std::process::id().hash(&mut hasher);
-    let time2 = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos() as u32;
-    time2.wrapping_add(hasher.finish() as u32)
+    common::new_id!(Agent)
 }
 
 impl crate::pkg::request_context::EnrichContext for AgentPo {

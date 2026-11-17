@@ -33,7 +33,7 @@ pub struct AgentSettleEvent {
 impl AgentSettleEvent {
     pub fn new(agent_id: &str, settle_limit: usize, requested_by: &str) -> Self {
         Self {
-            event_id: uuid::Uuid::now_v7().to_string(),
+            event_id: common::id::TimeId::generate().to_string(),
             agent_id: agent_id.to_string(),
             settle_limit,
             requested_by: requested_by.to_string(),

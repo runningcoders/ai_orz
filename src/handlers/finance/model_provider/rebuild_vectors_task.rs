@@ -107,7 +107,7 @@ impl RebuildVectorsTask {
         mode: VectorRebuildMode,
     ) -> Self {
         Self {
-            task_id: uuid::Uuid::new_v4().to_string(),
+            task_id: common::id::TimeId::generate().to_string(),
             ctx,
             total_steps: entities.len(),
             entities,

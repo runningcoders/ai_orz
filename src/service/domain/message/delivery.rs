@@ -33,9 +33,9 @@ fn bounded_inline_tool_result(result: serde_json::Value) -> serde_json::Value {
     }
 }
 
-/// 生成新的消息 ID
+/// 生成新的消息 ID（UUIDv7 simple，无横杠：避免 Agent 把 ID 当分隔符拆开）
 fn generate_id() -> String {
-    uuid::Uuid::now_v7().to_string()
+    common::new_id!(Message)
 }
 
 /// 消息 → SSE 推送体
@@ -776,7 +776,7 @@ impl MessageDelivery for MessageDomainImpl {
         ctx: RequestContext,
         user_id: &str,
     ) -> Result<super::SubscribeResult> {
-        let connection_id = uuid::Uuid::now_v7().to_string();
+        let connection_id = common::id::TimeId::generate().to_string();
         let receiver = self
             .message_push_dal
             .subscribe_sse(ctx, user_id, &connection_id)

@@ -18,13 +18,14 @@ fn derive_identity_builds_role_slug_and_email() {
 
 #[test]
 fn derive_identity_multi_agent_role_appends_short_agent_id() {
-    // 同一 role 有第二人时，邮箱加 agent_id 前 8 位消歧（当前 role 唯一，分支预留）
+    // 同一 role 有第二人时，邮箱加 agent_id 后 8 位消歧：
+    // UUIDv7 / 旧 ID 的时间位都在前面，尾部随机位更有区分度。
     let identity = derive_identity(Some(r#"["backend_developer"]"#), "abcdef0123456789", 2)
         .expect("多 Agent 同 role 应仍可派生");
     assert_eq!(identity.name, "backend_developer");
     assert_eq!(
         identity.email,
-        "backend_developer+abcdef01@agents.ai-orz.local"
+        "backend_developer+23456789@agents.ai-orz.local"
     );
 }
 

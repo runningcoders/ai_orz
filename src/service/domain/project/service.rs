@@ -9,7 +9,6 @@ use crate::pkg::stats::ProjectEvent;
 use crate::pkg::utils::graph::MermaidDirection;
 use common::constants::utils;
 use common::enums::project::ProjectStatus;
-use uuid::Uuid;
 
 use super::task_graph::build_task_graph_mermaid;
 use super::{ProjectDomainImpl, ProjectStallAssessment};
@@ -34,7 +33,7 @@ impl super::ProjectManage for ProjectDomainImpl {
         root_user_id: String,
         created_by: String,
     ) -> Result<Project> {
-        let project_id = Uuid::now_v7().to_string();
+        let project_id = common::new_id!(Project);
 
         let project = Project::new(
             project_id,

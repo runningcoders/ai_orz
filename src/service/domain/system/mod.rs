@@ -481,7 +481,7 @@ pub async fn ensure_system_cron_triggers(ctx: &RequestContext) -> Result<()> {
         let timezone = crate::pkg::cron::system_timezone();
         let next_run_at = crate::pkg::cron::next_run_at(expression, &timezone, chrono::Utc::now())?;
         let mut trigger = CronTriggerPo::new(
-            uuid::Uuid::now_v7().to_string(),
+            common::new_id!(CronTrigger),
             SYSTEM_AGENT_REST_NAME.into(),
             TriggerType::Cron,
             next_run_at,
@@ -513,7 +513,7 @@ pub async fn ensure_system_cron_triggers(ctx: &RequestContext) -> Result<()> {
     // 2. project_followup：默认每 1 小时执行一次项目进度巡检
     if !has_project_followup {
         let mut trigger = CronTriggerPo::new(
-            uuid::Uuid::now_v7().to_string(),
+            common::new_id!(CronTrigger),
             "系统默认-项目进度巡检".into(),
             TriggerType::Interval,
             common::constants::utils::current_timestamp_ms() + 3600 * 1000,
@@ -533,7 +533,7 @@ pub async fn ensure_system_cron_triggers(ctx: &RequestContext) -> Result<()> {
         let timezone = crate::pkg::cron::system_timezone();
         let next_run_at = crate::pkg::cron::next_run_at(expression, &timezone, chrono::Utc::now())?;
         let mut trigger = CronTriggerPo::new(
-            uuid::Uuid::now_v7().to_string(),
+            common::new_id!(CronTrigger),
             "系统默认-工具日志清理".into(),
             TriggerType::Cron,
             next_run_at,
@@ -557,7 +557,7 @@ pub async fn ensure_system_cron_triggers(ctx: &RequestContext) -> Result<()> {
         let timezone = crate::pkg::cron::system_timezone();
         let next_run_at = crate::pkg::cron::next_run_at(expression, &timezone, chrono::Utc::now())?;
         let mut trigger = CronTriggerPo::new(
-            uuid::Uuid::now_v7().to_string(),
+            common::new_id!(CronTrigger),
             "系统默认-组织目录对账".into(),
             TriggerType::Cron,
             next_run_at,
@@ -581,7 +581,7 @@ pub async fn ensure_system_cron_triggers(ctx: &RequestContext) -> Result<()> {
     // Pending 且再无消费者。本触发器把「消息表 = 权威待办」这件事补完。
     if !has_pending_redelivery {
         let mut trigger = CronTriggerPo::new(
-            uuid::Uuid::now_v7().to_string(),
+            common::new_id!(CronTrigger),
             "系统默认-滞留通知重投".into(),
             TriggerType::Interval,
             common::constants::utils::current_timestamp_ms() + 300 * 1000,
@@ -603,7 +603,7 @@ pub async fn ensure_system_cron_triggers(ctx: &RequestContext) -> Result<()> {
         let timezone = crate::pkg::cron::system_timezone();
         let next_run_at = crate::pkg::cron::next_run_at(expression, &timezone, chrono::Utc::now())?;
         let mut trigger = CronTriggerPo::new(
-            uuid::Uuid::now_v7().to_string(),
+            common::new_id!(CronTrigger),
             "系统默认-向量库整理".into(),
             TriggerType::Cron,
             next_run_at,
@@ -629,7 +629,7 @@ mod legacy_payload_tests {
 
     fn trigger(name: &str, payload: &str) -> CronTriggerPo {
         let mut t = CronTriggerPo::new(
-            uuid::Uuid::now_v7().to_string(),
+            common::new_id!(CronTrigger),
             name.into(),
             TriggerType::Cron,
             common::constants::utils::current_timestamp_ms(),

@@ -41,7 +41,7 @@ impl SeedLoadTask {
     /// 创建新的导入任务对象（状态为 Pending，等待 registry spawn 后执行）
     pub fn new(ctx: RequestContext, params: LoadSeedRequest) -> Self {
         Self {
-            task_id: uuid::Uuid::new_v4().to_string(),
+            task_id: common::id::TimeId::generate().to_string(),
             ctx,
             params,
             status: Mutex::new(TaskStatus::Pending),

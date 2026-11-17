@@ -589,7 +589,7 @@ pub async fn start_bind_session(user_id: &str) -> Result<(String, String)> {
 
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
-    let session_id = uuid::Uuid::now_v7().to_string();
+    let session_id = common::id::TimeId::generate().to_string();
     let progress: BindProgress = Arc::new(RwLock::new(BindProgressState {
         phase: BindPhase::Pending,
         verification_url: None,

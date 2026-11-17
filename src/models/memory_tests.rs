@@ -188,6 +188,26 @@ fn property_dirty_target_type_falls_back_to_node() {
 }
 
 #[test]
+fn property_id_is_uuid_v7_without_separators() {
+    let po = KnowledgePropertyPo::new(
+        PropertyTargetType::Node,
+        "node-1",
+        "p",
+        PropertyValue::Text("v".into()),
+        0,
+    );
+    let parsed = common::id::EntityId::parse(&po.id)
+        .unwrap_or_else(|e| panic!("属性 ID 解析失败: {} ({e})", po.id));
+    assert_eq!(
+        parsed.prefix(),
+        &common::id::IdPrefix::KnowledgeProperty,
+        "属性 ID 前缀错误: {}",
+        po.id
+    );
+    assert_eq!(parsed.uuid().get_version_num(), 7, "属性 ID 应使用 UUIDv7");
+}
+
+#[test]
 fn property_boolean_false_is_distinct_from_unset() {
     // false 落 0，未赋值落 NULL —— 两者在读侧必须可区分
     let po = KnowledgePropertyPo::new(

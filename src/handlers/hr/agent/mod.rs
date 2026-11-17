@@ -532,7 +532,7 @@ pub(crate) async fn write_relations_with_receipt(
         }
 
         let po = KnowledgeNodeRelationPo {
-            id: format!("kr_{}", uuid::Uuid::now_v7().simple()),
+            id: common::new_id!(KnowledgeRelation),
             source_node_id: src,
             target_node_id: tgt,
             // 原文直落：词表外的标注原样保留（与既有口径一致，归一化只发生在 DAO 写侧）

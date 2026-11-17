@@ -442,7 +442,9 @@ pub async fn send_text(
         ));
     }
     let url = format!("{}/ilink/bot/sendmessage", credentials.base_url);
-    let client_id = uuid::Uuid::now_v7().to_string();
+    // iLink 的 client_id 是外部协议字段（出站本地幂等键）：
+    // 对接约定为 UUIDv7，按标准带横杠文本输出；生成仍走统一 ID 类型。
+    let client_id = common::id::UuidId::generate().to_hyphenated();
     let body = build_send_body(to_user_id, context_token, text, &client_id);
     let resp = wechat_ilink::bot_auth_headers(client().post(&url), &credentials.bot_token)
         .json(&body)
@@ -1426,7 +1428,7 @@ async fn poll_loop(
                     let message_key = {
                         let key = message.message_key();
                         if key.is_empty() {
-                            uuid::Uuid::now_v7().to_string()
+                            common::id::TimeId::generate().to_string()
                         } else {
                             key
                         }
@@ -1462,7 +1464,7 @@ async fn poll_loop(
                     let message_key = {
                         let key = message.message_key();
                         if key.is_empty() {
-                            uuid::Uuid::now_v7().to_string()
+                            common::id::TimeId::generate().to_string()
                         } else {
                             key
                         }

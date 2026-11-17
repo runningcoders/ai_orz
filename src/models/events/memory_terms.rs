@@ -30,7 +30,7 @@ pub struct MemoryTermsWrittenEvent {
 impl MemoryTermsWrittenEvent {
     pub fn new(agent_id: Option<String>, terms: Vec<WrittenTerm>) -> Self {
         Self {
-            event_id: uuid::Uuid::now_v7().to_string(),
+            event_id: common::id::TimeId::generate().to_string(),
             agent_id,
             terms,
             created_at: common::constants::utils::current_timestamp_ms(),

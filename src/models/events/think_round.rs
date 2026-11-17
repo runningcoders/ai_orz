@@ -56,7 +56,7 @@ impl ThinkRoundEvent {
         tool_call_count: usize,
     ) -> Self {
         Self {
-            event_id: uuid::Uuid::now_v7().to_string(),
+            event_id: common::id::TimeId::generate().to_string(),
             agent_id: agent_id.to_string(),
             trace_id: trace_id.to_string(),
             scene: scene.to_string(),

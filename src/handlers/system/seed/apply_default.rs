@@ -40,7 +40,7 @@ impl SeedApplyDefaultTask {
     /// 创建新的应用默认模板任务对象（状态为 Pending，等待 registry spawn 后执行）
     pub fn new(ctx: RequestContext, params: ApplyDefaultSeedRequest) -> Self {
         Self {
-            task_id: uuid::Uuid::new_v4().to_string(),
+            task_id: common::id::TimeId::generate().to_string(),
             ctx,
             params,
             status: Mutex::new(TaskStatus::Pending),

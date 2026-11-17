@@ -37,7 +37,7 @@ pub async fn create_skill(
         bail_err!(InvalidRequest, "skill name 不能为空");
     }
 
-    let skill_id = uuid::Uuid::now_v7().to_string();
+    let skill_id = common::new_id!(Skill);
     // Agent 上下文（工具调用）：技能归属调用 Agent 本身，content_path 与
     // DAL install_to_agent 的副本路径约定（agents/{agent_id}/skills/{id}）保持一致；
     // 用户上下文（HTTP API）：归属当前用户，路径沿用 skills/{id}。

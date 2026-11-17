@@ -22,6 +22,14 @@ ai-orz-macros = { path = "../ai-orz-macros" }
 axum = { version = "0.8", optional = true }
 pulldown-cmark = "0.13"
 
+# UUIDv7 生成需要随机源；wasm32 下必须启用 `js`（走浏览器 crypto），
+# 宿主端保持纯 Rust 实现，避免把 wasm-bindgen 链路带进服务端。
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+uuid = { version = "1.23.0", features = ["v7", "js"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+uuid = { version = "1.23.0", features = ["v7"] }
+
 [features]
 default = ["std"]
 std = []

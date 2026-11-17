@@ -11,6 +11,7 @@ use crate::pkg::request_context_test_support::new_test_ctx;
 use crate::service::dao::organization_link::http::FederationHttpClient;
 use sqlx::SqlitePool;
 use std::sync::{Arc, Mutex};
+use uuid::Uuid;
 
 use super::super::OrganizationManage as _;
 

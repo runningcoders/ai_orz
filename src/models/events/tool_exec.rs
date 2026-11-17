@@ -34,7 +34,7 @@ impl ToolExecEvent {
         result_len: u64,
     ) -> Self {
         Self {
-            event_id: uuid::Uuid::now_v7().to_string(),
+            event_id: common::id::TimeId::generate().to_string(),
             entry,
             organization_id,
             user_id,

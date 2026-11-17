@@ -116,7 +116,7 @@ impl AttachmentDal for AttachmentDalImpl {
             bail_err!(InvalidRequest, "上传文件不能为空");
         }
 
-        let id = uuid::Uuid::now_v7().to_string();
+        let id = common::new_id!(Attachment);
         // ⚠️ 上传方的 `mime_type` 不可全信：浏览器里手工构造的 Blob 若没设 type、
         // 微信 / 飞书下载响应、非浏览器调用方都会给 `application/octet-stream` 甚至空串。
         // 直接落库会让「图片」永远进不了内联白名单（`/file` 还会带 `nosniff`，连浏览器

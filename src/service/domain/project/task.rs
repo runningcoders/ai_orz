@@ -8,7 +8,6 @@ use crate::pkg::stats::TaskEvent;
 use common::constants::utils;
 use common::enums::{AssigneeType, TaskStatus};
 use common::error::{Result, bail_err, err};
-use uuid::Uuid;
 
 use super::ProjectDomainImpl;
 
@@ -93,7 +92,7 @@ impl super::TaskManage for ProjectDomainImpl {
         created_by: String,
         acceptance_criteria: String,
     ) -> Result<Task> {
-        let task_id = Uuid::now_v7().to_string();
+        let task_id = common::new_id!(Task);
 
         let task = Task::new(
             task_id,

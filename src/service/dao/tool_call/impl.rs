@@ -82,7 +82,7 @@ impl ToolCallDao for ToolCallDaoImpl {
         let call_id = ctx
             .tool_call_id()
             .cloned()
-            .unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
+            .unwrap_or_else(|| common::new_id!(ToolCall));
 
         let po = tool.our_tool.po();
 

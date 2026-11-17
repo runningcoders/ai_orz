@@ -97,7 +97,7 @@ pub async fn handle_send_task(ctx: RequestContext, params: SendTaskParams) -> Re
     //    后续消息推送时，deliver_message 会按 scope_project 过滤并推送到该 URL
     if let Some(notification_url) = params.notification_url {
         let channel_po = MessageChannelPo::new(
-            uuid::Uuid::now_v7().to_string(),
+            common::new_id!(MessageChannel),
             ctx.organization_id().unwrap_or(&"".to_string()).to_string(),
             user_id.clone(),
             None, // 不绑定特定 Agent

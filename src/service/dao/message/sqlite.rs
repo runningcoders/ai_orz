@@ -389,22 +389,8 @@ UPDATE messages SET "status" = ?, updated_at = ?, modified_by = ? WHERE id = ?
         req: crate::models::message::ToolCallMessage,
     ) -> Result<MessagePo> {
         use common::enums::{MessageRole, MessageType};
-        use rand::Rng;
 
-        /// 生成随机 ID（和项目风格一致）
-        fn generate_id() -> String {
-            const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-            const ID_LEN: usize = 16;
-            let mut rng = rand::thread_rng();
-            (0..ID_LEN)
-                .map(|_| {
-                    let idx = rng.gen_range(0..CHARSET.len());
-                    CHARSET[idx] as char
-                })
-                .collect()
-        }
-
-        let message_id = generate_id();
+        let message_id = common::new_id!(Message);
         // 序列化整个 ToolCallMessage 为 JSON 存储在 content
         let content = serde_json::to_string(&req)?;
 
@@ -442,22 +428,8 @@ UPDATE messages SET "status" = ?, updated_at = ?, modified_by = ? WHERE id = ?
         res: crate::models::message::ToolCallMessage,
     ) -> Result<MessagePo> {
         use common::enums::{MessageRole, MessageType};
-        use rand::Rng;
 
-        /// 生成随机 ID（和项目风格一致）
-        fn generate_id() -> String {
-            const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-            const ID_LEN: usize = 16;
-            let mut rng = rand::thread_rng();
-            (0..ID_LEN)
-                .map(|_| {
-                    let idx = rng.gen_range(0..CHARSET.len());
-                    CHARSET[idx] as char
-                })
-                .collect()
-        }
-
-        let message_id = generate_id();
+        let message_id = common::new_id!(Message);
         // 序列化整个 ToolCallMessage 为 JSON 存储在 content
         let content = serde_json::to_string(&res)?;
 

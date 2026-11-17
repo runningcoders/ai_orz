@@ -125,7 +125,7 @@ impl AuthorizationService {
         root_user_id: &str,
         content: String,
     ) -> Message {
-        let id = uuid::Uuid::now_v7().to_string();
+        let id = common::new_id!(Message);
         let mut po = MessagePo::new(
             id.clone(),
             None,
@@ -323,7 +323,7 @@ impl super::ToolAuthorizationManage for AuthorizationService {
         ctx: RequestContext,
         cmd: super::CreateAuthorizationCmd,
     ) -> Result<PendingAuthorization> {
-        let authorization_id = uuid::Uuid::now_v7().to_string();
+        let authorization_id = common::new_id!(FinanceAuthorization);
         let pending = PendingAuthorization {
             authorization_id: authorization_id.clone(),
             agent_id: cmd.agent_id,
@@ -523,7 +523,7 @@ impl super::ToolAuthorizationManage for AuthorizationService {
                         .unwrap_or(crate::pkg::authorization::DEFAULT_TTL_SECS),
                 );
                 let grant = AuthorizationGrant {
-                    grant_id: uuid::Uuid::now_v7().to_string(),
+                    grant_id: common::new_id!(FinanceGrant),
                     authorization_id: pending.authorization_id.clone(),
                     agent_id: pending.agent_id.clone(),
                     tool_id: pending.tool_id.clone(),

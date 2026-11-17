@@ -7,7 +7,6 @@ use ai_orz_macros::generate_http_handler;
 use common::api::{CreateUserRequest, CreateUserResponse};
 use common::enums::UserRole;
 use common::error::Result;
-use rand::Rng;
 
 /// Create a new user within the current authenticated user's organization
 /// 注意：此 handler 不注册为 Agent 工具（涉及密码哈希等敏感字段，仅管理员手动调用）。
@@ -24,8 +23,8 @@ pub async fn create_user(
 
     let domain = organization::domain();
 
-    // 生成随机用户 ID
-    let user_id = generate_id();
+    // 生成随机用户 ID（格式集中由 common::id 管理）
+    let user_id = common::id::UserId::generate().to_string();
 
     // 修复 E2E-4：之前手写映射（1=SuperAdmin/2=Admin）与 UserRole 枚举值（0/1/2）不一致，
     // 导致前端提交的角色被错误转译。统一用 UserRole::from_i32（非法值落 Member），
@@ -54,17 +53,4 @@ pub async fn create_user(
         email: params.email,
         role: role.to_i32(),
     })
-}
-
-/// 生成随机 ID
-fn generate_id() -> String {
-    const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    const ID_LEN: usize = 16;
-    let mut rng = rand::thread_rng();
-    (0..ID_LEN)
-        .map(|_| {
-            let idx = rng.gen_range(0..CHARSET.len());
-            CHARSET[idx] as char
-        })
-        .collect()
 }

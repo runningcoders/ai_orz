@@ -40,7 +40,7 @@
 ///
 /// ## 为什么不会和真实 id 撞车
 ///
-/// 真实 project id 是 UUIDv7（只含 `[0-9a-f-]`）。本常量含下划线，构造上不可能相等，
+/// 真实 project id 是 UUIDv7 simple（只含 `[0-9a-f]`）。本常量含下划线，构造上不可能相等，
 /// 因此无需任何校验即可保证唯一性。
 pub const DEFAULT_CONVERSATION_PROJECT_ID: &str = "__default__";
 

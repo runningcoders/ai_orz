@@ -26,7 +26,7 @@ pub struct AgentLoopEvent {
 impl AgentLoopEvent {
     pub fn started(agent_id: &str, trace_id: &str, scene: &str, message_id: Option<&str>) -> Self {
         Self {
-            event_id: uuid::Uuid::now_v7().to_string(),
+            event_id: common::id::TimeId::generate().to_string(),
             agent_id: agent_id.to_string(),
             trace_id: trace_id.to_string(),
             scene: scene.to_string(),
@@ -47,7 +47,7 @@ impl AgentLoopEvent {
         message_id: Option<&str>,
     ) -> Self {
         Self {
-            event_id: uuid::Uuid::now_v7().to_string(),
+            event_id: common::id::TimeId::generate().to_string(),
             agent_id: agent_id.to_string(),
             trace_id: trace_id.to_string(),
             scene: scene.to_string(),

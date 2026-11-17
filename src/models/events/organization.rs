@@ -24,7 +24,7 @@ pub struct OrganizationChangedEvent {
 impl OrganizationChangedEvent {
     pub fn new(organization_id: &str, change: &str) -> Self {
         Self {
-            event_id: uuid::Uuid::now_v7().to_string(),
+            event_id: common::id::TimeId::generate().to_string(),
             organization_id: organization_id.to_string(),
             change: change.to_string(),
             created_at: common::constants::utils::current_timestamp_ms(),

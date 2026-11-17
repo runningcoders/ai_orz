@@ -24,7 +24,7 @@ impl AgentStateEvent {
         message_id: Option<String>,
     ) -> Self {
         Self {
-            event_id: uuid::Uuid::now_v7().to_string(),
+            event_id: common::id::TimeId::generate().to_string(),
             agent_id: agent_id.to_string(),
             from_state: from_state.to_string(),
             to_state: to_state.to_string(),
