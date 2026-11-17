@@ -1146,6 +1146,134 @@ async fn test_malformed_body_returns_bad_request() {
     );
 }
 
+// ==================== 测试 7: String 字段不吃数值推断 ====================
+//
+// 事故原型（PR #11 backend CI run 44063905932 / job 133975052132）：
+// `task_id` 由 UUIDv4 改为 32 位纯十进制 `TimeId` 后，`build_query_value` 的
+// `parse::<i64>` 失败 → `parse::<f64>` 成功，于是 `task_id` 被读成
+// `2.026111710461351e+31`，再在 `serde_json::from_value::<String>` 处报
+// `invalid type: floating point ..., expected a string`。
+//
+// 判据：query string 全是字符串，「长得像数字」不足以判定它是数字；类型声明才是判据。
+// 下面用 CI 里那个**逐字**的 32 位值做主用例——它是确定性的，不依赖随机 id 抽到全十进制。
+
+/// 与 `GetInitProgressRequest` 同形：query-only、非 Option 的 String
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize, Params)]
+pub struct QueryOnlyStringRequest {
+    #[param(source = "query")]
+    pub task_id: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct QueryOnlyStringResponse {
+    pub task_id: String,
+}
+
+#[generate_http_handler]
+pub async fn query_only_string(
+    _ctx: RequestContext,
+    params: QueryOnlyStringRequest,
+) -> Result<QueryOnlyStringResponse, Error> {
+    Ok(QueryOnlyStringResponse {
+        task_id: params.task_id,
+    })
+}
+
+/// 数值语义字段必须**仍然**做推断（防修过头：把 limit 也变成字符串）
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize, Params)]
+pub struct MixedQueryRequest {
+    #[param(source = "query")]
+    pub task_id: Option<String>,
+    #[param(source = "query")]
+    pub limit: Option<usize>,
+    #[param(source = "query")]
+    pub ratio: Option<f64>,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct MixedQueryResponse {
+    pub task_id: Option<String>,
+    pub limit: Option<usize>,
+    pub ratio: Option<f64>,
+}
+
+#[generate_http_handler]
+pub async fn mixed_query(
+    _ctx: RequestContext,
+    params: MixedQueryRequest,
+) -> Result<MixedQueryResponse, Error> {
+    Ok(MixedQueryResponse {
+        task_id: params.task_id,
+        limit: params.limit,
+        ratio: params.ratio,
+    })
+}
+
+/// CI 里那条报错值逐字：`2.026111710461351e+31` 还原成的 32 位整数
+const CI_FLOAT_EXPANDED: &str = "20261117104613509731862441885696";
+
+#[tokio::test]
+async fn test_query_only_string_field_keeps_numeric_looking_value() {
+    let app = make_router(|r| r.route("/progress", get(query_only_string_handler))).await;
+
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri(format!("/progress?task_id={CI_FLOAT_EXPANDED}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "32 位纯十进制 task_id 不得被当成浮点数（CI 原报错：invalid type: floating point ..., expected a string）"
+    );
+
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let body_str = String::from_utf8(body.to_vec()).unwrap();
+    assert!(
+        body_str.contains(CI_FLOAT_EXPANDED),
+        "String 字段必须原样回填，实际: {body_str}"
+    );
+    assert!(
+        !body_str.contains("e+31") && !body_str.contains("2.0261"),
+        "不得出现浮点展开形态: {body_str}"
+    );
+}
+
+#[tokio::test]
+async fn test_query_only_option_string_keeps_numeric_looking_value() {
+    // Option<String> 与 String 同一判据：可选只是「缺省不报错」，不改变类型语义
+    let app = make_router(|r| r.route("/mixed", get(mixed_query_handler))).await;
+
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri(format!(
+            "/mixed?task_id={CI_FLOAT_EXPANDED}&limit=500&ratio=0.75"
+        ))
+        .body(Body::empty())
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let body_str = String::from_utf8(body.to_vec()).unwrap();
+    assert!(
+        body_str.contains(CI_FLOAT_EXPANDED),
+        "Option<String> 字段必须原样回填，实际: {body_str}"
+    );
+    // 反向控制：数值语义字段的类型推断不能被这次修复破坏
+    assert!(
+        body_str.contains("\"limit\":500"),
+        "limit 仍应按 usize 推断（防修过头），实际: {body_str}"
+    );
+    assert!(
+        body_str.contains("0.75"),
+        "ratio 仍应按 f64 推断，实际: {body_str}"
+    );
+}
+
 /// path 字段值必须覆盖 body 中的同名字段（防伪造 id）
 #[tokio::test]
 async fn test_path_value_overrides_body_id_when_body_omitted_or_conflicting() {
