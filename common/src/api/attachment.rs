@@ -21,6 +21,34 @@ pub struct AttachmentListQuery {
     pub pagination: PaginationParams,
 }
 
+/// 附件混合搜索请求（关键词 FTS5 + 向量语义，按相关度排序）。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct SearchAttachmentsRequest {
+    /// 搜索关键词（文件名 / AI 摘要 / 用途）。
+    pub keyword: Option<String>,
+    /// 可选文件类型筛选。
+    pub file_type: Option<FileType>,
+    /// 可选用途筛选。
+    pub purpose: Option<String>,
+    /// 分页参数。
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
+}
+
+/// 附件搜索结果项：详情 + 命中方式（hybrid/vector/keyword）。
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AttachmentSearchResult {
+    /// 附件详情。
+    #[serde(flatten)]
+    pub attachment: AttachmentDetail,
+    /// 命中方式：hybrid / vector / keyword。
+    pub match_type: Option<String>,
+    /// FTS5 BM25 排名（越小越相关）。
+    pub fts_rank: Option<f32>,
+    /// 向量余弦距离（越小越相似）。
+    pub vector_distance: Option<f32>,
+}
+
 /// Attachment 详情响应。
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AttachmentDetail {

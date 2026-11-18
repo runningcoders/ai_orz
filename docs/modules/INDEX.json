@@ -3,7 +3,7 @@
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
   "total": 674,
-  "total_bytes": 14279571,
+  "total_bytes": 14281430,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -4507,7 +4507,7 @@
           "path": "11-前端应用/C-知识/Rust Workspace + Dioxus WASM 全栈构建与 CI_CD 流水线/Rust Workspace + Dioxus WASM 全栈构建与 CI_CD 流水线.md",
           "name": "Rust Workspace + Dioxus WASM 全栈构建与 CI_CD 流水线",
           "title": "Rust Workspace + Dioxus WASM 全栈构建与 CI_CD 流水线",
-          "bytes": 16397
+          "bytes": 16413
         },
         {
           "tier": "C-知识",
@@ -5231,7 +5231,7 @@
           "path": "12-基础设施与部署/C-知识/持续集成与发布工作流.md",
           "name": "持续集成与发布工作流",
           "title": "持续集成与发布工作流",
-          "bytes": 29447
+          "bytes": 29463
         },
         {
           "tier": "C-知识",
@@ -5462,7 +5462,7 @@
           "path": "12-基础设施与部署/C-知识/配置与部署.md",
           "name": "配置与部署",
           "title": "配置与部署",
-          "bytes": 31674
+          "bytes": 31682
         },
         {
           "tier": "C-知识",
@@ -5779,7 +5779,7 @@
           "path": "13-数据模型/C-知识/文件存储模型.md",
           "name": "文件存储模型",
           "title": "文件存储模型",
-          "bytes": 18327
+          "bytes": 20138
         },
         {
           "tier": "C-知识",
@@ -5962,7 +5962,7 @@
           "path": "14-测试/B-落地方案/集成测试基础设施.md",
           "name": "集成测试基础设施",
           "title": "集成测试基础设施搭建（HTTP API 端到端）",
-          "bytes": 20525,
+          "bytes": 20533,
           "status": "已完成",
           "scope": [],
           "related": []

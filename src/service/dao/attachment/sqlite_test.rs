@@ -1,6 +1,8 @@
 use crate::models::attachment::{AttachmentDescriptionUpdate, AttachmentPo};
 use crate::pkg::request_context::RequestContext;
-use crate::service::dao::attachment::{AttachmentDao, AttachmentQuery, new_with_attachments_dir};
+use crate::service::dao::attachment::{
+    AttachmentDao, AttachmentQuery, AttachmentSearch, new_with_attachments_dir,
+};
 use common::enums::FileType;
 use common::error::Result;
 use sqlx::SqlitePool;
@@ -230,5 +232,80 @@ async fn test_update_description_and_fts_sync(pool: SqlitePool) -> Result<()> {
             .fetch_one(pool)
             .await?;
     assert_eq!(hits_new, 1);
+    Ok(())
+}
+
+/// DAO.search 命中 AI 摘要，并执行 root_user_id 归属过滤（越权红线）。
+#[sqlx::test(migrations = "./migrations")]
+async fn test_search_hits_description_and_isolates_owner(pool: SqlitePool) -> Result<()> {
+    let (_temp, dao, ctx) = init_test_env(pool);
+
+    let mine = create_test_attachment("att-mine", "notes.md", "message");
+    dao.insert(ctx.clone(), &mine).await?;
+    dao.update_description(
+        ctx.clone(),
+        &mine.id,
+        &AttachmentDescriptionUpdate {
+            description: "季度营收分析报告，含各区域明细".to_string(),
+            usage: "供管理层决策参考".to_string(),
+            source: "agent_tool".to_string(),
+            model: "m".to_string(),
+            message_id: "msg".to_string(),
+            described_at: 1,
+        },
+    )
+    .await?;
+
+    // 他人附件：文件名同样含关键词，但归属不同
+    let others = create_test_attachment("att-others", "notes.md", "message");
+    let mut others_po = others.clone();
+    others_po.root_user_id = "other-user".to_string();
+    dao.insert(ctx.clone(), &others_po).await?;
+
+    // 关键词命中摘要（"营收分析"只在 description 里，文件名没有；≥3 字符走 MATCH 路）
+    let hits = dao
+        .search(
+            ctx.clone(),
+            AttachmentSearch {
+                keyword: Some("营收分析".to_string()),
+                root_user_id: Some("test-user".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(hits.len(), 1, "只应命中本人附件");
+    assert_eq!(hits[0].0.id, "att-mine");
+    assert!(hits[0].1.is_some(), "MATCH 路应带 fts_rank");
+
+    // <3 字符走 LIKE 兜底（trigram 无法成 token），仍应命中但不带 rank
+    let hits_short = dao
+        .search(
+            ctx.clone(),
+            AttachmentSearch {
+                keyword: Some("营收".to_string()),
+                root_user_id: Some("test-user".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(hits_short.len(), 1, "LIKE 兜底应命中");
+    assert!(hits_short[0].1.is_none(), "LIKE 路不带 fts_rank");
+
+    // 归属过滤：换成他人 root_user_id 只能查到他人那条（文件名含 notes，摘要为空）
+    let hits_other = dao
+        .search(
+            ctx.clone(),
+            AttachmentSearch {
+                keyword: Some("notes".to_string()),
+                root_user_id: Some("other-user".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert!(
+        hits_other
+            .iter()
+            .all(|(po, _)| po.root_user_id == "other-user")
+    );
     Ok(())
 }

@@ -37,6 +37,7 @@ pub fn init_all() {
     agent::init();
     artifact::init();
     attachment::init();
+    attachment::init_vector();
     cerebellum::init();
     cortex::init();
     cortex::native::init();

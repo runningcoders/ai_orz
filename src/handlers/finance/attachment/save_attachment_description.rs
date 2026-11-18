@@ -17,7 +17,7 @@ use super::response::to_detail;
 #[register_handler_tool(
     id = "save_attachment_description",
     name = "Save Attachment Description",
-    description = "Record what you actually saw in an attachment, so its summary and inferred purpose are stored for search and reuse later. Call it once per attachment after you have identified the content: content = an objective summary of what the file contains; usage = what the user wants to do with it based on their message (optional); attachment_id = the attachment ID; message_id = the current message ID (optional). Calling again overwrites the previous summary. Only your own attachments can be described.",
+    description = "Record what you actually saw or inferred about an attachment, so its description and inferred purpose are stored for later search and reuse. Call it once per attachment: content = an objective description of the file (for images describe what you see; for text files read with get_attachment_content first; for video/audio/binary that cannot be read, describe visible facts like name/type/size/context and state that content could not be read — never fabricate); usage = what the user wants to do with it based on their message (optional); attachment_id = the attachment ID; message_id = the current message ID (optional). Calling again overwrites the previous summary. Try to fill both content and usage for every file type. Only your own attachments can be described.",
     params = "common::api::SaveAttachmentDescriptionRequest",
     neural,
     tags = "attachment"

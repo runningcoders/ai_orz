@@ -106,6 +106,8 @@ pub struct Attachment {
     pub po: AttachmentPo,
     /// 按需装配的文件读取结果。
     pub read_results: Vec<AttachmentReadResult>,
+    /// 搜索命中信息（混合搜索时填充；普通查询为 None）。
+    pub search_match: Option<crate::models::vector::SearchMatchInfo>,
 }
 
 /// Attachment 获取选项。
@@ -199,6 +201,7 @@ impl Attachment {
         Self {
             po,
             read_results: Vec::new(),
+            search_match: None,
         }
     }
 
@@ -310,6 +313,48 @@ impl AttachmentPo {
     }
 }
 
+/// 附件的向量化：把「文件名 + AI 摘要 + 用途 + purpose」作为语义文本，
+/// 与 `attachments_fts` 全文索引的四列口径一致——两个召回路查的是同一份语义。
+///
+/// payload 复用 `VectorPayload` 现有列（**不新增字段**：它是 bincode 宽结构，
+/// 加字段会让存量向量集合解码失败并静默降级为纯 FTS）：
+/// - `agent_id` ← `root_user_id`：归属用户，向量召回时下推过滤，防越权；
+/// - `entity_type` ← `file_type`：文件类型（Document/Image/…）过滤；
+/// - `status` ← `status`：仅落库（数字字符串），不进向量谓词——软删过滤由回表
+///   `AttachmentQuery` 的 `status != 0` 兜底，向量路查不到的 PO 不会出现在结果里。
+impl crate::models::vector::Vectorizable for AttachmentPo {
+    fn vectorize_text(&self) -> String {
+        [
+            self.original_name.as_str(),
+            self.description.as_str(),
+            self.description_usage.as_str(),
+            self.purpose.as_str(),
+        ]
+        .into_iter()
+        .filter(|part| !part.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+    }
+
+    fn vector_collection() -> &'static str {
+        "attachments"
+    }
+
+    fn vector_id(&self) -> &str {
+        &self.id
+    }
+
+    fn vector_payload(&self) -> crate::models::vector::VectorPayload {
+        use crate::models::vector::VectorPayload;
+        VectorPayload {
+            agent_id: Some(self.root_user_id.clone()),
+            entity_type: Some(format!("{:?}", self.file_type)),
+            status: Some(self.status.to_string()),
+            ..Default::default()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -336,6 +381,32 @@ mod tests {
 
     /// 泛型 MIME 按文件名补齐：写库归一上线前落库的历史附件靠这里自愈，
     /// 否则图片既进不了前端内联白名单，也进不了唤醒的 `image/*` 视觉白名单。
+    #[test]
+    fn vectorize_text_aligns_with_fts_columns() {
+        use crate::models::vector::Vectorizable;
+        let mut po = po_with("text/plain", "install.md");
+        assert_eq!(
+            <AttachmentPo as Vectorizable>::vectorize_text(&po),
+            "install.md",
+            "无摘要时只有文件名"
+        );
+        po.description = "安装步骤手册".to_string();
+        po.description_usage = "指导新人部署".to_string();
+        po.purpose = "skill".to_string();
+        let text = <AttachmentPo as Vectorizable>::vectorize_text(&po);
+        assert!(text.contains("install.md"));
+        assert!(text.contains("安装步骤手册"));
+        assert!(text.contains("指导新人部署"));
+        assert!(text.contains("skill"));
+        assert_eq!(
+            <AttachmentPo as Vectorizable>::vector_collection(),
+            "attachments"
+        );
+        // payload 用 agent_id 承载归属，供向量召回下推过滤
+        let payload = <AttachmentPo as Vectorizable>::vector_payload(&po);
+        assert_eq!(payload.agent_id.as_deref(), Some("user-1"));
+    }
+
     #[test]
     fn effective_mime_type_infers_from_original_name() {
         assert_eq!(

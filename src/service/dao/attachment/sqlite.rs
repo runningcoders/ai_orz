@@ -1,14 +1,15 @@
 //! SQLite implementation of Attachment DAO
 
-use super::{AttachmentDao, AttachmentQuery};
+use super::{AttachmentDao, AttachmentQuery, AttachmentSearch};
 use crate::models::attachment::{
     AttachmentDescriptionUpdate, AttachmentPo, attachment_file_abs_path,
 };
 use crate::pkg::RequestContext;
 use crate::pkg::paths;
+use crate::pkg::storage::{build_fts5_search_plan, merge_fts5_results, push_fts5_like_conditions};
 use common::api::PagedResult;
 use common::error::Result;
-use sqlx::{QueryBuilder, SqlitePool};
+use sqlx::{FromRow, QueryBuilder, SqlitePool};
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
@@ -171,6 +172,99 @@ WHERE id = ? AND "status" != 0
         })
     }
 
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: AttachmentSearch,
+    ) -> Result<Vec<(AttachmentPo, Option<f32>)>> {
+        let pool = ctx.db_pool();
+        let Some(plan) = build_fts5_search_plan(search.keyword.as_deref().unwrap_or_default())
+        else {
+            return Ok(Vec::new());
+        };
+        let limit = search.pagination.limit.unwrap_or(20).clamp(1, 100) as i64;
+
+        // 归属/用途/类型过滤：两路共用，统一带 `a.` 前缀（JOIN 与裸表都成立）。
+        // ⚠️ root_user_id 必须下推到 SQL：BM25 top-K 若被他人附件占满，
+        // 应用层再过滤也拿不到自己的命中（越权红线 + 正确性）。
+        let apply_filters = |builder: &mut QueryBuilder<'_, sqlx::Sqlite>| {
+            builder.push(r#" AND a."status" != 0"#);
+            if let Some(root_user_id) = &search.root_user_id {
+                builder
+                    .push(" AND a.root_user_id = ")
+                    .push_bind(root_user_id.clone());
+            }
+            if let Some(purpose) = &search.purpose {
+                builder.push(" AND a.purpose = ").push_bind(purpose.clone());
+            }
+            if let Some(file_type) = search.file_type {
+                builder
+                    .push(" AND a.file_type = ")
+                    .push_bind(file_type as i32);
+            }
+        };
+
+        // 路径一：FTS5 MATCH（左表必须写完整表名 attachments_fts，不能用别名）
+        let mut primary: Vec<(AttachmentPo, Option<f32>)> = Vec::new();
+        if let Some(match_expr) = &plan.match_expr {
+            let mut builder = QueryBuilder::new(
+                r#"SELECT a.id, a.original_name, a.stored_name, a.relative_path, a.mime_type, a.file_type, a.size, a.purpose, a.description, a.description_usage, a.description_source, a.description_model, a.description_message_id, a.described_at, a."status", a.root_user_id, a.created_by, a.modified_by, a.created_at, a.updated_at, attachments_fts.rank AS fts_rank FROM attachments_fts JOIN attachments a ON attachments_fts.rowid = a.rowid WHERE attachments_fts MATCH "#,
+            );
+            builder.push_bind(match_expr);
+            apply_filters(&mut builder);
+            builder
+                .push(" ORDER BY attachments_fts.rank LIMIT ")
+                .push_bind(limit);
+            let rows: Vec<AttachmentFtsRow> = builder.build_query_as().fetch_all(pool).await?;
+            primary = rows
+                .into_iter()
+                .map(|row| {
+                    let (po, rank) = row.into_po_and_rank();
+                    (self.with_abs_path(po), rank)
+                })
+                .collect();
+        }
+
+        // 路径二：LIKE 兜底（trigram 对 <3 字符词元无法成 token）
+        let mut secondary: Vec<(AttachmentPo, Option<f32>)> = Vec::new();
+        if !plan.like_patterns.is_empty() {
+            let mut builder = QueryBuilder::new(
+                r#"SELECT a.id, a.original_name, a.stored_name, a.relative_path, a.mime_type, a.file_type, a.size, a.purpose, a.description, a.description_usage, a.description_source, a.description_model, a.description_message_id, a.described_at, a."status", a.root_user_id, a.created_by, a.modified_by, a.created_at, a.updated_at, NULL AS fts_rank FROM attachments a WHERE ("#,
+            );
+            push_fts5_like_conditions(
+                &mut builder,
+                "a",
+                &[
+                    "original_name",
+                    "description",
+                    "description_usage",
+                    "purpose",
+                ],
+                &plan.like_patterns,
+            );
+            builder.push(")");
+            apply_filters(&mut builder);
+            builder
+                .push(" ORDER BY a.updated_at DESC, a.id DESC LIMIT ")
+                .push_bind(limit);
+            let rows: Vec<AttachmentFtsRow> = builder.build_query_as().fetch_all(pool).await?;
+            secondary = rows
+                .into_iter()
+                .map(|row| {
+                    let (po, rank) = row.into_po_and_rank();
+                    (self.with_abs_path(po), rank)
+                })
+                .collect();
+        }
+
+        Ok(merge_fts5_results(
+            primary,
+            secondary,
+            |po: &AttachmentPo| po.id.clone(),
+            limit as usize,
+        ))
+    }
+
     async fn update_status(&self, ctx: RequestContext, id: &str, status: i32) -> Result<()> {
         let pool = ctx.db_pool();
         let now = common::constants::utils::current_timestamp_ms();
@@ -273,5 +367,72 @@ fn push_query_filters(builder: &mut QueryBuilder<'_, sqlx::Sqlite>, query: &Atta
         builder
             .push(" AND file_type = ")
             .push_bind(file_type as i32);
+    }
+    if let Some(ids) = &query.ids
+        && !ids.is_empty()
+    {
+        builder.push(" AND id IN (");
+        let mut separated = builder.separated(", ");
+        for id in ids {
+            separated.push_bind(id.clone());
+        }
+        separated.push_unseparated(")");
+    }
+}
+
+/// FTS5 JOIN 查询的承接行：AttachmentPo 全列 + bm25 rank（LIKE 路为 NULL）。
+#[derive(Debug, FromRow)]
+struct AttachmentFtsRow {
+    id: String,
+    original_name: String,
+    stored_name: String,
+    relative_path: String,
+    mime_type: String,
+    file_type: common::enums::FileType,
+    size: i64,
+    purpose: String,
+    description: String,
+    description_usage: String,
+    description_source: String,
+    description_model: String,
+    description_message_id: String,
+    described_at: i64,
+    #[sqlx(rename = "status")]
+    status_value: i32,
+    root_user_id: String,
+    created_by: String,
+    modified_by: String,
+    created_at: i64,
+    updated_at: i64,
+    fts_rank: Option<f64>,
+}
+
+impl AttachmentFtsRow {
+    fn into_po_and_rank(self) -> (AttachmentPo, Option<f32>) {
+        let rank = self.fts_rank.map(|r| r as f32);
+        let po = AttachmentPo {
+            id: self.id,
+            original_name: self.original_name,
+            stored_name: self.stored_name,
+            relative_path: self.relative_path,
+            mime_type: self.mime_type,
+            file_type: self.file_type,
+            size: self.size,
+            purpose: self.purpose,
+            description: self.description,
+            description_usage: self.description_usage,
+            description_source: self.description_source,
+            description_model: self.description_model,
+            description_message_id: self.description_message_id,
+            described_at: self.described_at,
+            status: self.status_value,
+            root_user_id: self.root_user_id,
+            created_by: self.created_by,
+            modified_by: self.modified_by,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            abs_path: None,
+        };
+        (po, rank)
     }
 }

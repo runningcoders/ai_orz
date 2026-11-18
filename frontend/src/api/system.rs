@@ -259,7 +259,7 @@ pub async fn kill_process(pid: u32) -> Result<common::api::ShellKillResponse, Ap
 
 /// 触发向量索引重建（仅 SuperAdmin），返回后台任务 ID
 ///
-/// `entities` 收窄重建范围（技能库页面传 `["skill"]`，缺省 = 全部 7 类）；
+/// `entities` 收窄重建范围（技能库页面传 `["skill"]`，缺省 = 全部 8 类）；
 /// `mode` 决定重建形态：
 /// - `Missing`（查漏补缺）：不清空集合，逐条比 hash，只补缺失/已变条目 —— 便宜；
 /// - `Force`（强制重建）：清空后全量重算，每条都真实调 embedding —— 贵但最彻底；
