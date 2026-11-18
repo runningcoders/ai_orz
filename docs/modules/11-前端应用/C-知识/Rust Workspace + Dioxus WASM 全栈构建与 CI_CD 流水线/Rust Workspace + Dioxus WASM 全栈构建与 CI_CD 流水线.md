@@ -53,7 +53,7 @@ source_files:
 - `scripts/build_frontend.sh`：封装 `dx build --release`、查找 dx 输出目录（兼容新旧路径）、复制 `index.html` 与 `public/` 静态资源到仓库根 `dist/`，并清理未被引用的旧 hash 资产。被 `start.sh` 和 CI e2e job 共用。
 - `scripts/package.sh`：**发布物打包脚本**（`make package` 入口）：编译（复用 `prod.sh build` —— 只编译，产物留在仓库，不往本机部署根写东西）→ 组装 `ai_orz-{版本}-{平台}/` 目录（二进制 + `dist/` + `script/` + `Makefile` + `README.md`）→ 产出 tar.gz；版本号自动从 git 推导（`git describe`），平台三元组取自 `rustc -vV`；本地与 CI 共用（release.yml 直接调用）。
 - `scripts/release/`：发布包内容模板源——`script/`（start/stop/restart/status/logs 运维脚本）、`Makefile`（make start/stop/restart/status/logs 统一入口）、`README.md`（Markdown 使用说明，含 `__VERSION__`/`__TARGET__` 占位符，打包时替换）。
-- `.github/workflows/rust.yml`：fmt → clippy → backend(test) / frontend(clippy+wasm) / coverage 并行流水线，启用 sccache、SQLX_OFFLINE=true；另缓存 `~/.cache/ort`（ONNX Runtime 预编译二进制）。
+- `.github/workflows/rust.yml`：fmt → clippy → backend(test) / frontend(clippy+wasm) / coverage 并行流水线，启用 sccache、SQLX_OFFLINE=true；另缓存 `~/.cache/ort.pyke.io`（ONNX Runtime 预编译二进制）。
 - `.github/workflows/release.yml`：matrix 构建 `ubuntu-latest → x86_64-unknown-linux-gnu` 与 `macos-latest → aarch64-apple-darwin`（不做交叉编译，lancedb/ort-sys 交叉链太重），安装 dioxus-cli → **直接调用 `./scripts/package.sh "${REF_NAME:-manual}"`**（编译 + 打包单一入口，与本地 `make package` 完全一致）→ 上传 `ai_orz-*.tar.gz` artifact；仅当 push tag 形如 `refs/tags/v*` 或手动触发 `workflow_dispatch` 时执行；对 `${REF_NAME}` 做白名单正则校验，拒绝 shell/路径特殊字符。
 - `.env.example`：环境变量模板（`DATABASE_URL`、`SQLX_OFFLINE=true`、可选的 LLM/Embedding 测试密钥 `TEST_*`）
 - `common/config/ai_orz.toml`：默认配置模板，作为前端编译期回退源
@@ -80,7 +80,7 @@ graph LR
   D -.-> E
 ```
 - **分阶段门禁**：`fmt`（最快，独立 job）→ `lint`（clippy --all-targets -- -D warnings，需安装 protoc 以满足 lancedb/lance-encoding 的 build script）→ 下游 job 并行（backend / frontend / coverage 三者依赖 lint 后并行）。
-- **缓存策略**：全局启用 sccache（`mozilla-actions/sccache-action`，`RUSTC_WRAPPER=sccache`），按 `sccache-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}` 缓存；另对 `~/.cache/ort`（ort-sys 预编译 ONNX Runtime）做独立缓存。
+- **缓存策略**：全局启用 sccache（`mozilla-actions/sccache-action`，`RUSTC_WRAPPER=sccache`），按 `sccache-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}` 缓存；另对 `~/.cache/ort.pyke.io`（ort-sys 预编译 ONNX Runtime）做独立缓存。
 - **覆盖率门禁**：`coverage` job 与 backend/frontend 并行，使用 `cargo-llvm-cov`，push main 要求 fail-under-lines ≥ 45%，PR 要求 ≥ 38%；报告通过 `--ignore-filename-regex` 排除 tests/common、registry、rustc、build.rs、target；报告同时输出日志与 GitHub Summary。
 - **前端交叉编译**：`frontend` job 安装 `wasm32-unknown-unknown` target 并执行 `cargo check --target wasm32-unknown-unknown` → `cargo clippy --target wasm32-unknown-unknown --all-targets -- -D warnings` → `cargo test`，确保 WASM 目标可编译。
 - **测试组织**：单元测试 `cargo test --lib`（含 `pkg/`、`models/`、`service/dao/*_test.rs` 等模块内 `#[cfg(test)]`）；集成测试在根 `Cargo.toml` 中显式声明 `[[test]]` 条目指向 `tests/integration/*.rs`，CI 通过 `cargo test --test '*'` 批量执行；E2E 测试位于 `tests/e2e/`（已从仓库根 `e2e/` 并入），通过 Cargo autotests 不递归子目录特性与 Rust 集成测试完全隔离，仅本地执行 `cd tests/e2e && npx playwright test` 或 `make e2e`。

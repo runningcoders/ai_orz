@@ -61,8 +61,8 @@ jobs:
       uses: actions/cache@v5
       with:
         path: |
-          ~/.cache/ort
-          ~/Library/Caches/ort
+          ~/.cache/ort.pyke.io
+          ~/Library/Caches/ort.pyke.io
         key: ort-sys-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
         restore-keys: |
           ort-sys-${{ runner.os }}-
