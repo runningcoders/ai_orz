@@ -294,7 +294,7 @@ pub struct ThinkTraceToolCallDto {
     pub call_id: Option<String>,
     /// 工具 wire name
     pub name: String,
-    /// 模型自述的调用意图（`_intent` 附注；缺失为 None）
+    /// 模型自述的调用意图（`internal_intent` 附注；缺失为 None）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub intent: Option<String>,
     /// 入参预览（截断）

@@ -235,7 +235,7 @@ pub fn ToolCallsTab(
                         let started = format_timestamp_opt(Some(e.started_at as i64));
                         let pid_opt = running_pid_badge(&pid_by_call, &call_id);
                         let is_expanded = expanded_call_id() == Some(call_id.clone());
-                        // 模型自述的调用意图（`_intent` 附注，随 metadata 落库）
+                        // 模型自述的调用意图（`internal_intent` 附注，随 metadata 落库）
                         let intent = e
                             .metadata
                             .get("intent")

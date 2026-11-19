@@ -73,7 +73,7 @@ impl ToolCallDao for ToolCallDaoImpl {
         tool: &Tool,
         mut args: Value,
     ) -> Result<(Value, ToolCallEntry)> {
-        // 通用调用附注（`_intent`）：模型自述「这次调用想达成什么」。
+        // 通用调用附注（`internal_intent`）：模型自述「这次调用想达成什么」。
         // ⚠️ 必须在调用工具前摘除——业务参数里没有这个键，工具/参数校验器
         // 都看不到它（内置工具多为 `additionalProperties: false`，多一个键就拒）。
         // 摘除后 args 才是真正的业务入参，`input` 与 `args_len` 都按它记。

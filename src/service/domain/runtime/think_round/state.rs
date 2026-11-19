@@ -27,7 +27,7 @@ pub(crate) fn truncate_trace_text(text: &str, max_chars: usize) -> String {
 
 /// 工具调用入参预览：序列化失败时退化为空对象
 ///
-/// `_intent` 不进食参预览——它是调用附注，单独进 [`ThinkTraceToolCall::intent`]，
+/// `internal_intent` 不进食参预览——它是调用附注，单独进 [`ThinkTraceToolCall::intent`]，
 /// 与业务参数混在一起会让「这步到底传了什么」变模糊。
 pub(crate) fn tool_arguments_preview(arguments: &serde_json::Value) -> String {
     let mut business = arguments.clone();
@@ -169,7 +169,7 @@ mod tests {
         let trace = pending_tool_trace(&tc);
         assert_eq!(trace.intent.as_deref(), Some("查历史记录用于比对"));
         // 入参预览只放业务参数：「传了什么」与「想干什么」在 UI 上是两行
-        assert!(!trace.arguments.contains("_intent"));
+        assert!(!trace.arguments.contains("internal_intent"));
         assert!(trace.arguments.contains("历史"));
     }
 

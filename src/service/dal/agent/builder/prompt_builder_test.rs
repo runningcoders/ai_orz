@@ -1513,7 +1513,7 @@ fn thinking_graph_sections_render_titles_and_content() {
     );
 }
 
-/// `_intent` 调用附注的指引必须在 System 消息里（schema 只声明字段，
+/// `internal_intent` 调用附注的指引必须在 System 消息里（schema 只声明字段，
 /// 模型是否愿意填主要靠这段文案）。缺了它工具卡片与思考轨迹就没有意图摘要。
 #[test]
 fn call_intent_guidance_lives_in_system_only() {
@@ -1529,14 +1529,24 @@ fn call_intent_guidance_lives_in_system_only() {
         panic!("期望 System 消息为首条");
     };
     assert!(system.contains("§5. 禁止无意义工具调用"), "锚点段落须存在");
-    assert!(system.contains("_intent"), "System 须声明通用调用附注");
     assert!(
-        system.contains("✅ `_intent`") && system.contains("❌ `_intent`"),
+        system.contains("internal_intent"),
+        "System 须声明通用调用附注"
+    );
+    assert!(
+        system.contains("✅ `internal_intent`") && system.contains("❌ `internal_intent`"),
         "须给正反例，否则模型只会写空话: {system}"
+    );
+    assert!(
+        system.contains("不要写 `_query`"),
+        "须显式禁止给业务字段加下划线前缀（否则模型会泛化）: {system}"
     );
     for m in &messages[1..] {
         if let ChatMessage::User { content: user } = m {
-            assert!(!user.contains("_intent"), "附注指引不得进 User（前缀缓存）");
+            assert!(
+                !user.contains("internal_intent"),
+                "附注指引不得进 User（前缀缓存）"
+            );
         }
     }
 }

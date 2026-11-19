@@ -177,14 +177,14 @@
 | architecture | **5** | **真需刷**（`traces` 组件 source 指向的 `src/pkg/think_trace.rs` **已不存在**，文件已迁到 `src/service/domain/runtime/`；「图里点名的东西现在没了」是最硬的需更信号）|
 | stats | **4** | **真需刷**（`aop_stats_collector.rs` 与 `system/aop_stats.rs` 两个 source 文件**都已不存在**）|
 | aop | 3 | 不刷（命中只有 `consumer/mod.rs` 删一行 mod 声明、`lib.rs` 换一行调用、`aop_stats_hook.rs` 内部字段；AOP 抽象层「六 Trait + Registry」一条没变，属机械适配）|
-| tools | 4 | 不刷（命中是 `_intent` 附注与 readiness 缓存位置迁移，工具注册面与三层调用链未变）|
+| tools | 4 | 不刷（命中是 `internal_intent` 附注与 readiness 缓存位置迁移，工具注册面与三层调用链未变）|
 | task-project | 5 | 不刷（`transfer_owner` 只是把「目标 Agent 是否存在」从 domain 挪到 handler 校验，项目/任务状态机与 DAG 未变）|
 | frontend | 3 | 不刷（命中 `chat.rs` 的产物 chip 预览与 `lib.rs`/`router.rs` 的路由注册，页面结构与组件树未变）|
 | tool-context | 2 | 不刷（`tool_registry/mod.rs` 只多一行 `pub mod readiness_cache`、`tool_execution.rs` 改的是工具就绪缓存来源；身份注入四层链路一条没变）|
 | infra | 1 | 不刷（只有 `lib.rs` 的 AOP 注入写法变化，配置/路径/存储初始化未变）|
 | memory | 2 | 不刷（`models/prompt_builder.rs` 只把 `IntentAnalysis` 的 use 路径改到 models、`think_loop.rs` 是轨迹守卫；四层记忆与两条 JSONL 结构未变）|
 | org-federation | 1 | 不刷（只有 `router.rs` 一行路由注册）|
-| testing | 1 | 不刷（只有 `builtin_tests.rs` 加了 `_intent` 保留前缀护栏）|
+| testing | 1 | 不刷（只有 `builtin_tests.rs` 加了 `internal_intent` 保留前缀护栏）|
 | a2a / data-model / ontology / search | 0 | 不需更（sources 与本批 158 条 diff 路径交集为空）|
 
 **四张改动摘要**：

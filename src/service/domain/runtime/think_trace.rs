@@ -571,13 +571,13 @@ pub struct ThinkTraceToolCall {
     /// 工具 wire name
     #[serde(default)]
     pub name: String,
-    /// 模型自述的调用意图（`_intent` 附注；缺失为 None）
+    /// 模型自述的调用意图（`internal_intent` 附注；缺失为 None）
     ///
     /// 与 `arguments` 分开存：入参是「传了什么」，意图是「想干什么」。
     /// 前端时间线用它做摘要，不必再从参数反推。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub intent: Option<String>,
-    /// 入参 JSON 预览（截断；不含 `_intent`）
+    /// 入参 JSON 预览（截断；不含 `internal_intent`）
     #[serde(default)]
     pub arguments: String,
     /// 结果预览（截断；未执行完成为 None）
