@@ -17,7 +17,7 @@
 | 文件 | 层级 | 讲什么 | 视图 | 对应知识库模块 |
 |---|---|---|---|---|
 | [ai-orz-architecture.html](./ai-orz-architecture.html) | 容器级总图 | 三级 workspace、四层单向调用、存储与外部系统、认知架构分层 | 主请求路径 / 异步与 Agent 运行时 / 持久化 | 00-总览与架构 |
-| [ai-orz-think-path.html](./ai-orz-think-path.html) | 组件级 | 两阶段唤醒 → 小脑决策契约（entry_gate / entry_pool / chain_reply, close_default）→ 思考中注入新输入 → 三层预算循环 → 七相位图引擎 → 两段式落盘（增量 + 收尾）→ 前端时间线；轨迹查询走 `.jsonl.idx` 旁车索引（索引过滤 + seek 命中行）；含思考强度判相对偏移、先验与兜底分离 | 一轮思考 / 两阶段唤醒 / 轨迹链路 / 认知分层 | 02-Agent运行时 |
+| [ai-orz-think-path.html](./ai-orz-think-path.html) | 组件级 | 两阶段唤醒 → 小脑决策契约（entry_gate / entry_pool / chain_reply, close_default）→ 思考中注入新输入 → 三层预算循环（跨周期 RoundCollected 收集）→ 七相位图引擎 → 两段式落盘（增量 + 收尾，TraceFinishGuard 五条退出路径兜底 close 行）→ 前端时间线；轨迹查询走 `.jsonl.idx` 旁车索引（索引过滤 + seek 命中行）；含思考强度判相对偏移、先验与兜底分离 | 一轮思考 / 两阶段唤醒 / 轨迹链路 / 认知分层 | 02-Agent运行时 |
 | [ai-orz-tools.html](./ai-orz-tools.html) | 组件级 | CoreTool 三协议路由（Builtin / HTTP / MCP）+ 工具级凭据契约与身份注入 + 策略拦截与六态授权 + 技能包装配 | 三层调用 / 策略与授权 / 注册与装配 | 06-工具与技能 |
 | [ai-orz-tool-context.html](./ai-orz-tool-context.html) | 组件级 | 工具调用中的上下文（身份）数据流转：声明（`CredentialKind` 的 `UserInfo` / `AgentInfo` 两个非凭据变体 + `field` 白名单 + `binding` 四注入点）→ 解析（`is_identity` 二元分派 + 未命中按来源分叉）→ 注入（`check` 注入 + `base_env` 九键末位硬 insert）→ 使用（git 子进程 4 个 `GIT_*` / commit-msg hook） | 四层主链路 / 失败语义分叉 / 注入与优先级 / 落点实证 | 06-工具与技能 |
 | [ai-orz-aop.html](./ai-orz-aop.html) | 组件级 | pkg/aop 六 Trait + Registry 单例 + 12 类业务消费者（18 处注册 / 8 Sync + 10 Async）+ 3 类 tick 生产者 + context_carrier 贯穿 | 一次事件流转 / 启动顺序 / 生产者与兜底 | 10-异步基建(AOP) |
@@ -25,10 +25,10 @@
 | [ai-orz-ontology.html](./ai-orz-ontology.html) | 组件级 | 受控词表 TBox + 属性定义与门闩 + 骨架三元组 + 漂移与有效性治理（口径与现网 `get_ontology_drift_dashboard` / `get_property_effectiveness` 同源） | 读侧链路 / 写入门闩 / 治理面 | 00-总览与架构 |
 | [ai-orz-org-federation.html](./ai-orz-org-federation.html) | 组件级 | 多级组织 + UserRole 并查集继承 + JWT 双模式 + 身份凭证 + 配对码建联与跨组织签名 | 组织与角色 / 认证与凭证 / 联邦组网 | 01-组织与权限 |
 | [ai-orz-task-project.html](./ai-orz-task-project.html) | 组件级 | TaskStatus 六态（含 PendingReview=5）+ 验收闭环 + dependencies DAG + execution_plan / result 增量 + Project 五字段注入 | 任务状态机 / DAG 与唤醒 / 项目聚合 | 05-任务与项目 |
-| [ai-orz-messaging.html](./ai-orz-messaging.html) | 组件级 | 渠道入站归一化 → 路由策略（含回复仲裁与协作压力）→ 入站过滤（规则门 + 小脑相关性门，渠道无关）→ MessageDomain（builder / delivery）→ 附件字节流与正文引用 → DAL/DAO → SSE 与唤醒 | 入站与路由 / 编排与投递 / 存储与唤醒 | 04-对话与消息 |
+| [ai-orz-messaging.html](./ai-orz-messaging.html) | 组件级 | 渠道入站归一化 → 路由策略（含回复仲裁与协作压力）→ 入站过滤（规则门 + 小脑相关性门，渠道无关）→ MessageDomain（builder / delivery）→ 出站媒体分类（MIME 单点判定 / 超限跳过）→ 附件字节流与正文引用 → DAL/DAO → SSE 与唤醒 | 入站与路由 / 编排与投递 / 存储与唤醒 | 04-对话与消息 |
 | [ai-orz-a2a.html](./ai-orz-a2a.html) | 组件级 | Agent Card + JSON-RPC 四方法 + 协议映射与回调 + 30s 轮询兜底 + 联邦签名 | 协议入口 / 结果与兜底 / 联邦与长连接 | 07-外部Agent(A2A) |
 | [ai-orz-search.html](./ai-orz-search.html) | 组件级 | FTS5 全文 + 向量检索 + 图谱遍历三路召回 + 属性精确过滤 + `ids` 直取与 `include_retired` / `include_history` 受控出口 | 工具入口 / 三路召回 / 存储面 | 08-搜索 |
-| [ai-orz-stats.html](./ai-orz-stats.html) | 组件级 | 业务事件 → AOP 同步消费 → 四类指标落库（含按时序桶的耗时统计）→ 监控 API 与看板 | 采集 / 聚合 / 读取与看板 | 09-统计与监控 |
+| [ai-orz-stats.html](./ai-orz-stats.html) | 组件级 | 业务事件 → AOP 同步消费 → 四类指标落库（含按时序桶的耗时统计）→ 采集器落 pkg/stats/runtime（全局单例，handler 直读）→ 监控 API 与看板 | 采集 / 聚合 / 读取与看板 | 09-统计与监控 |
 | [ai-orz-frontend.html](./ai-orz-frontend.html) | 组件级 | Dioxus WASM 入口 / 路由 / 页面 / HUD / API 客户端 + 产物预览（HtmlPreview 唯一渲染出口） + build.rs 产物 | 应用骨架 / 页面与组件 / 数据与产物 | 11-前端应用 |
 | [ai-orz-infra.html](./ai-orz-infra.html) | 组件级 | 配置 → 连接池与迁移 → 路径与 JSONL（pkg/jsonl：writer + sidecar）→ 向量重建三档 → 后台任务 → 打包发布 | 启动与配置 / 运行期资源 / 构建与发布 | 12-基础设施与部署 |
 | [ai-orz-data-model.html](./ai-orz-data-model.html) | ER 图（表级） | 三族九表：身份 / 工作 / 知识图谱，字段取自现网 SQLite schema | 身份与组织 / 任务与消息 / 知识图谱三件套 | 13-数据模型 |
@@ -163,6 +163,67 @@
 **只改卡片与源锚点、不改组件与连线**是本轮的总体取舍：这批改动改的是「同一组件内部的 IO 方式」与「ID 生成实现」，不是「有哪些组件、谁调谁」。把 `sidecar` 做成新组件会撞 `layout/component-overlap`，且会让图回答「JSONL 怎么写」这种索引层细节——按「门禁红就降粒度，不放宽门禁」处理。
 
 未做人眼视觉复核，仅通过 archify 四道门禁（validate / deliver / check / browser-check 全 pass、diagnostics 0）。
+
+## 增量同步记录
+
+### 2026-11-19 增量同步（4 张重渲染，revision → `715ee557`）
+
+**判定口径**：`archify-source-evidence-data` 的 `nodes{}` 引用路径清单 × **PR 全量 diff 路径**（`git diff --name-only origin/main...HEAD`，158 条）求交得 per-图 touched 数。旧判定非恒真，本表当场重算。
+
+| 图 | touched | 判定 |
+|---|---|---|
+| think-path | **12** | **真需刷**（命中覆盖唤醒 / think_loop / think_round / trace / query / tool_execution 等本图主干组件）|
+| messaging | **5** | **真需刷**（`resource_resolver` 不在 sources 里但 `delivery.rs` + `chat.rs` 命中；本批新增出站媒体分类属本图承载域）|
+| architecture | **5** | **真需刷**（`traces` 组件 source 指向的 `src/pkg/think_trace.rs` **已不存在**，文件已迁到 `src/service/domain/runtime/`；「图里点名的东西现在没了」是最硬的需更信号）|
+| stats | **4** | **真需刷**（`aop_stats_collector.rs` 与 `system/aop_stats.rs` 两个 source 文件**都已不存在**）|
+| aop | 3 | 不刷（命中只有 `consumer/mod.rs` 删一行 mod 声明、`lib.rs` 换一行调用、`aop_stats_hook.rs` 内部字段；AOP 抽象层「六 Trait + Registry」一条没变，属机械适配）|
+| tools | 4 | 不刷（命中是 `_intent` 附注与 readiness 缓存位置迁移，工具注册面与三层调用链未变）|
+| task-project | 5 | 不刷（`transfer_owner` 只是把「目标 Agent 是否存在」从 domain 挪到 handler 校验，项目/任务状态机与 DAG 未变）|
+| frontend | 3 | 不刷（命中 `chat.rs` 的产物 chip 预览与 `lib.rs`/`router.rs` 的路由注册，页面结构与组件树未变）|
+| tool-context | 2 | 不刷（`tool_registry/mod.rs` 只多一行 `pub mod readiness_cache`、`tool_execution.rs` 改的是工具就绪缓存来源；身份注入四层链路一条没变）|
+| infra | 1 | 不刷（只有 `lib.rs` 的 AOP 注入写法变化，配置/路径/存储初始化未变）|
+| memory | 2 | 不刷（`models/prompt_builder.rs` 只把 `IntentAnalysis` 的 use 路径改到 models、`think_loop.rs` 是轨迹守卫；四层记忆与两条 JSONL 结构未变）|
+| org-federation | 1 | 不刷（只有 `router.rs` 一行路由注册）|
+| testing | 1 | 不刷（只有 `builtin_tests.rs` 加了 `_intent` 保留前缀护栏）|
+| a2a / data-model / ontology / search | 0 | 不需更（sources 与本批 158 条 diff 路径交集为空）|
+
+**四张改动摘要**：
+
+- **think-path**：`trace` 组件 sources 从已不存在的 `src/pkg/think_trace.rs` 换成 `src/service/domain/runtime/think_trace.rs`，副标 `677 行` → **`926 行 · 两段式落盘 + 旁车索引 + 收尾守卫`**；`think_loop` 副标 `866 行` → **`889 行 · 三层预算 + 跨周期收集`**；`think_round` 副标 `2,298 行` → **`2,357 行`**；新增第 12 张卡「收尾守卫与跨周期收集（2026-11-19 新增）」5 条。组件 / 连线 / 视图数不变（16 / 16 / 4），卡片 11 → **12**。
+- **messaging**：`attach` 组件 sources 的 `markdown_protocol/mod.rs` 换成 `src/models/outbound_media.rs`（出站媒体分类的落点），label 改「附件与媒体链路」、副标补「出站分类」；`delivery` 副标补「超限跳过 + 正文提示」；`meta.subtitle` 插入「出站媒体分类（MIME 单点判定 / 超限跳过）」；新增第 10 张卡「出站附件：MIME 单点判定 + 超限跳过（2026-11-19 新增）」5 条。组件 / 连线 / 视图数不变（19 / 21 / 4），卡片 9 → **10**。
+- **stats**：`aopc` sources 从已不存在的 `src/consumer/aop_stats_collector.rs` 换成 `src/pkg/stats/runtime/aop.rs`；`dom` 组件改名为「AOP 统计聚合」，sources 从已不存在的 `src/service/domain/system/aop_stats.rs` 换成 `src/pkg/stats/runtime/mod.rs`，副标「全局单例」；`api` 副标补「直读单例」；`meta.subtitle` 插入「采集器落 pkg/stats/runtime（handler 直读全局单例）」；新增第 5 张卡「采集器归属（2026-11-19 下沉）」3 条。组件 / 连线 / 视图数不变（14 / 15 / 4），卡片 4 → **5**。
+- **architecture**：`traces` 组件 sources 的 `src/pkg/think_trace.rs` 换成 `src/service/domain/runtime/think_trace.rs`；「严格单向分层（红线）」卡补第 5 条（2026-11-19 再归零四处反向依赖）。组件 / 连线 / 卡片 / 视图数全不变（17 / 18 / 6 / 3）。
+
+**声明值当场实测（2026-11-19 18:0x，HEAD `715ee557`）**：
+
+| 声明项 | 实测 | 对照 |
+|---|---|---|
+| `src/service/domain/runtime/think_trace.rs` | **926** | 上一轮 677（本批 +249）|
+| `src/service/domain/runtime/think_trace_tests.rs` | **1,017** | — |
+| `src/service/domain/runtime/think_trace_sidecar.rs` | **191** | 未变 |
+| `src/service/domain/runtime/think_loop.rs` | **889** | 上一轮 866（+23）|
+| `src/service/domain/runtime/think_round/` | **2,357** | 上一轮 2,298（+59）|
+| `src/pkg/think_path/` | **2,499** | 未变 |
+| `src/service/domain/runtime/think_trace_query.rs` | **321** | 未变 |
+| `src/service/domain/runtime/inbox.rs` | **368** | 未变 |
+| `src/service/domain/runtime/collected.rs` | **215** | 本批新增 |
+| `src/service/domain/runtime/tool_execution.rs` | **560** | — |
+| `src/service/domain/message/resource_resolver.rs` | **439** | — |
+| `src/service/domain/message/resource_refs.rs` | **141** | 本批新增 |
+| `src/models/outbound_media.rs` | **187** | 本批新增 |
+| `src/service/dao/lark/http.rs` | **1,276** | — |
+| `src/service/dao/wechat/ilink.rs` | **2,211** | — |
+| `common/src/llm_schema.rs` | **708** | — |
+| `dao/cortex` / `dao/cerebellum` | **3,795** / **519** | 实测未变 |
+| 覆盖率门槛（`.github/workflows/rust.yml` 的 `FAIL_UNDER`） | PR **38%** / main **45%** | 实测未变 |
+
+**三个旧路径已确认不存在**（`test -e` 实测 GONE）：`src/pkg/think_trace.rs`、`src/consumer/aop_stats_collector.rs`、`src/service/domain/system/aop_stats.rs`。这是「图里点名的组件已不存在」类漂移，属最硬需更信号，与 touched 计数无关也要刷。
+
+**取舍说明**：本批的核心变化是四处**层迁移**与三处**新增能力**，但没有出现新的架构层或新的组件类别 —— `RoundCollected` / `TraceFinishGuard` / `OutboundMediaKind` 都是既有组件内部的能力，故只改 sources + 副标 + 卡片，**不加新组件、不改连线拓扑**。把 `sidecar` / `collected` 做成独立组件会撞 `layout/component-overlap`，按「门禁红就降粒度，不放宽门禁」处理。
+
+**门禁（串行单进程）**：四张均 `validate` exit 0 → `finalize --browser-check` exit 0（gates 四道全 pass、diagnostics 0）→ `check` exit 0。产物字节数：think-path **874,529 B** / stats **857,263 B** / messaging **878,876 B** / architecture **867,872 B**。`docs/diagrams/*.json` 实测 **0**（回执未入仓）。
+
+**未做人眼视觉复核**，仅通过 archify 四道门禁。
 
 ## 五、维护约定
 
