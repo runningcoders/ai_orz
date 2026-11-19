@@ -8,10 +8,30 @@
 //! - distribution: 按 consumer/status/kind 维度分组
 //!
 //! 内存占用估算：60 桶 × 每桶 ~20 个 (kind,consumer,status) 组合 × 32 字节 ≈ 38KB
+//!
+//! ## 为什么在 pkg
+//!
+//! 写入方是 consumer 的 `AopStatsHook`（AOP 事件回调），读取方是 HTTP handler。
+//! 原先挂在 `domain::system` 下，造成 `domain → consumer` 的反向依赖；而它是
+//! 纯基础设施（无业务规则、无 DAO），读口也不该由领域层转一手。现在：
+//! 单例由 [`init`] 在启动时注入，handler 用 [`collector`] 直接读。
 
 use std::collections::HashMap;
 
 use crate::pkg::stats::runtime::RuntimeStatsCollector;
+
+/// 全局收集器单例（启动时由 [`init`] 注入）
+static COLLECTOR: std::sync::OnceLock<AopStatsCollector> = std::sync::OnceLock::new();
+
+/// 注入全局收集器（幂等：重复调用只保留首次）
+pub fn init(collector: AopStatsCollector) {
+    let _ = COLLECTOR.set(collector);
+}
+
+/// 取全局收集器；未初始化（如单元测试）返回 `None`
+pub fn collector() -> Option<&'static AopStatsCollector> {
+    COLLECTOR.get()
+}
 
 /// AOP 维度键：(event_kind, consumer_name, status)
 type AopDimKey = (String, String, String);

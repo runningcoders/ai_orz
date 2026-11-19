@@ -450,7 +450,7 @@ impl ThinkNode for PrepareNode {
             &recent,
             Some(deps.message.po.created_at),
             memory_index_budget_for(deps.agent.as_ref()),
-            crate::service::domain::runtime::compaction::estimate_tokens,
+            crate::pkg::tokens::estimate_tokens,
         ));
         builder.history(&recent);
         // 重建路径保留「重点前置」的短聚焦装配：意图理解 + 检索命中的
@@ -675,7 +675,7 @@ impl ThinkNode for DeliberateNode {
             crate::service::dal::brain::dal(),
             deps.agent.brain.as_ref(),
             user_text,
-            &deps.trace_id,
+            &deps.trace_sink(),
             total_rounds,
         )
         .await;
@@ -1091,7 +1091,7 @@ impl ThinkNode for ConsolidateNode {
                     crate::service::dal::brain::dal(),
                     deps.agent.brain.as_ref(),
                     deps.message.content(),
-                    &deps.trace_id,
+                    &deps.trace_sink(),
                     would_compress,
                 )
                 .await

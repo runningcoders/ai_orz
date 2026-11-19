@@ -93,8 +93,8 @@ pub trait RuntimeDomain: Send + Sync + Debug {
     async fn query_think_traces(
         &self,
         ctx: RequestContext,
-        query: crate::pkg::think_trace::ThinkTraceQuery,
-    ) -> Result<common::api::PagedResult<crate::pkg::think_trace::ThinkTraceEntry>>;
+        query: think_trace::ThinkTraceQuery,
+    ) -> Result<common::api::PagedResult<think_trace::ThinkTraceEntry>>;
 
     /// 分页查询记忆轨迹（原始思考闭环的 input/output）
     ///
@@ -357,7 +357,7 @@ pub trait RuntimeAwakening: Send + Sync {
         agent: &Agent,
         message: &Message,
         options: &crate::service::domain::runtime::awakening::ThinkingOptions,
-    ) -> Result<crate::service::domain::runtime::awakening::IntentAnalysis>;
+    ) -> Result<crate::models::intent_analysis::IntentAnalysis>;
 }
 
 /// 工具执行 trait
@@ -456,13 +456,22 @@ pub mod busy_guard;
 // 映射为 `CancelThinkingResponse`，暴露方式与消息域 `RecallOutcome` 对齐
 pub mod cancel;
 mod cerebellum_router;
+// ── run 级句柄家族：图前由调用方构造、图内写、图后读（所有权显式，非进程级表）──
+//   `ThinkLoopProgress` / `WakeUsage` → `types.rs`（属入参契约，四个场景通用）
+//   `InboxState`                      → `inbox.rs`（三挂点 + 独立设计文档）
+//   `RoundCollected`                  → 下方 `collected.rs`（业务产出的品类挂载点）
+// 分文件与否**不按「是不是同一族」**，按「是否需要独立契约 / 是否会持续长胖」；
+// 四者都不提供按 run_id 索引的全局访问，读者一律由创建者显式转交。
+// ⚠️ 同目录 `think_trace::TraceSink` **不属于**本族：它写穿落盘、图后不读回，
+// 归属判据见 runtime_data_bus_design.md 的四格表。
+pub(crate) mod collected;
 // 小脑上下文组织器（笔④）：state 分块正文的唯一装配点，`pub(crate)` 供 legacy_awaken 侧接入
 pub(crate) mod cerebellum_context;
 pub(crate) mod chain_reply;
-pub(crate) mod text_budget;
-// `pub(crate)`：token 估算/截断是**跨层共用**的纯文本工具——Domain 内部的
-// 压缩分流、`chain_reply` 链内裁剪，以及 DAL 侧小脑 state 的容量对齐都用同一份实现。
-// 若将来要彻底消除 DAL→Domain 的引用，应把这两个函数下沉到 `pkg`（登记为技术债候选）。
+// token 估算/截断与份额表都是**跨层共用**的纯文本工具（DAL 的 prompt 组装、
+// producer 的入站裁剪、本域的压缩分流都用同一份实现），已下沉：
+// `pkg::tokens`（estimate_tokens / truncate_to_tokens）、`pkg::text_budget`（份额表）。
+// 本模块只保留压缩流程本身（拆分点、分流策略），不再自持算法。
 pub(crate) mod compaction;
 mod inbox;
 mod intent_analyze;
@@ -479,6 +488,10 @@ mod relevance_gate;
 mod think_loop;
 // 轮级环图：think → dispatch → evaluate，由 think_loop 驱动（单向依赖）
 mod think_round;
+// 思考轨迹的格式与落盘（写穿 `TraceSink` + 查询 + 合并）。归 runtime 而非 `pkg`：
+// 轨迹 schema（run/round/cerebellum/close）是 Agent 运行时的领域模型，
+// `pkg::jsonl` 只提供通用通道；`think_trace_query` 在本域内做查询作用域校验。
+pub(crate) mod think_trace;
 mod think_trace_query;
 mod tool_call_query;
 mod tool_execution;
@@ -494,11 +507,12 @@ mod tool_execution_test;
 // DefaultPromptBuilder 已迁移到 dal/agent.rs，由 AgentDal.prompt_builder() 提供
 pub use crate::service::dal::agent::{DefaultPromptBuilder, build_conversation_prompt};
 pub use cancel::CancelOutcome;
+pub use collected::RoundCollected;
 pub use relevance_gate::{NoulOutcome, context_capacity, judge_relevance};
 pub(crate) use tool_call_query::status_from_dto;
-// 就绪缓存失效：内置工具自愈写库后必须立刻让新判定可见（finance 修复器调用）。
-// 就绪缓存本体留在 runtime（与 TTL 同处），只暴露这一个动作。
-pub(crate) use tool_execution::invalidate_readiness_cache;
+// 就绪判定缓存已下沉 `pkg::tool_registry::readiness_cache`：读方是本域（列表复用判定），
+// 失效方是 finance 域（命令自愈写库后作废旧判定）。缓存是基础设施，
+// 放在任一域都会形成域间调用，故两侧各自引用 pkg。
 
 // ==================== 实现 ====================
 
@@ -723,10 +737,10 @@ impl RuntimeDomain for RuntimeDomainImpl {
     async fn query_think_traces(
         &self,
         ctx: RequestContext,
-        query: crate::pkg::think_trace::ThinkTraceQuery,
-    ) -> Result<common::api::PagedResult<crate::pkg::think_trace::ThinkTraceEntry>> {
+        query: think_trace::ThinkTraceQuery,
+    ) -> Result<common::api::PagedResult<think_trace::ThinkTraceEntry>> {
         let query = think_trace_query::with_context_scope(ctx, query)?;
-        Ok(crate::pkg::think_trace::query(query)?)
+        Ok(think_trace::query(query)?)
     }
 
     async fn query_memory_traces(
@@ -829,6 +843,11 @@ pub fn new_with_all(
 pub fn init() {
     let runtime_domain = RuntimeDomainImpl::new(crate::service::dal::brain::dal());
     let _ = RUNTIME_DOMAIN.set(Arc::new(runtime_domain));
+    // 思考轨迹落盘基址（未显式初始化时写穿静默 no-op，测试不受影响）。
+    // 从 `pkg::init_all` 迁来：pkg 是底层，不该反向依赖 domain。
+    if let Some(config) = crate::config::try_get() {
+        think_trace::init(config.base_data_path());
+    }
 }
 
 // ==================== 结果结构体 ====================
@@ -846,74 +865,15 @@ pub struct AwakeningResult {
     pub raw_output: String,
     /// 本轮唤醒吸收的其他消息 ID（成功后由消费者批量置 `Processed`）
     pub injected_ids: Vec<String>,
+    /// run 级业务产出（附件 / 产物）
+    ///
+    /// 来源是图上下文（`AwakenDeps.collected`），随结果交给消费侧做 final 正文
+    /// 查漏补缺。**不再按 trace_id 反查进程内表**：收集器的所有权从图上下文
+    /// 一路显式交接到这里，图结束即回收。
+    pub collected: RoundCollected,
     /// 是否因用户取消而结束
     ///
     /// 取消语义下，本轮吸收的补充消息**不算被处理过**：消费者不提交
     /// `Processed`，让它们各自触发后续唤醒，避免用户的补充被静默吞掉。
     pub cancelled: bool,
-}
-
-/// 为**已收尾**的 run 追加一条小脑留痕补丁行，返回补写的条数
-///
-/// ## 为什么需要它（现缺陷）
-/// `chain_reply` 的判定跑在 awaken **返回之后** —— 此时该 run 的收尾行
-/// （`persist_trace`）早已落盘，`take_cerebellum` 也已把缓冲取走并 remove 掉该
-/// run。于是 chain_reply 之后记的留痕落进一个**永不 take 的键**上：既不进任何
-/// 收尾行，也要等 `map.len() > CAP*8` 的兜底 clear 才被丢弃 —— 结构上永远查不到。
-///
-/// 修法即本函数：补一次 take + 追加一条 `partial=false` 的补丁行，让查询侧按
-/// `(agent_id, run_id, scene)` 把它合并回原轨迹。
-///
-/// ## 为什么补丁行是空载荷
-/// 本行只承载 `cerebellum`：`rounds` / `occurrences` / `routes` / `steps` 全零。
-/// `merge_into` 对 `partial=false` 的处理是「先摘掉本片段增量轮次再拼接」，
-/// 本行到达时 base 已是收尾行（`partial_round_count == 0`）⇒ 零摘除、零轮次
-/// 追加，只有 cerebellum 被 extend。append-only 取向不破：不修改已落盘行。
-///
-/// ## 时序前提（调用方必须遵守）
-/// 必须在该 run 的收尾行落盘**之后**调用。早于收尾行时本行会被当成收尾行，
-/// 先摘一次增量轮次再来真收尾行 —— 轮次仍只出现一次，但中间态会短暂少轮。
-/// 当前唯一调用点（chain_reply）天然满足：它跑在 awaken 返回之后。
-///
-/// ## 没有留痕就不写空行
-/// 一条「什么都没记」的收尾行会把 `finished` 语义与卡片计数搅乱，且对排查零
-/// 信息量 —— 所以 `items.is_empty()` 直接返回 0，不落盘。
-pub(crate) fn flush_cerebellum_patch(
-    agent_id: &str,
-    run_id: &str,
-    scene: &str,
-    project_id: Option<&str>,
-    task_id: Option<&str>,
-) -> usize {
-    if run_id.is_empty() {
-        return 0;
-    }
-    let items = crate::pkg::think_trace::take_cerebellum(run_id);
-    if items.is_empty() {
-        return 0;
-    }
-    let count = items.len();
-    let entry = serde_json::json!({
-        "run_id": run_id,
-        "agent_id": agent_id,
-        "scene": scene,
-        "project_id": project_id,
-        "task_id": task_id,
-        // 与 persist_trace 同源常量（同一个蓝图 ID），两处必须一起动
-        "path": think_round::THINK_ROUND_BLUEPRINT_ID,
-        "partial": false,
-        "cerebellum": items,
-        // 空载荷：本行是同一 run 的第二段留痕，不代表新一轮图执行
-        "steps": 0,
-        "advisor_calls": 0,
-        "fingerprint": "",
-        "rounds": [],
-        "occurrences": [],
-        "routes": [],
-    });
-    if let Err(e) = crate::pkg::think_trace::append(agent_id, &entry) {
-        // 与收尾写盘同口径：只告警，不影响主流程
-        crate::log_warn!("cerebellum patch trace write failed: {}", e);
-    }
-    count
 }

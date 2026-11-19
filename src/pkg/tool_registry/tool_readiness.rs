@@ -4,8 +4,8 @@
 //! docs/design/tool_credential_requirement_design.md D28：
 //! - **数据驱动**：就绪状态是 Tool 数据的纯派生——CLI 型（po.config.command）
 //!   → 二进制可寻址；key 型（credential_requirements 非空）→ 用户凭据解析命中。
-//!   取数与 TTL 缓存在 domain `tool_readiness`（runtime/tool_execution.rs），
-//!   pkg 只留纯函数（与凭据解析 D17 同一哲学）。
+//!   本模块只留纯函数（与凭据解析 D17 同一哲学）；就绪结论的 TTL 缓存在同目录
+//!   [`readiness_cache`]（读方 runtime、失效方 finance，缓存是工具基础设施）。
 //! - **统一引导**：`cli_not_installed` / `api_key_missing` 结构化 JSON（调用时兜底），
 //!   供 lark_cli / gh_cli / browser / 内置搜索工具共用
 //!

@@ -364,7 +364,7 @@ fn full_and_index_layers_carry_ids_without_dumping_bodies() {
         "索引行必须比全文行短: {lines:?}"
     );
     assert!(
-        crate::service::domain::runtime::compaction::estimate_tokens(&lines[1]) <= 64,
+        crate::pkg::tokens::estimate_tokens(&lines[1]) <= 64,
         "索引行必须守住 token 预算（不是字符数）: {:?}",
         lines[1]
     );
@@ -401,7 +401,7 @@ fn selected_full_line_is_capped_and_keeps_its_id() {
         "全文被裁必须显式标注，不许悄悄丢内容：{full:?}"
     );
     assert!(
-        crate::service::domain::runtime::compaction::estimate_tokens(full) <= cap,
+        crate::pkg::tokens::estimate_tokens(full) <= cap,
         "全文行实测越过单行上限 {cap}：{full:?}"
     );
     assert!(

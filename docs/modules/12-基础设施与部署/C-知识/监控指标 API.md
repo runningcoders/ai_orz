@@ -7,8 +7,8 @@
 - [src/handlers/system/aop.rs](src/handlers/system/aop.rs)
 - [src/handlers/system/aop_stats.rs](src/handlers/system/aop_stats.rs)
 - [src/service/domain/system/aop_monitor.rs](src/service/domain/system/aop_monitor.rs)
-- [src/service/domain/system/aop_stats.rs](src/service/domain/system/aop_stats.rs)
-- [src/consumer/aop_stats_collector.rs](src/consumer/aop_stats_collector.rs)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 - [src/pkg/aop/mod.rs](src/pkg/aop/mod.rs)
 - [common/src/api/log_stats.rs](common/src/api/log_stats.rs)
 - [common/src/models/stats.rs](common/src/models/stats.rs)
@@ -57,7 +57,7 @@ D_SYS --> PROJ["ProjectDomain"]
 - [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L144)
 - [src/handlers/system/aop_stats.rs:16-72](src/handlers/system/aop_stats.rs#L16-L72)
 - [src/service/domain/system/aop_monitor.rs:7-26](src/service/domain/system/aop_monitor.rs#L7-L26)
-- [src/service/domain/system/aop_stats.rs:14-52](src/service/domain/system/aop_stats.rs#L14-L52)
+- [src/pkg/stats/runtime/aop.rs:14-52](src/pkg/stats/runtime/aop.rs#L14-L52)
 - [src/pkg/aop/mod.rs:36-60](src/pkg/aop/mod.rs#L36-L60)
 
 章节来源
@@ -92,7 +92,7 @@ D_SYS --> PROJ["ProjectDomain"]
 ## 架构总览
 监控数据流分为两条路径：
 - 队列与事件监控：Handler → SystemDomain.aop_monitor() → AOP Registry → 队列快照/事件查询。
-- 实时统计：Handler → SystemDomain.aop_stats() → AopStatsCollector（内存快照）→ 聚合计算。
+- 实时统计：Handler → `pkg::stats::runtime::aop::collector()` → 内存快照 → 聚合计算。
 
 ```mermaid
 sequenceDiagram
@@ -110,13 +110,13 @@ H-->>C : JSON 响应
 
 图表来源
 - [src/handlers/system/aop_stats.rs:16-30](src/handlers/system/aop_stats.rs#L16-L30)
-- [src/service/domain/system/aop_stats.rs:14-20](src/service/domain/system/aop_stats.rs#L14-L20)
-- [src/consumer/aop_stats_collector.rs:74-111](src/consumer/aop_stats_collector.rs#L74-L111)
+- [src/pkg/stats/runtime/aop.rs:14-20](src/pkg/stats/runtime/aop.rs#L14-L20)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 
 章节来源
 - [src/handlers/system/aop_stats.rs:16-72](src/handlers/system/aop_stats.rs#L16-L72)
-- [src/service/domain/system/aop_stats.rs:14-52](src/service/domain/system/aop_stats.rs#L14-L52)
-- [src/consumer/aop_stats_collector.rs:74-195](src/consumer/aop_stats_collector.rs#L74-L195)
+- [src/pkg/stats/runtime/aop.rs:14-52](src/pkg/stats/runtime/aop.rs#L14-L52)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 
 ## 详细组件分析
 
@@ -204,7 +204,7 @@ class AopStatsCollector {
 +uptime_secs() u64
 }
 class SystemDomainImpl {
-+aop_stats() AopStats
++collector() AopStatsCollector
 }
 class Handlers {
 +get_stats_overview()
@@ -216,14 +216,14 @@ SystemDomainImpl --> AopStatsCollector : "读取快照"
 ```
 
 图表来源
-- [src/consumer/aop_stats_collector.rs:43-195](src/consumer/aop_stats_collector.rs#L43-L195)
-- [src/service/domain/system/aop_stats.rs:14-52](src/service/domain/system/aop_stats.rs#L14-L52)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
+- [src/pkg/stats/runtime/aop.rs:14-52](src/pkg/stats/runtime/aop.rs#L14-L52)
 - [src/handlers/system/aop_stats.rs:16-72](src/handlers/system/aop_stats.rs#L16-L72)
 
 章节来源
 - [src/handlers/system/aop_stats.rs:16-72](src/handlers/system/aop_stats.rs#L16-L72)
-- [src/service/domain/system/aop_stats.rs:14-52](src/service/domain/system/aop_stats.rs#L14-L52)
-- [src/consumer/aop_stats_collector.rs:43-195](src/consumer/aop_stats_collector.rs#L43-L195)
+- [src/pkg/stats/runtime/aop.rs:14-52](src/pkg/stats/runtime/aop.rs#L14-L52)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 
 ### 监控数据采集与存储
 - 内存实时采集
@@ -234,7 +234,7 @@ SystemDomainImpl --> AopStatsCollector : "读取快照"
   - 无 RequestContext 的场景（如 AOP 消费者）可通过全局 Stats 单例写入。
 
 章节来源
-- [src/consumer/aop_stats_collector.rs:1-52](src/consumer/aop_stats_collector.rs#L1-L52)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 - [src/pkg/stats/mod.rs:1-57](src/pkg/stats/mod.rs#L1-L57)
 - [src/pkg/stats/mod.rs:152-171](src/pkg/stats/mod.rs#L152-L171)
 
@@ -254,9 +254,9 @@ SystemDomainImpl --> AopStatsCollector : "读取快照"
 ```mermaid
 graph LR
 H1["handlers/system/aop.rs"] --> D1["service/domain/system/aop_monitor.rs"]
-H2["handlers/system/aop_stats.rs"] --> D2["service/domain/system/aop_stats.rs"]
+H2["handlers/system/aop_stats.rs"] --> D2["pkg/stats/runtime/aop.rs"]
 D1 --> R["pkg/aop/mod.rs::registry"]
-D2 --> C["consumer/aop_stats_collector.rs"]
+D2 --> C["pkg/stats/runtime/aop.rs"]
 H3["handlers/system/health_metrics.rs"] --> D3["service/domain/hr|project|task"]
 ```
 
@@ -265,9 +265,9 @@ H3["handlers/system/health_metrics.rs"] --> D3["service/domain/hr|project|task"]
 - [src/handlers/system/aop_stats.rs:16-72](src/handlers/system/aop_stats.rs#L16-L72)
 - [src/handlers/system/health_metrics.rs:33-134](src/handlers/system/health_metrics.rs#L33-L134)
 - [src/service/domain/system/aop_monitor.rs:7-26](src/service/domain/system/aop_monitor.rs#L7-L26)
-- [src/service/domain/system/aop_stats.rs:14-52](src/service/domain/system/aop_stats.rs#L14-L52)
+- [src/pkg/stats/runtime/aop.rs:14-52](src/pkg/stats/runtime/aop.rs#L14-L52)
 - [src/pkg/aop/mod.rs:36-60](src/pkg/aop/mod.rs#L36-L60)
-- [src/consumer/aop_stats_collector.rs:43-195](src/consumer/aop_stats_collector.rs#L43-L195)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 
 章节来源
 - [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L144)
@@ -371,7 +371,7 @@ AI Orz 的监控体系以 AOP 事件为中心，结合内存实时统计与持�
 
 章节来源
 - [src/handlers/system/aop_stats.rs:16-72](src/handlers/system/aop_stats.rs#L16-L72)
-- [src/consumer/aop_stats_collector.rs:74-195](src/consumer/aop_stats_collector.rs#L74-L195)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 
 ### 日志统计（辅助）
 - 查询参数与数据结构
@@ -401,5 +401,5 @@ AI Orz 的监控体系以 AOP 事件为中心，结合内存实时统计与持�
 - 导出建议：对长周期历史数据，建议通过持久化统计表的 SQL 导出至 CSV/Parquet 供离线分析。
 
 章节来源
-- [src/consumer/aop_stats_collector.rs:1-52](src/consumer/aop_stats_collector.rs#L1-L52)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 - [src/pkg/stats/mod.rs:1-57](src/pkg/stats/mod.rs#L1-L57)

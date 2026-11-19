@@ -83,6 +83,86 @@ pub fn to_llm_schema(mut schema: Value) -> Value {
     schema
 }
 
+// ==================== 调用附注 `_intent` ====================
+//
+// 模型在拼参数时顺手写一句「这次调用想达成什么」，一路记到工具调用记录与
+// 思考轨迹里，前端据此把 `execute_sql` 显示成人话。
+//
+// 三条硬约束（改动前先读）：
+// - **永不 required**：模型漏写只是没有描述，绝不能因此调用失败；
+// - **永不被工具看到**：执行前由 `ToolCallDao` 摘除，业务参数里没有它；
+// - **只进记录**：它属于调用元数据，不参与业务语义、不影响幂等与统计。
+
+/// 通用调用附注的键名
+///
+/// 顶层 `_` 前缀是约定：**工具的业务参数不得以 `_` 开头**，该命名空间
+/// 留给调用元数据（护栏测试 `tool_params_avoid_reserved_prefix`）。
+pub const CALL_INTENT_KEY: &str = "_intent";
+
+/// 附注长度上限（字符）
+///
+/// 它会进 JSONL 调用日志、思考轨迹，以及后续的检索索引——长文本只会
+/// 稀释检索信号，且每次历史回放都要重发一遍。
+const CALL_INTENT_MAX_CHARS: usize = 120;
+
+/// 给工具参数 schema 注入通用附注字段（幂等）
+///
+/// 必须在 schema 里**声明**，不能只靠提示词：12 个内置工具开了
+/// `additionalProperties: false`，模型看到该约束不会去填未声明的字段
+/// （即使填了，校验器也会拒）。故由 `ToolDescriptor` 转换处统一注入一次，
+/// 覆盖内置 / handler / HTTP / shell / MCP 全部来源。
+pub fn inject_call_intent(parameters: &mut Value) {
+    let Some(root) = parameters.as_object_mut() else {
+        return;
+    };
+    // 根节点必须显式 object（LCD 要求；`to_llm_schema` 之后一般已满足）
+    root.entry("type")
+        .or_insert_with(|| Value::String("object".to_string()));
+    let props = root
+        .entry("properties")
+        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+    let Some(props) = props.as_object_mut() else {
+        return;
+    };
+    props.entry(CALL_INTENT_KEY).or_insert_with(|| {
+        serde_json::json!({
+            "type": "string",
+            "description": "一句话说明这次调用要达成什么（给人看，不是业务参数；≤120 字）。写目的与预期产出，不要复述工具名。"
+        })
+    });
+}
+
+/// 取出并移除参数里的调用附注
+///
+/// 只认字符串；空串、非字符串、缺失一律返回 `None`（附注是锦上添花，
+/// 任何异常形态都不能影响调用本身）。超长按字符截断。
+pub fn take_call_intent(args: &mut Value) -> Option<String> {
+    let raw = args.as_object_mut()?.remove(CALL_INTENT_KEY)?;
+    normalize_intent(&raw)
+}
+
+/// 只读取附注、不修改参数（轨迹/展示侧用，入参还要原样回放给模型）
+pub fn read_call_intent(args: &Value) -> Option<String> {
+    normalize_intent(args.get(CALL_INTENT_KEY)?)
+}
+
+/// 附注归一：非字符串 / 空白 → `None`，超长按字符截断
+fn normalize_intent(raw: &Value) -> Option<String> {
+    let text = raw.as_str()?.trim();
+    if text.is_empty() {
+        return None;
+    }
+    let mut out = String::new();
+    for (i, c) in text.chars().enumerate() {
+        if i >= CALL_INTENT_MAX_CHARS {
+            out.push('…');
+            break;
+        }
+        out.push(c);
+    }
+    Some(out)
+}
+
 // ==================== function.name 收敛 ====================
 
 /// `function.name` 的跨 provider 安全字符集：ASCII 字母、数字、下划线、连字符。

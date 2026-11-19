@@ -4,7 +4,7 @@ name: DuckDB 多维统计双层互补：record_event! 宏自动表推断 + Runti
 category: 基础设施 / 统计监控
 scope:
 - src/pkg/stats/**
-- src/service/domain/system/aop_stats.rs
+- src/pkg/stats/runtime/aop.rs
 - src/service/domain/system/aop_monitor.rs
 - ai-orz-macros/src/**
 - src/handlers/sys/**/stats*.rs
@@ -15,9 +15,9 @@ source_files:
 - 'src/pkg/stats/runtime/mod.rs#L1-L80 '
 - 'src/pkg/stats/tool_call.rs '
 - 'src/pkg/stats/model_call.rs '
-- src/consumer/aop_stats_collector.rs (AopStatsCollector：基于 RuntimeStatsCollector<AopDimKey>
+- src/pkg/stats/runtime/aop.rs (AopStatsCollector：基于 RuntimeStatsCollector<AopDimKey>
   的 AOP 中心统计面板数据)
-- 'src/service/domain/system/aop_stats.rs#L1-L80 '
+- 'src/pkg/stats/runtime/aop.rs#L1-L80 '
 - src/service/dao/model_provider/stats_duckdb.rs
 - common/src/models/stats.rs
 - src/service/domain/finance/model_provider.rs
@@ -66,7 +66,7 @@ source_files:
 - [mod.rs:L1-L60](src/pkg/stats/mod.rs#L1-L60)
 - [runtime/mod.rs:L1-L80](src/pkg/stats/runtime/mod.rs#L1-L80)
 - [collector.rs:L1-L100](src/pkg/stats/collector.rs#L1-L100)
-- [aop_stats.rs:L1-L80](src/service/domain/system/aop_stats.rs#L1-L52)
+- [aop_stats.rs:L1-L80](src/pkg/stats/runtime/aop.rs#L1-L52)
 
 ---
 

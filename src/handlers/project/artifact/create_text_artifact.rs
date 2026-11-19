@@ -15,7 +15,7 @@ use common::error::{Result, bail_err};
 #[register_handler_tool(
     id = "create_text_artifact",
     name = "Create Text Artifact",
-    description = "Create a text artifact from inline content in one step: the text is saved to artifact storage and registered under the project, defaulting file_name to '<name>.md' and MIME type to text/plain (max 1 MB). Returns the artifact detail. For attachment-based artifacts use create_artifact; for files already on disk use register_artifact_from_path.",
+    description = "Create a text artifact from inline content in one step: the text is saved to artifact storage and registered under the project, defaulting file_name to '<name>.md' and MIME type to text/plain (max 1 MB). Returns the artifact detail, whose ID can be referenced in messages as [name](artifact:id). For attachment-based artifacts use create_artifact; for files already on disk use register_artifact_from_path.",
     params = "common::api::CreateTextArtifactParams",
     tags = "project_management"
 )]

@@ -21,7 +21,7 @@
 use super::skill_test::{create_test_skill, init_test_env};
 use super::{CreateSkillParams, SkillFileImport, UpdateSkillParams};
 use crate::models::skill::{SKILL_MAIN_FILE, Skill, SkillPo, is_main_skill_file};
-use crate::service::domain::system::seed::bundle::{SkillFileEntry, pack_skill_zip};
+use crate::pkg::skill_package::{SkillFileEntry, pack_skill_zip};
 use common::enums::skill::SkillAuthorType;
 use sqlx::SqlitePool;
 

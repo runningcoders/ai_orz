@@ -306,7 +306,7 @@ data/
 |------|------|------|
 | 轮次编排 | [src/service/domain/runtime/think_loop.rs](src/service/domain/runtime/think_loop.rs) | 851 行；一轮 = 一次完整的「思考 → 动作 → 再思考」循环 |
 | 阶段编排引擎 | [src/pkg/think_path/](src/pkg/think_path/) | 13 个文件 / 2,499 行（engine / arbiter / blueprint / policy / run / strategy） |
-| 落盘出口 | [src/pkg/think_trace.rs](src/pkg/think_trace.rs) | 677 行；轮级 append-only，两段式（partial 增量行 + 收尾全量行）；查询走旁车索引 `.jsonl.idx`（索引过滤 + 按字节偏移 seek 只读命中行） |
+| 落盘出口 | [src/service/domain/runtime/think_trace.rs](src/service/domain/runtime/think_trace.rs) | 855 行（+ 旁车索引 191 行）；轮级 append-only，两段式（partial 增量行 + 收尾全量行）；查询走旁车索引 `.jsonl.idx`（索引过滤 + 按字节偏移 seek 只读命中行） |
 | 查询入口 | [src/handlers/hr/agent/query_think_traces.rs](src/handlers/hr/agent/query_think_traces.rs) | 作用域守门：按 agent / project / task 维度收口 |
 | 统计消费 | [src/consumer/think_round_stats_consumer.rs](src/consumer/think_round_stats_consumer.rs) | 订阅轮次事件做用量统计 |
 | 前端消费 | [frontend/src/utils/think_path_graph.rs](frontend/src/utils/think_path_graph.rs)、`frontend/src/components/chat/` 下的轨迹时间线、轨迹面板与小脑轨迹表 | 五文件合计 4,114 行（886 + 607 + 1,809 + 504 + 308） |
@@ -339,17 +339,17 @@ data/
 |--------|--------|------|
 | [docs/diagrams/ai-orz-architecture.html](docs/diagrams/ai-orz-architecture.html) | 总图：三级 workspace、四层单向调用、存储与外部系统、认知架构分层 | 主请求路径 / 异步与 Agent 运行时 / 持久化 |
 | [docs/diagrams/ai-orz-ontology.html](docs/diagrams/ai-orz-ontology.html) | 本体子系统：四条能力线 + 五道门闩 + 治理看板 | 读侧 / 写入门闩 / 治理面 |
-| [docs/diagrams/ai-orz-think-path.html](docs/diagrams/ai-orz-think-path.html) | 思维轨迹：两阶段唤醒 → 快判断 → 输入注入 → 轮次 → 相位 → 两段式落盘 → 查询（旁车索引 + seek）→ 前端；含思考强度判相对偏移、先验与兜底分离 | 一轮思考 / 两阶段唤醒 / 轨迹链路 / 认知分层 |
+| [docs/diagrams/ai-orz-think-path.html](docs/diagrams/ai-orz-think-path.html) | 思维轨迹：两阶段唤醒 → 快判断 → 输入注入 → 轮次（跨周期收集 + 收尾守卫）→ 相位 → 两段式落盘 → 查询（旁车索引 + seek）→ 前端；含思考强度判相对偏移、先验与兜底分离 | 一轮思考 / 两阶段唤醒 / 轨迹链路 / 认知分层 |
 | [docs/diagrams/ai-orz-memory.html](docs/diagrams/ai-orz-memory.html) | 记忆子系统：四层记忆 + 两条 JSONL + 三路召回 + 沉淀 | 四层 / 存储面 / 检索与沉淀 |
 | [docs/diagrams/ai-orz-tools.html](docs/diagrams/ai-orz-tools.html) | 工具与技能：三层调用 + 凭据编排 + 策略拦截与六态授权 + 技能包 | 三层调用 / 策略与授权 / 注册与装配 |
 | [docs/diagrams/ai-orz-tool-context.html](docs/diagrams/ai-orz-tool-context.html) | 工具调用上下文（身份）数据流转：声明（CredentialKind 的 UserInfo / AgentInfo + field 白名单 + binding）→ 解析（is_identity 二元分派 + 失败语义按来源分叉）→ 注入（check + base_env 九键末位 insert）→ 使用（git 子进程 / commit-msg hook） | 四层主链路 / 失败语义分叉 / 注入与优先级 |
 | [docs/diagrams/ai-orz-aop.html](docs/diagrams/ai-orz-aop.html) | 异步基建：pkg/aop 六 Trait + Registry + 12 类消费者（18 处注册 / 8 Sync + 10 Async）+ 3 生产者 | 一次事件流转 / 启动顺序 / 生产者与兜底 |
 | [docs/diagrams/ai-orz-org-federation.html](docs/diagrams/ai-orz-org-federation.html) | 组织与权限：多级组织 + 角色继承 + 双模式认证 + 联邦组网 | 组织与角色 / 认证与凭证 / 联邦组网 |
 | [docs/diagrams/ai-orz-task-project.html](docs/diagrams/ai-orz-task-project.html) | 任务与项目：六态状态机（含 PendingReview）+ 验收闭环 + DAG 唤醒 + 制品聚合 | 任务状态机 / DAG 与唤醒 / 项目聚合 |
-| [docs/diagrams/ai-orz-messaging.html](docs/diagrams/ai-orz-messaging.html) | 对话与消息：渠道入站归一化 + 路由策略 + 入站过滤（规则门 + 小脑相关性门）+ MessageDomain（builder / delivery）+ 附件字节流与正文引用 + SSE | 入站与路由 / 编排与投递 / 存储与唤醒 |
+| [docs/diagrams/ai-orz-messaging.html](docs/diagrams/ai-orz-messaging.html) | 对话与消息：渠道入站归一化 + 路由策略 + 入站过滤（规则门 + 小脑相关性门）+ MessageDomain（builder / 出站媒体分类 + delivery）+ 附件字节流与正文引用 + SSE | 入站与路由 / 编排与投递 / 存储与唤醒 |
 | [docs/diagrams/ai-orz-a2a.html](docs/diagrams/ai-orz-a2a.html) | 外部 Agent：Agent Card + JSON-RPC 四方法 + 协议映射与回调 + 30s 轮询兜底 | 协议入口 / 结果与兜底 / 联邦与长连接 |
 | [docs/diagrams/ai-orz-search.html](docs/diagrams/ai-orz-search.html) | 搜索：FTS5 + 向量 + 图谱三路召回 + 属性精确过滤 | 工具入口 / 三路召回 / 存储面 |
-| [docs/diagrams/ai-orz-stats.html](docs/diagrams/ai-orz-stats.html) | 统计与监控：事件采集 → AOP 消费 → 四类指标落库 → 监控 API | 采集 / 聚合 / 读取与看板 |
+| [docs/diagrams/ai-orz-stats.html](docs/diagrams/ai-orz-stats.html) | 统计与监控：事件采集（采集器落 pkg/stats/runtime，全局单例）→ AOP 消费 → 四类指标落库 → 监控 API | 采集 / 聚合 / 读取与看板 |
 | [docs/diagrams/ai-orz-frontend.html](docs/diagrams/ai-orz-frontend.html) | 前端应用：Dioxus WASM 入口 / 路由 / 页面 / HUD / API 客户端 + build.rs | 应用骨架 / 页面与组件 / 数据与产物 |
 | [docs/diagrams/ai-orz-infra.html](docs/diagrams/ai-orz-infra.html) | 基础设施：配置 → 连接池与迁移 → 路径与 JSONL → 后台任务 → 发布 | 启动与配置 / 运行期资源 / 构建与发布 |
 | [docs/diagrams/ai-orz-data-model.html](docs/diagrams/ai-orz-data-model.html) | 数据模型（ER 图）：三族九表，字段取自现网 SQLite schema | 身份与组织 / 任务与消息 / 知识图谱三件套 |
@@ -487,10 +487,17 @@ domain: [ToolDomain ←---- (ToolDal + AgentDal + MessageDal)] (组合：多个 
 ## 设计原则
 
 1. **严格分层不跨级调用** → 遵循 `handlers → domain → dal → dao → models` 层级依赖
-2. **所有 service 层方法必须传递 RequestContext** → 方便日志追踪和扩展
-3. **原始细节不占内存** → 短期长期都在数据库，只在需要时检索
-4. **渐进式演进** → 短期积累到一定数量触发归纳，不断更新核心记忆和知识图谱
-5. **人类可读 + 程序易解析** → 原始细节按天 JSONL 存储，不需要工具直接查看，统计分析也方便
+2. **域之间只通过参数交互** → 一个域不得引用另一个域。需要两份数据时由上层适配层
+   （handler / consumer）编排：先调 A，把结果作为参数传给 B。两侧共用的**值对象
+   必须下沉 `models`（实体/值对象）或 `common`（跨 crate 共享）**，共用的**纯算法 /
+   常量**下沉 `pkg` / `common::constants`。判断标准是「谁拥有它的语义」，不是「谁在用」。
+3. **反向依赖绝对禁止** → `dal → domain`、`models → domain`、`domain → 适配层`
+   （`consumer` / `handlers`）、`dao → dal`、`pkg → service`。出现这类引用一律视为
+   「类型 / 常量放错了层」：抽出来下沉，而不是用 re-export 或 feature 掩盖。
+4. **所有 service 层方法必须传递 RequestContext** → 方便日志追踪和扩展
+5. **原始细节不占内存** → 短期长期都在数据库，只在需要时检索
+6. **渐进式演进** → 短期积累到一定数量触发归纳，不断更新核心记忆和知识图谱
+7. **人类可读 + 程序易解析** → 原始细节按天 JSONL 存储，不需要工具直接查看，统计分析也方便
 
 ---
 

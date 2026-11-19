@@ -232,8 +232,8 @@ pub(super) async fn resolve_current_message_resources(
         return (lines, images);
     }
 
-    let att_ids = collect_current_message_attachment_ids(message);
-    let (_, ref_arts) = collect_resource_ref_ids(message.content());
+    let att_ids = message.attachment_ref_ids();
+    let (_, ref_arts) = message.resource_ref_ids();
     if att_ids.is_empty() && ref_arts.is_empty() {
         return (lines, images);
     }
@@ -301,50 +301,6 @@ pub(super) async fn resolve_current_message_resources(
     }
 
     (lines, images)
-}
-
-/// 当前消息引用的附件 ID（纯收集，不做存在性解析）：
-/// 按正文协议引用顺序去重收集；历史存量兼容见下。
-///
-/// **正文引用是唯一事实源**：所有新写入路径（站内发送、飞书富文本、微信图片）
-/// 都把附件以 `[文件名](attachment:id)` 并进正文，消息上不再有独立附件消息，
-/// 也没有专用附件字段——需要「附件 ↔ 消息」关联时从正文解析。
-///
-/// `file_type` 分支只用于**历史存量**：早年附件是独立消息（`content` = 附件 id、
-/// `file_type` 标记类型），这类消息可能因重投被再次唤醒。新消息 `file_type` 恒为
-/// `None`（混排消息由正文表达附件），不会进入该分支。
-///
-/// `pub(crate)`：投递侧（`message::delivery`）用单测盯住「请求侧拼装改口径后
-/// 附件仍能被唤醒侧收集到」，这是「附件有没有进模型」的唯一入口。
-pub(crate) fn collect_current_message_attachment_ids(message: &Message) -> Vec<String> {
-    let mut att_ids: Vec<String> = Vec::new();
-    if message.file_meta().is_some() {
-        att_ids.push(message.content().to_string());
-    }
-    let (ref_atts, _) = collect_resource_ref_ids(message.content());
-    for id in ref_atts {
-        if !att_ids.contains(&id) {
-            att_ids.push(id);
-        }
-    }
-    att_ids
-}
-
-/// 协议引用 id 收集（纯函数，供单测）：attachment/artifact 分桶、去重保序；
-/// mention 等其余 scheme 不在资源上下文范围
-fn collect_resource_ref_ids(content: &str) -> (Vec<String>, Vec<String>) {
-    let mut att_ids: Vec<String> = Vec::new();
-    let mut art_ids: Vec<String> = Vec::new();
-    for (r, _snapshot) in common::markdown_protocol::extract_refs(content) {
-        let scheme = r.scheme.as_str();
-        let id = r.id;
-        match scheme {
-            "attachment" if !att_ids.contains(&id) => att_ids.push(id),
-            "artifact" if !art_ids.contains(&id) => art_ids.push(id),
-            _ => {}
-        }
-    }
-    (att_ids, art_ids)
 }
 
 /// 附件资源行：名称 + id + mime + 大小；已写入摘要时附带截断预览，
@@ -591,6 +547,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             raw_input: outcome.raw_input,
             raw_output: outcome.raw_output,
             injected_ids: outcome.injected_ids,
+            collected: outcome.collected,
             cancelled: outcome.exit == super::legacy_awaken::nodes::EXIT_CANCELLED,
         })
     }
@@ -846,7 +803,7 @@ pub(crate) async fn fill_prompt_base(builder: &mut dyn PromptBuilder, input: Pro
         input.recent_memories,
         Some(input.message.po.created_at),
         memory_index_budget_for(input.agent),
-        super::compaction::estimate_tokens,
+        crate::pkg::tokens::estimate_tokens,
     ));
     builder.history(input.recent_memories);
     if let Some(compacted) = input.compacted {
@@ -905,7 +862,7 @@ fn append_attachment_description_guidance(message: &Message, lines: &mut Vec<Str
     if message.from_role() != common::enums::MessageRole::User {
         return;
     }
-    if collect_current_message_attachment_ids(message).is_empty() {
+    if message.attachment_ref_ids().is_empty() {
         return;
     }
 

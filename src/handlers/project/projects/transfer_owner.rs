@@ -34,6 +34,7 @@ pub async fn transfer_project_owner(
         .ok_or_else(|| common::error::err!(NotFound, "Project {} not found", params.project_id))?;
 
     ensure_can_transfer(&ctx, &project)?;
+    ensure_target_agent_exists(&ctx, &project, &params.owner_agent_id).await?;
 
     let modified_by = ctx.uid();
     let project = domain()
@@ -58,7 +59,7 @@ pub async fn transfer_project_owner(
 ///   能把负责人补回来。
 ///
 /// ⚠️ 这里只判「能不能交出去」，不判「交付给谁」——目标合法性（Agent 是否存在）
-/// 在 domain 层校验，避免守卫同时承担参数校验。
+/// 由 [`ensure_target_agent_exists`] 单独校验，两道守卫各管一件事。
 fn ensure_can_transfer(ctx: &RequestContext, project: &Project) -> Result<()> {
     let Some(caller) = ctx.agent_id() else {
         return Ok(());
@@ -73,6 +74,39 @@ fn ensure_can_transfer(ctx: &RequestContext, project: &Project) -> Result<()> {
         )),
         _ => Ok(()),
     }
+}
+
+/// 目标 Agent 必须存在（空串 = 清空负责人，不校验）
+///
+/// 放在 handler 而不是 domain：这是**参数合法性**，跨域查 hr 属于编排；
+/// 由 handler 先调 hr 再调 project，两个域之间没有调用。
+/// 与 domain 的幂等短路同口径：目标 == 现任时不校验（现任被删也不挡交接）。
+async fn ensure_target_agent_exists(
+    ctx: &RequestContext,
+    project: &Project,
+    owner_agent_id: &str,
+) -> Result<()> {
+    let target = owner_agent_id.trim();
+    let current = project.po.owner_agent_id.as_deref().unwrap_or_default();
+    if target.is_empty() || target == current {
+        return Ok(());
+    }
+    let agent = crate::service::domain::hr::domain()
+        .agent_manage()
+        .get_agent(
+            ctx.clone(),
+            target,
+            crate::service::dal::agent::AgentFetchOptions::default(),
+        )
+        .await?;
+    if agent.is_none() {
+        return Err(common::error::err!(
+            NotFound,
+            "接手的 Agent 不存在: {}",
+            target
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

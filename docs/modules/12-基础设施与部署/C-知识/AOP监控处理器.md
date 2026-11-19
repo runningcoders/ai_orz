@@ -7,7 +7,7 @@
 - [src/pkg/aop/mod.rs](src/pkg/aop/mod.rs)
 - [src/pkg/aop/core/registry.rs](src/pkg/aop/core/registry.rs)
 - [src/pkg/aop/core/metrics_hook.rs](src/pkg/aop/core/metrics_hook.rs)
-- [src/consumer/aop_stats_collector.rs](src/consumer/aop_stats_collector.rs)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 - [src/consumer/aop_stats_hook.rs](src/consumer/aop_stats_hook.rs)
 - [common/src/api/log_stats.rs](common/src/api/log_stats.rs)
 </cite>
@@ -30,7 +30,7 @@
 ## 项目结构
 AOP监控由“生产-消费事件中心”、“统计收集器”、“HTTP接口层”三部分组成：
 - 事件中心位于 pkg/aop，负责事件分发、消费者注册、异步队列调度与指标Hook注入点。
-- 统计收集器位于 consumer/aop_stats_collector.rs，基于内存运行时收集器聚合概览、时序、分布三类指标。
+- 统计收集器位于 pkg/stats/runtime/aop.rs，基于内存运行时收集器聚合概览、时序、分布三类指标。
 - HTTP接口位于 handlers/system/aop*.rs，暴露系统管理端点用于查看队列状态、事件列表与实时统计。
 
 ```mermaid
@@ -61,7 +61,7 @@ HK --> C
 - [src/handlers/system/aop_stats.rs:16-73](src/handlers/system/aop_stats.rs#L16-L73)
 - [src/pkg/aop/core/registry.rs:97-206](src/pkg/aop/core/registry.rs#L97-L206)
 - [src/consumer/aop_stats_hook.rs:35-82](src/consumer/aop_stats_hook.rs#L35-L82)
-- [src/consumer/aop_stats_collector.rs:54-196](src/consumer/aop_stats_collector.rs#L54-L196)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 
 章节来源
 - [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L144)
@@ -80,7 +80,7 @@ HK --> C
 - [src/pkg/aop/core/registry.rs:97-206](src/pkg/aop/core/registry.rs#L97-L206)
 - [src/pkg/aop/core/metrics_hook.rs:16-89](src/pkg/aop/core/metrics_hook.rs#L16-L89)
 - [src/consumer/aop_stats_hook.rs:35-82](src/consumer/aop_stats_hook.rs#L35-L82)
-- [src/consumer/aop_stats_collector.rs:54-196](src/consumer/aop_stats_collector.rs#L54-L196)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 - [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L144)
 - [src/handlers/system/aop_stats.rs:16-73](src/handlers/system/aop_stats.rs#L16-L73)
 
@@ -120,7 +120,7 @@ API->>COL : overview/time_series/distribution
 - [src/pkg/aop/core/registry.rs:97-206](src/pkg/aop/core/registry.rs#L97-L206)
 - [src/pkg/aop/core/registry.rs:333-444](src/pkg/aop/core/registry.rs#L333-L444)
 - [src/consumer/aop_stats_hook.rs:35-82](src/consumer/aop_stats_hook.rs#L35-L82)
-- [src/consumer/aop_stats_collector.rs:61-196](src/consumer/aop_stats_collector.rs#L61-L196)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 
 ## 详细组件分析
 
@@ -225,10 +225,10 @@ B --> E(["完成"])
 ```
 
 图表来源
-- [src/consumer/aop_stats_collector.rs:61-72](src/consumer/aop_stats_collector.rs#L61-L72)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 
 章节来源
-- [src/consumer/aop_stats_collector.rs:16-196](src/consumer/aop_stats_collector.rs#L16-L196)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 
 ### HTTP接口层
 - 队列监控接口（/api/v1/system/aop/*）：
@@ -245,7 +245,7 @@ B --> E(["完成"])
 sequenceDiagram
 participant Client as "客户端"
 participant API as "aop_stats.rs"
-participant Domain as "SystemDomain.aop_stats()"
+participant Domain as "pkg::stats::runtime::aop::collector()"
 participant Collector as "AopStatsCollector"
 Client->>API : GET /stats/overview
 API->>Domain : overview(ctx)
@@ -257,7 +257,7 @@ API-->>Client : 响应体
 
 图表来源
 - [src/handlers/system/aop_stats.rs:16-30](src/handlers/system/aop_stats.rs#L16-L30)
-- [src/consumer/aop_stats_collector.rs:74-111](src/consumer/aop_stats_collector.rs#L74-L111)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 
 章节来源
 - [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L144)
@@ -265,7 +265,7 @@ API-->>Client : 响应体
 
 ## 依赖关系分析
 - 模块耦合：
-  - HTTP接口仅依赖domain().aop_monitor()/aop_stats()，无业务实体感知。
+  - HTTP接口仅依赖domain().aop_monitor() 与 `pkg::stats::runtime::aop::collector()`，无业务实体感知。
   - Registry依赖AopMetricsHook（可空），默认零开销；依赖内存队列实现。
   - AopStatsHook依赖AopStatsCollector，通过后台任务解耦。
 - 外部依赖：
@@ -288,7 +288,7 @@ API --> COL
 - [src/handlers/system/aop_stats.rs:16-73](src/handlers/system/aop_stats.rs#L16-L73)
 - [src/pkg/aop/core/registry.rs:97-206](src/pkg/aop/core/registry.rs#L97-L206)
 - [src/consumer/aop_stats_hook.rs:35-82](src/consumer/aop_stats_hook.rs#L35-L82)
-- [src/consumer/aop_stats_collector.rs:54-196](src/consumer/aop_stats_collector.rs#L54-L196)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 
 章节来源
 - [common/src/api/log_stats.rs:1-77](common/src/api/log_stats.rs#L1-L76)

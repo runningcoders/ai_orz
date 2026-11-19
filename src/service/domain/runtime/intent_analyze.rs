@@ -50,11 +50,23 @@ impl RuntimeDomainImpl {
         // 0. 意图分析前的成本门（P3-a · K4-b）：零信息量输入本地短路；其余由小脑
         //    判「这条消息值不值得做意图分析」。跳过 = 降级到现状（key_terms 用用户
         //    原文），任何降级（无小脑 / 配额耗尽 / 调用失败 / 低置信）都走原逻辑。
+        //
+        //    轨迹身份：与后续意图小循环同一 run、同一场景（IntentAnalyze），
+        //    查询侧按 `(agent_id, run_id, scene)` 把这道门的留痕并进同一条轨迹。
+        let scope = crate::service::domain::runtime::think_trace::TraceSink::new(
+            &agent.po.id,
+            trace_id,
+            ThinkingScene::IntentAnalyze.as_str(),
+        )
+        .with_scope(
+            ctx.project_id().map(|s| s.as_str()),
+            ctx.task_id().map(|s| s.as_str()),
+        );
         if let Some(skipped) = super::intent_gate::skip_if_pointless_with_default_dao(
             &ctx,
             agent.brain(),
             message.content(),
-            trace_id,
+            &scope,
         )
         .await
         {

@@ -71,8 +71,14 @@ impl ToolCallDao for ToolCallDaoImpl {
         &self,
         ctx: RequestContext,
         tool: &Tool,
-        args: Value,
+        mut args: Value,
     ) -> Result<(Value, ToolCallEntry)> {
+        // 通用调用附注（`_intent`）：模型自述「这次调用想达成什么」。
+        // ⚠️ 必须在调用工具前摘除——业务参数里没有这个键，工具/参数校验器
+        // 都看不到它（内置工具多为 `additionalProperties: false`，多一个键就拒）。
+        // 摘除后 args 才是真正的业务入参，`input` 与 `args_len` 都按它记。
+        let call_intent = common::llm_schema::take_call_intent(&mut args);
+
         // 直接调用工具并内联构造 trace entry，发布 AOP ToolExecEvent
         // （取代被移除的 ToolCallLoggingDecorator）
         //
@@ -159,9 +165,17 @@ impl ToolCallDao for ToolCallDaoImpl {
         let location_str = format!("{}:{}", location.file(), location.line());
         if let serde_json::Value::Object(ref mut map) = entry.metadata {
             map.insert("caller_location".to_string(), Value::String(location_str));
+            // 调用附注与 caller_location 同层：都是「关于这次调用」的元数据，
+            // 不是入参本身。前端工具卡片直接读这个键做标题。
+            if let Some(intent) = call_intent {
+                map.insert("intent".to_string(), Value::String(intent));
+            }
         } else {
             let mut map = serde_json::Map::new();
             map.insert("caller_location".to_string(), Value::String(location_str));
+            if let Some(intent) = call_intent {
+                map.insert("intent".to_string(), Value::String(intent));
+            }
             entry.metadata = Value::Object(map);
         }
 

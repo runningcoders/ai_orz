@@ -13,8 +13,8 @@
 
 use crate::models::message::Message;
 use crate::pkg::RequestContext;
+use crate::pkg::tokens::estimate_tokens;
 use crate::service::dao::message::MessageQuery;
-use crate::service::domain::runtime::compaction::estimate_tokens;
 use common::constants::message::DEFAULT_CONVERSATION_PROJECT_ID;
 use common::enums::{MessageRole, MessageStatus, MessageType};
 use common::error::Result;

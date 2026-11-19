@@ -78,7 +78,7 @@ fn lexicon_budget_follows_provider_capacity() {
 /// 都会被裁 ⇒ 本用例的两条「拉丁原样留」断言改前应红（R66 档②）。
 #[test]
 fn intent_section_budget_counts_tokens_not_chars() {
-    use crate::service::domain::runtime::awakening::IntentAnalysis;
+    use crate::models::intent_analysis::IntentAnalysis;
 
     let latin_item = "a".repeat(600);
     let cjk_item = "字".repeat(400);

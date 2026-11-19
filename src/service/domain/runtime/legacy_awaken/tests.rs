@@ -22,7 +22,7 @@ use crate::service::domain::runtime::types::{ThinkLoopResult, WakeUsage};
 fn discover_trail_line_budget_counts_tokens_not_chars() {
     use super::discover_node::trail_line;
     use crate::models::cortex_types::ChatMessage;
-    use crate::service::domain::runtime::compaction::estimate_tokens;
+    use crate::pkg::tokens::estimate_tokens;
 
     let cjk = ChatMessage::User {
         content: "字".repeat(1_000),

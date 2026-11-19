@@ -243,44 +243,6 @@ mod tests {
         assert!(!result.is_empty());
     }
 
-    /// 技能包：字节保真 + unix mode 保真（二进制附件与可执行件不能被文本通道破坏）
-    #[test]
-    fn skill_package_preserves_bytes_and_unix_mode() {
-        use crate::service::domain::system::seed::bundle::{self, SkillFileEntry};
-
-        let binary: Vec<u8> = vec![0x00, 0xFF, 0xFE, 0x01, 0x80];
-        let entries = vec![
-            SkillFileEntry {
-                path: "skill.md".to_string(),
-                bytes: b"# main".to_vec(),
-                executable: false,
-            },
-            SkillFileEntry {
-                path: "scripts/run.sh".to_string(),
-                bytes: b"echo hi".to_vec(),
-                executable: true,
-            },
-            SkillFileEntry {
-                path: "assets/blob.bin".to_string(),
-                bytes: binary.clone(),
-                executable: false,
-            },
-        ];
-
-        let zip_bytes = bundle::pack_skill_zip(&entries).unwrap();
-        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&zip_bytes)).unwrap();
-        assert_eq!(archive.len(), 3);
-
-        for entry in &entries {
-            let mut file = archive.by_name(&entry.path).unwrap();
-            let mut buf = Vec::new();
-            std::io::Read::read_to_end(&mut file, &mut buf).unwrap();
-            assert_eq!(buf, entry.bytes, "{} 字节必须原样保真", entry.path);
-            let exec = file.unix_mode().is_some_and(|m| m & 0o111 != 0);
-            assert_eq!(exec, entry.executable, "{} 可执行位必须保真", entry.path);
-        }
-    }
-
     /// 整体压缩包：主文件 + 技能包可拆回，主文件单独可读（预览 / diff 用）
     #[test]
     fn bundle_round_trip_exposes_manifest_and_packages() {

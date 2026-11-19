@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use aes::Aes128;
-use aes::cipher::{BlockDecrypt, KeyInit};
+use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit};
 use serde_json::Value;
 use tokio::sync::RwLock;
 
@@ -155,6 +155,19 @@ pub(crate) const STALE_TOKEN_ERRCODE: i64 = -14;
 
 /// `notifystart` / `notifystop` 客户端超时（官方 `DEFAULT_CONFIG_TIMEOUT_MS`）
 const NOTIFY_TIMEOUT_MS: u64 = 10_000;
+
+/// 出站 `getuploadurl` / `sendmessage` 客户端超时（官方 `DEFAULT_API_TIMEOUT_MS` = 15s）
+const API_TIMEOUT_MS: u64 = 15_000;
+
+/// 媒体上传重试上限（官方 `UPLOAD_MAX_RETRIES`）；4xx 立即失败、5xx/网络错误才重试
+const CDN_UPLOAD_MAX_RETRIES: u8 = 3;
+
+/// `UploadMediaType.IMAGE`（官方 `types.ts::UploadMediaType`）
+const UPLOAD_MEDIA_TYPE_IMAGE: i64 = 1;
+/// `UploadMediaType.VIDEO`（官方 `types.ts::UploadMediaType`）
+const UPLOAD_MEDIA_TYPE_VIDEO: i64 = 2;
+/// `UploadMediaType.FILE`（官方 `types.ts::UploadMediaType`，非图片/视频附件）
+const UPLOAD_MEDIA_TYPE_FILE: i64 = 3;
 
 /// getupdates 长轮询响应（游标 + 消息列表 + 错误码 + 超时协商）
 #[derive(Debug, Clone, Default)]
@@ -418,17 +431,8 @@ fn build_send_body(to_user_id: &str, context_token: &str, text: &str, client_id:
     })
 }
 
-/// 发送文本消息到对端（出站）
-///
-/// 返回服务端 `SendMessageResp.message_id`（平台侧权威消息 ID，用于回写
-/// `messages.external_key`，与飞书 `lark:{message_id}` 口径对齐）；服务端未返回该字段时
-/// 为 `None`（不伪造）。HTTP 2xx 且 `ret == 0` 即视为发送成功。
-pub async fn send_text(
-    credentials: &IlinkChannelCredentials,
-    to_user_id: &str,
-    context_token: &str,
-    text: &str,
-) -> Result<Option<String>> {
+/// 校验出站目标与会话令牌（文本 / 图片共用）
+fn validate_send_target(to_user_id: &str, context_token: &str) -> Result<()> {
     if to_user_id.is_empty() {
         return Err(err!(
             InvalidRequest,
@@ -441,12 +445,39 @@ pub async fn send_text(
             "iLink 发送缺少 context_token（会话令牌滚动刷新，请让对端先发一条消息再回复）"
         ));
     }
-    let url = format!("{}/ilink/bot/sendmessage", credentials.base_url);
-    // iLink 的 client_id 是外部协议字段（出站本地幂等键）：
-    // 对接约定为 UUIDv7，按标准带横杠文本输出；生成仍走统一 ID 类型。
-    let client_id = common::id::UuidId::generate().to_hyphenated();
+    Ok(())
+}
+
+/// 发送文本消息到对端（出站）
+///
+/// 返回服务端 `SendMessageResp.message_id`（平台侧权威消息 ID，用于回写
+/// `messages.external_key`，与飞书 `lark:{message_id}` 口径对齐）；服务端未返回该字段时
+/// 为 `None`（不伪造）。HTTP 2xx 且 `ret == 0` 即视为发送成功。
+pub async fn send_text(
+    credentials: &IlinkChannelCredentials,
+    to_user_id: &str,
+    context_token: &str,
+    text: &str,
+) -> Result<Option<String>> {
+    validate_send_target(to_user_id, context_token)?;
+    let client_id = new_client_id();
     let body = build_send_body(to_user_id, context_token, text, &client_id);
+    post_send_message(credentials, body).await
+}
+
+/// iLink 出站本地幂等键：UUIDv7，按标准带横杠文本输出
+fn new_client_id() -> String {
+    common::id::UuidId::generate().to_hyphenated()
+}
+
+/// `sendmessage` 公共 POST（文本 / 图片共用同一协议出口，避免细节漂移）
+async fn post_send_message(
+    credentials: &IlinkChannelCredentials,
+    body: Value,
+) -> Result<Option<String>> {
+    let url = format!("{}/ilink/bot/sendmessage", credentials.base_url);
     let resp = wechat_ilink::bot_auth_headers(client().post(&url), &credentials.bot_token)
+        .timeout(std::time::Duration::from_millis(API_TIMEOUT_MS))
         .json(&body)
         .send()
         .await
@@ -458,13 +489,465 @@ pub async fn send_text(
     parse_send_response(&body_text)
 }
 
+// ==================== 出站图片（上传 CDN + image_item 消息） ====================
+//
+// 协议来源：腾讯官方插件 `@tencent-weixin/openclaw-weixin@2.4.9`
+// - `src/cdn/upload.ts::uploadMediaToCdn`：filekey / aeskey / md5 / 密文长度
+// - `src/cdn/cdn-upload.ts::uploadBufferToCdn`：AES-128-ECB 加密 + CDN POST + x-encrypted-param
+// - `src/messaging/send.ts::sendImageMessageWeixin`：image_item 字段形态
+// 与 `pkg/wechat_ilink.rs` 文件头记录的是同一份权威 spec；改协议只改本文件。
+
+/// AES-128-ECB + PKCS7 密文长度（官方 `aesEcbPaddedSize`）
+///
+/// 与官方 `Math.ceil((n + 1) / 16) * 16` 等价：明文恰好整块时**必须**补一整块。
+fn aes_ecb_padded_size(plaintext_size: usize) -> usize {
+    (plaintext_size / 16 + 1) * 16
+}
+
+/// 字节序列 → 小写 hex（`filekey` / `aeskey` 的上报格式）
+fn encode_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        let _ = write!(out, "{byte:02x}");
+    }
+    out
+}
+
+/// `CDNMedia.aes_key` 的出站编码
+///
+/// 官方 `send.ts` 对图片发的是 `Buffer.from(uploaded.aeskey).toString("base64")`，
+/// 其中 `uploaded.aeskey` 是 **32 字符 hex 文本** → 即 base64(hex 文本的 UTF-8 字节)，
+/// **不是** base64(16 字节原始 key)。尽管官方接收端 `parseAesKey` 两种都兼容，
+/// 出站仍按发送端原样对齐（微信客户端按此口径展示图片）。
+fn encode_aes_key_for_json(aeskey: &[u8; 16]) -> String {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD.encode(encode_hex(aeskey).as_bytes())
+}
+
+/// AES-128-ECB 加密并补 PKCS7（官方 `encryptAesEcb`）
+///
+/// 与入站解密对称，手写分块以复用现有 `aes` 依赖，不引入 `block-padding` feature。
+fn encrypt_aes_128_ecb(plaintext: &[u8], key: &[u8]) -> Result<Vec<u8>> {
+    let cipher = Aes128::new_from_slice(key).map_err(|_| {
+        err!(
+            InvalidRequest,
+            "ilink 图片 AES 密钥长度不合法: bytes={}",
+            key.len()
+        )
+    })?;
+    let padding = 16 - (plaintext.len() % 16);
+    let mut buffer = Vec::with_capacity(aes_ecb_padded_size(plaintext.len()));
+    buffer.extend_from_slice(plaintext);
+    buffer.resize(buffer.len() + padding, padding as u8);
+    for chunk in buffer.as_chunks_mut::<16>().0 {
+        let block = aes::cipher::generic_array::GenericArray::from_mut_slice(chunk);
+        cipher.encrypt_block(block);
+    }
+    Ok(buffer)
+}
+
+/// 构造 `getuploadurl` 请求体（纯函数，便于单测）
+///
+/// 官方此接口**带** `base_info`（与 `sendmessage` 不同），`no_need_thumb=true`
+/// 表示只要原图上传 URL、不索取缩略图参数。
+fn build_get_upload_url_body(
+    filekey: &str,
+    media_type: i64,
+    to_user_id: &str,
+    rawsize: usize,
+    rawfilemd5: &str,
+    filesize: usize,
+    aeskey_hex: &str,
+) -> Value {
+    serde_json::json!({
+        "filekey": filekey,
+        "media_type": media_type,
+        "to_user_id": to_user_id,
+        "rawsize": rawsize,
+        "rawfilemd5": rawfilemd5,
+        "filesize": filesize,
+        "no_need_thumb": true,
+        "aeskey": aeskey_hex,
+        "base_info": wechat_ilink::base_info(),
+    })
+}
+
+/// `getuploadurl` 响应中的原图上传参数
+#[derive(Debug)]
+struct UploadUrlInfo {
+    /// 服务端直出的完整上传 URL（优先）
+    upload_full_url: Option<String>,
+    /// 需按 `{CDN}/upload?encrypted_query_param=...&filekey=...` 拼接的参数
+    upload_param: Option<String>,
+}
+
+/// 解析 `getuploadurl` 响应（纯函数，便于单测）
+fn parse_upload_url_response(body: &str) -> Result<UploadUrlInfo> {
+    let value: Value = serde_json::from_str(body)
+        .map_err(|e| err!(ThirdPartyError, "ilink getuploadurl 响应非 JSON: {}", e))?;
+    let ret = value
+        .get("ret")
+        .or_else(|| value.get("errcode"))
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    if ret != 0 {
+        let msg = value
+            .get("errmsg")
+            .or_else(|| value.get("msg"))
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        return Err(err!(
+            ThirdPartyError,
+            "ilink getuploadurl 失败: ret={} msg={}",
+            ret,
+            msg
+        ));
+    }
+    let pick = |key: &str| {
+        value
+            .get(key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(str::to_string)
+    };
+    let info = UploadUrlInfo {
+        upload_full_url: pick("upload_full_url"),
+        upload_param: pick("upload_param"),
+    };
+    if info.upload_full_url.is_none() && info.upload_param.is_none() {
+        return Err(err!(
+            ThirdPartyError,
+            "ilink getuploadurl 未返回 upload_full_url / upload_param"
+        ));
+    }
+    Ok(info)
+}
+
+/// 构造图片 `sendmessage` 请求体（纯函数，便于单测）
+///
+/// `image_item.media.aes_key` 走 [`encode_aes_key_for_json`]（base64(hex 文本)，
+/// 与入站 `image_item.aeskey` 的裸 hex 不同），`encrypt_type=1`、`mid_size` 为
+/// **密文**长度——三处都与官方 `send.ts` 对齐。
+fn build_image_send_body(
+    to_user_id: &str,
+    context_token: &str,
+    client_id: &str,
+    download_param: &str,
+    aes_key_base64: &str,
+    mid_size: usize,
+) -> Value {
+    serde_json::json!({
+        "msg": {
+            "from_user_id": "",
+            "to_user_id": to_user_id,
+            "client_id": client_id,
+            "message_type": wechat_ilink::MESSAGE_TYPE_BOT,
+            "message_state": wechat_ilink::MESSAGE_STATE_FINISH,
+            "item_list": [
+                {
+                    "type": wechat_ilink::MESSAGE_ITEM_TYPE_IMAGE,
+                    "image_item": {
+                        "media": {
+                            "encrypt_query_param": download_param,
+                            "aes_key": aes_key_base64,
+                            "encrypt_type": 1,
+                        },
+                        "mid_size": mid_size,
+                    }
+                }
+            ],
+            "context_token": context_token,
+        }
+    })
+}
+
+/// 构造文件 `sendmessage` 请求体（纯函数，便于单测）
+///
+/// 对齐官方 `send.ts::sendFileMessageWeixin`：`file_item` 含 `media`、
+/// `file_name`（原名）、`len`（**明文**字节数的十进制字符串，与图片的
+/// `mid_size` 用密文长度不同）。
+fn build_file_send_body(
+    to_user_id: &str,
+    context_token: &str,
+    client_id: &str,
+    download_param: &str,
+    aes_key_base64: &str,
+    file_name: &str,
+    plaintext_size: usize,
+) -> Value {
+    serde_json::json!({
+        "msg": {
+            "from_user_id": "",
+            "to_user_id": to_user_id,
+            "client_id": client_id,
+            "message_type": wechat_ilink::MESSAGE_TYPE_BOT,
+            "message_state": wechat_ilink::MESSAGE_STATE_FINISH,
+            "item_list": [
+                {
+                    "type": wechat_ilink::MESSAGE_ITEM_TYPE_FILE,
+                    "file_item": {
+                        "media": {
+                            "encrypt_query_param": download_param,
+                            "aes_key": aes_key_base64,
+                            "encrypt_type": 1,
+                        },
+                        "file_name": file_name,
+                        "len": plaintext_size.to_string(),
+                    }
+                }
+            ],
+            "context_token": context_token,
+        }
+    })
+}
+
+/// 构造视频 `sendmessage` 请求体（纯函数，便于单测）
+///
+/// 对齐官方 `send.ts::sendVideoMessageWeixin`：`video_item` 含 `media`、
+/// `video_size`（**密文**字节数，与图片的 `mid_size` 同口径）。
+fn build_video_send_body(
+    to_user_id: &str,
+    context_token: &str,
+    client_id: &str,
+    download_param: &str,
+    aes_key_base64: &str,
+    video_size_ciphertext: usize,
+) -> Value {
+    serde_json::json!({
+        "msg": {
+            "from_user_id": "",
+            "to_user_id": to_user_id,
+            "client_id": client_id,
+            "message_type": wechat_ilink::MESSAGE_TYPE_BOT,
+            "message_state": wechat_ilink::MESSAGE_STATE_FINISH,
+            "item_list": [
+                {
+                    "type": wechat_ilink::MESSAGE_ITEM_TYPE_VIDEO,
+                    "video_item": {
+                        "media": {
+                            "encrypt_query_param": download_param,
+                            "aes_key": aes_key_base64,
+                            "encrypt_type": 1,
+                        },
+                        "video_size": video_size_ciphertext,
+                    }
+                }
+            ],
+            "context_token": context_token,
+        }
+    })
+}
+
+/// 上传成功后填入 `image_item.media` / `video_item.media` / `file_item.media` 的媒体引用
+#[derive(Debug)]
+struct UploadedMedia {
+    /// CDN 响应头 `x-encrypted-param`
+    download_param: String,
+    /// 出站 media.aes_key：32 字符 hex 文本的 base64（解码得 32 字节 ASCII），
+    /// 对齐官方 `Buffer.from(aeskeyHex).toString('base64')`。⚠️ 不是原始 16 字节
+    /// 的 base64——改回后者会让微信侧解密失败，勿"顺手修正"。
+    aes_key_base64: String,
+    /// 密文长度（`image_item.mid_size`）
+    ciphertext_size: usize,
+    /// 明文长度（`file_item.len`）
+    plaintext_size: usize,
+}
+
+/// 上传单个附件到 iLink CDN（对齐官方 `uploadMediaToCdn` + `uploadBufferToCdn`）
+///
+/// `media_type` 决定服务端按图片 / 视频 / 文件处理：
+/// `IMAGE=1` / `VIDEO=2` / `FILE=3`（对齐官方 `UploadMediaType`）。
+async fn upload_attachment(
+    credentials: &IlinkChannelCredentials,
+    to_user_id: &str,
+    media_type: i64,
+    attachment: &crate::models::outbound_media::OutboundAttachment,
+) -> Result<UploadedMedia> {
+    let rawsize = attachment.bytes.len();
+    if rawsize == 0 {
+        return Err(err!(
+            InvalidRequest,
+            "iLink 出站附件为空: name={}",
+            attachment.name
+        ));
+    }
+    use md5::Digest as _;
+    let rawfilemd5 = format!("{:x}", md5::Md5::digest(&attachment.bytes));
+    let filesize = aes_ecb_padded_size(rawsize);
+    let filekey = encode_hex(&rand::random::<[u8; 16]>());
+    let aeskey: [u8; 16] = rand::random();
+    let body = build_get_upload_url_body(
+        &filekey,
+        media_type,
+        to_user_id,
+        rawsize,
+        &rawfilemd5,
+        filesize,
+        &encode_hex(&aeskey),
+    );
+
+    let url = format!("{}/ilink/bot/getuploadurl", credentials.base_url);
+    let resp = wechat_ilink::bot_auth_headers(client().post(&url), &credentials.bot_token)
+        .timeout(std::time::Duration::from_millis(API_TIMEOUT_MS))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| http_err("getuploadurl", e))?
+        .error_for_status()
+        .map_err(|e| http_err("getuploadurl", e))?;
+    let text = resp.text().await.map_err(|e| http_err("getuploadurl", e))?;
+    let info = parse_upload_url_response(&text)?;
+
+    // `upload_full_url` 是服务端下发的外部可控出站目标：必须过白名单。
+    // 不合规直接报错而不是静默回退拼 URL —— 否则等于允许把媒体密文 POST 到任意主机。
+    let upload_url = match &info.upload_full_url {
+        Some(full) => trusted_full_url(full).ok_or_else(|| {
+            err!(
+                ThirdPartyError,
+                "ilink getuploadurl 返回不可信的 upload_full_url（仅允许 https + *.weixin.qq.com）"
+            )
+        })?,
+        None => {
+            let param = info
+                .upload_param
+                .as_deref()
+                .ok_or_else(|| err!(ThirdPartyError, "ilink getuploadurl 未返回可用的上传 URL"))?;
+            let mut url =
+                reqwest::Url::parse(&format!("{}/upload", wechat_ilink::ILINK_CDN_BASE_URL))
+                    .map_err(|e| err!(Internal, "ilink CDN 上传地址构造失败: {}", e))?;
+            url.query_pairs_mut()
+                .append_pair("encrypted_query_param", param)
+                .append_pair("filekey", &filekey);
+            url
+        }
+    };
+
+    let ciphertext = encrypt_aes_128_ecb(&attachment.bytes, &aeskey)?;
+    let mut last_error = String::new();
+    for attempt in 1..=CDN_UPLOAD_MAX_RETRIES {
+        let resp = client()
+            .post(upload_url.clone())
+            .header("Content-Type", "application/octet-stream")
+            .body(ciphertext.clone())
+            .send()
+            .await;
+        match resp {
+            Ok(resp) => {
+                let status = resp.status();
+                if status.is_client_error() {
+                    return Err(err!(
+                        ThirdPartyError,
+                        "ilink CDN 上传客户端错误: status={} attempt={}",
+                        status,
+                        attempt
+                    ));
+                }
+                if status != reqwest::StatusCode::OK {
+                    last_error = format!("status={status}");
+                    continue;
+                }
+                let param = resp
+                    .headers()
+                    .get("x-encrypted-param")
+                    .and_then(|v| v.to_str().ok())
+                    .map(str::trim)
+                    .filter(|v| !v.is_empty())
+                    .ok_or_else(|| {
+                        err!(
+                            ThirdPartyError,
+                            "ilink CDN 上传响应缺少 x-encrypted-param 头"
+                        )
+                    })?
+                    .to_string();
+                return Ok(UploadedMedia {
+                    download_param: param,
+                    aes_key_base64: encode_aes_key_for_json(&aeskey),
+                    ciphertext_size: ciphertext.len(),
+                    plaintext_size: rawsize,
+                });
+            }
+            Err(e) => last_error = format!("http error: {e}"),
+        }
+    }
+    Err(err!(
+        ThirdPartyError,
+        "ilink CDN 上传失败（重试 {} 次）: {}",
+        CDN_UPLOAD_MAX_RETRIES,
+        last_error
+    ))
+}
+
+/// 上传并发送单个附件（供 `dao/wechat/http.rs` 的出站 push 逐条调用）
+///
+/// 按统一媒体类型 [`OutboundMediaKind`] 分派（对齐官方 `send.ts`）：
+/// - `Image` → `image_item`（`mid_size` 用密文长度）
+/// - `Video` → `video_item`（`video_size` 用密文长度）
+/// - `Audio` / `File` → `file_item`（`len` 用明文长度 + `file_name`）
+///
+/// 语音（`audio/*`）协议上需 silk 转码与采样率元数据，当前无转码能力，按文件
+/// 发送保底——对方仍可下载收听，信息不丢。
+pub async fn send_outbound_attachment(
+    credentials: &IlinkChannelCredentials,
+    to_user_id: &str,
+    context_token: &str,
+    attachment: &crate::models::outbound_media::OutboundAttachment,
+) -> Result<Option<String>> {
+    use crate::models::outbound_media::OutboundMediaKind;
+
+    validate_send_target(to_user_id, context_token)?;
+    let kind = attachment.kind();
+    let media_type = match kind {
+        OutboundMediaKind::Image => UPLOAD_MEDIA_TYPE_IMAGE,
+        OutboundMediaKind::Video => UPLOAD_MEDIA_TYPE_VIDEO,
+        OutboundMediaKind::Audio | OutboundMediaKind::File => UPLOAD_MEDIA_TYPE_FILE,
+    };
+    let uploaded = upload_attachment(credentials, to_user_id, media_type, attachment).await?;
+    let client_id = new_client_id();
+    let body = match kind {
+        OutboundMediaKind::Image => build_image_send_body(
+            to_user_id,
+            context_token,
+            &client_id,
+            &uploaded.download_param,
+            &uploaded.aes_key_base64,
+            uploaded.ciphertext_size,
+        ),
+        OutboundMediaKind::Video => build_video_send_body(
+            to_user_id,
+            context_token,
+            &client_id,
+            &uploaded.download_param,
+            &uploaded.aes_key_base64,
+            uploaded.ciphertext_size,
+        ),
+        OutboundMediaKind::Audio | OutboundMediaKind::File => build_file_send_body(
+            to_user_id,
+            context_token,
+            &client_id,
+            &uploaded.download_param,
+            &uploaded.aes_key_base64,
+            &attachment.name,
+            uploaded.plaintext_size,
+        ),
+    };
+    post_send_message(credentials, body).await
+}
+
 /// 解析 sendmessage 响应：校验 `ret` 并取出服务端 `message_id`（抽纯函数便于单测）
 ///
 /// 返回值为服务端权威消息 ID（`message_id`，uint64 按数字/字符串双形态读），
 /// 缺省时 `None` —— 不伪造，由调用方决定是否回写 `external_key`。
 fn parse_send_response(body: &str) -> Result<Option<String>> {
     let Ok(value) = serde_json::from_str::<Value>(body) else {
-        // 响应非 JSON：HTTP 2xx 已通过，宽容视为成功（协议较新）
+        // 响应非 JSON：HTTP 2xx 已通过，宽容视为成功（协议较新）。
+        // 留一条告警：真实失败若恰好也回 2xx+非 JSON，至少能在日志里追到，
+        // 而不是只看到「消息没发出来」却毫无痕迹。
+        log_warn!(
+            "ilink sendmessage 响应非 JSON，按成功处理: {}",
+            body.chars().take(200).collect::<String>()
+        );
         return Ok(None);
     };
     let ret = value

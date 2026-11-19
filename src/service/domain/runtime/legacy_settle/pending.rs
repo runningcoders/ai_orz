@@ -20,16 +20,19 @@
 use crate::models::agent::Agent;
 use crate::models::memory::{Memory, MemoryPo, ShortTermMemoryIndexPo};
 use crate::pkg::RequestContext;
+use crate::pkg::tokens::estimate_tokens;
 use crate::service::dao::memory::{MemoryQuery, MemorySortOrder};
 use crate::service::domain::runtime::RuntimeMemory;
-use crate::service::domain::runtime::compaction::estimate_tokens;
 use common::enums::{MemoryStatus, MemoryType};
 use common::error::Result;
 
 /// 单批待沉淀记忆的条数上限（防呆，避免极端情况下无限拼接）
 ///
 /// ⚠️ 这是**硬护栏**不是批量策略：真正的批量由上下文预算决定。
-pub(crate) const PENDING_MAX_ITEMS: usize = 200;
+///
+/// 与系统域（cron payload 默认 `settle_limit`）共用同一个值，常量在
+/// `common::constants::settle`；本处转出仅供本域内部沿用短路径。
+pub(crate) use common::constants::settle::PENDING_MAX_ITEMS;
 
 /// 模型未配置上下文长度时的默认窗口（token）
 ///

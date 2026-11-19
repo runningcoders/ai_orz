@@ -12,6 +12,7 @@ pub mod delivery;
 pub mod inbound;
 pub mod management;
 pub mod recall;
+pub mod resource_refs;
 pub mod resource_resolver;
 
 #[cfg(test)]

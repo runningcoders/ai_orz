@@ -346,6 +346,41 @@ fn builtin_tool_schemas_are_llm_flattened() {
     );
 }
 
+/// 护栏：业务参数不得占用顶层 `_` 命名空间（该前缀留给 `_intent` 等调用元数据）
+///
+/// `take_call_intent` 只摘顶层 `_intent`；若某天给业务参数起名 `_force`，
+/// 它就会和元数据命名空间混淆（校验器、日志脱敏、幂等键都可能误伤）。
+/// 这里遍历注册表里的内置工具 schema 顶层键，新增违规参数立即红。
+/// `_intent` 由 `ToolDescriptor::from` 在出站时才注入，不出现在工厂原始 schema 中。
+#[test]
+fn tool_params_avoid_reserved_prefix() {
+    let registry = crate::pkg::tool_registry::get_registry();
+    let ids = registry.list_builtin_ids();
+    assert!(ids.len() > 20, "内置工具数异常偏少: {}", ids.len());
+
+    let mut offenders = Vec::new();
+    for id in ids {
+        let Some(factory) = registry.get_builtin_factory(&id) else {
+            continue;
+        };
+        let Some(schema) = factory.create_po().parameters_schema else {
+            continue;
+        };
+        if let Some(props) = schema.get("properties").and_then(|v| v.as_object()) {
+            for key in props.keys() {
+                if key.starts_with('_') {
+                    offenders.push(format!("  {id}: {key}"));
+                }
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "业务参数占用了顶层 `_` 命名空间（保留给调用元数据）:\n{}",
+        offenders.join("\n")
+    );
+}
+
 /// 护栏：所有内置工具的 `function.name`（wire name）必须落在跨 provider LCD 内
 /// （`^[a-zA-Z0-9_-]{1,128}$`，判定复用 `common::llm_schema::is_wire_tool_name`）。
 ///

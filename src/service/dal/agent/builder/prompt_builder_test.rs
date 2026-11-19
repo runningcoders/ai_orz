@@ -209,7 +209,7 @@ fn intent_analyze_sop_is_appended_after_base() {
 
 // ============= Task 4 (A+ P3) 新增单元测试 =============
 
-use crate::service::domain::runtime::awakening::IntentAnalysis;
+use crate::models::intent_analysis::IntentAnalysis;
 
 /// UT-a: 截断规则验证——海量数据时不溢出 token
 /// 构建：20 项数组（每项 300+ 字符）+ 2000 字符 summary
@@ -1510,5 +1510,93 @@ fn thinking_graph_sections_render_titles_and_content() {
     assert!(
         idx_prior < idx_msg,
         "【上一轮思考摘要】应在【当前消息】之前"
+    );
+}
+
+/// `_intent` 调用附注的指引必须在 System 消息里（schema 只声明字段，
+/// 模型是否愿意填主要靠这段文案）。缺了它工具卡片与思考轨迹就没有意图摘要。
+#[test]
+fn call_intent_guidance_lives_in_system_only() {
+    let agent = make_simple_agent();
+    let message = make_simple_message("读一下 README");
+    let mut builder = DefaultPromptBuilder::new();
+    builder.current_trace_id("trace-intent-guidance");
+    builder.system_prompt(&agent);
+    builder.current_message(&message);
+
+    let messages = builder.build_initial_messages();
+    let ChatMessage::System { content: system } = &messages[0] else {
+        panic!("期望 System 消息为首条");
+    };
+    assert!(system.contains("§5. 禁止无意义工具调用"), "锚点段落须存在");
+    assert!(system.contains("_intent"), "System 须声明通用调用附注");
+    assert!(
+        system.contains("✅ `_intent`") && system.contains("❌ `_intent`"),
+        "须给正反例，否则模型只会写空话: {system}"
+    );
+    for m in &messages[1..] {
+        if let ChatMessage::User { content: user } = m {
+            assert!(!user.contains("_intent"), "附注指引不得进 User（前缀缓存）");
+        }
+    }
+}
+
+/// 资源引用指引（§6）必须在 System 消息里：
+/// 它是跨唤醒通用默认行为，不随受众/发送方式分叉；且只进 System 不进 User，
+/// 避免易变内容前移作废 provider prefix cache（两阶段唤醒不变量）。
+#[test]
+fn resource_reference_guidance_lives_in_system_only() {
+    let agent = make_simple_agent();
+    let message = make_simple_message("帮我看下这张图");
+
+    let mut builder = DefaultPromptBuilder::new();
+    builder.current_trace_id("trace-image-guidance");
+    builder.system_prompt(&agent);
+    builder.current_message(&message);
+
+    let messages = builder.build_initial_messages();
+    let ChatMessage::System { content: system } = &messages[0] else {
+        panic!("期望 System 消息为首条");
+    };
+    assert!(
+        system.contains("§6. 资源引用（附件 / 产物）的处理"),
+        "资源引用指引须注入 System。Output:\n{}",
+        system
+    );
+    assert!(
+        system.contains("[文件名](attachment:att_xxx)"),
+        "须给出附件引用的确切格式"
+    );
+    assert!(
+        system.contains("[产物名](artifact:art_xxx)"),
+        "须给出产物引用的确切格式"
+    );
+    assert!(
+        system.contains("mark_artifact"),
+        "须列出产物工具（含 builtin mark_artifact）"
+    );
+    assert!(
+        system.contains("Final 文本、send_message、send_message_to_agent"),
+        "须明确覆盖所有发送方式"
+    );
+    assert!(
+        system.contains("回复人 / 回复 Agent / 回复群会话一视同仁"),
+        "须明确覆盖所有受众"
+    );
+    assert!(
+        system.contains("create_attachment_from_path"),
+        "须给出磁盘文件转附件的工具名"
+    );
+    assert!(
+        system.contains("不要改动、删除或编造 id"),
+        "须显式禁止臆造资源 id"
+    );
+
+    let ChatMessage::User { content: user } = &messages[1] else {
+        panic!("期望 User 消息为第二条");
+    };
+    assert!(
+        !user.contains("§6. 资源引用（附件 / 产物）的处理"),
+        "指引不得渲染进 User（否则破坏 System 前缀缓存）"
     );
 }

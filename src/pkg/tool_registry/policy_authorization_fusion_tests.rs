@@ -8,7 +8,7 @@
 
 use super::*;
 use crate::pkg::authorization::authorization_gate::AuthorizationGate;
-use crate::pkg::authorization::{AuthorizationGrant, PendingAuthorization};
+use crate::pkg::authorization::{AuthorizationGrant, CreateAuthorizationCmd, PendingAuthorization};
 use async_trait::async_trait;
 use common::error::bail_err;
 use std::collections::HashMap;
@@ -80,7 +80,7 @@ impl AuthorizationGate for FakeGate {
     async fn request_authorization(
         &self,
         _ctx: RequestContext,
-        cmd: crate::service::domain::finance::CreateAuthorizationCmd,
+        cmd: CreateAuthorizationCmd,
     ) -> Result<PendingAuthorization> {
         self.requests
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);

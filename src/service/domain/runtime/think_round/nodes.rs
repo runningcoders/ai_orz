@@ -18,13 +18,13 @@ use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
 use crate::pkg::think_path::{
     ActivationBudget, NodeId, NodeOutcome, NodeSignal, PhaseId, ThinkBus, ThinkNode,
 };
-use crate::pkg::think_trace::ThinkTraceRound;
 use crate::service::domain::runtime::RuntimeToolExecution;
 use crate::service::domain::runtime::inbox::{MAX_INJECTIONS_PER_WAKE, collect as collect_inbox};
 use crate::service::domain::runtime::think_loop::{
     ROUND_DIGEST_MAX_CONTENT, TOOL_NUDGE_AFTER_CONSECUTIVE_ROUNDS, is_recursive_settle_call,
     is_settle_queue_write, policy_exit, round_metrics,
 };
+use crate::service::domain::runtime::think_trace::ThinkTraceRound;
 use crate::service::domain::runtime::types::{RoundDigest, ThinkLoopResult};
 use async_trait::async_trait;
 use common::enums::{ThinkingIntensity, ThinkingScene};
@@ -170,9 +170,9 @@ async fn run_poll_round(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
     }
 
     // 注入预算按模型上下文容量的占比派生（容量未配 ⇒ 不设预算）
-    let inbox_budget = crate::service::domain::runtime::text_budget::tokens_of(
+    let inbox_budget = crate::pkg::text_budget::tokens_of(
         crate::service::domain::runtime::think_loop::context_overflow_threshold(&deps.agent),
-        crate::service::domain::runtime::text_budget::share::INBOX_BATCH_BP,
+        crate::pkg::text_budget::share::INBOX_BATCH_BP,
     );
     let batch = collect_inbox(&deps.ctx, &anchor, &cursor, inbox_budget).await?;
     if batch.is_empty() {
@@ -235,7 +235,7 @@ fn build_trace_round(
     round: usize,
     assistant_text: Option<String>,
     reasoning: Vec<String>,
-    tool_calls: Vec<crate::pkg::think_trace::ThinkTraceToolCall>,
+    tool_calls: Vec<crate::service::domain::runtime::think_trace::ThinkTraceToolCall>,
     input_tokens: u64,
     output_tokens: u64,
     cached_tokens: u64,
@@ -270,7 +270,7 @@ fn assistant_preview(content: &str) -> Option<String> {
 
 /// 回填一条工具调用轨迹（工具执行期间只改本地副本，不持锁）
 fn mark_trace_tool(
-    traces: &mut [crate::pkg::think_trace::ThinkTraceToolCall],
+    traces: &mut [crate::service::domain::runtime::think_trace::ThinkTraceToolCall],
     index: usize,
     call_id: Option<String>,
     status: &str,
@@ -499,7 +499,7 @@ async fn run_think(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
                 usage.reasoning_tokens,
             );
             // 待执行的工具：先记 pending，dispatch 执行后回填 call_id / status / result
-            let tool_traces: Vec<crate::pkg::think_trace::ThinkTraceToolCall> =
+            let tool_traces: Vec<crate::service::domain::runtime::think_trace::ThinkTraceToolCall> =
                 tool_calls.iter().map(pending_tool_trace).collect();
             // Responses 协议：模型本轮产出的推理项必须原样回传给下一轮
             // （部分推理模型强制要求，否则 400）。顺序排在助手消息之前，
@@ -713,6 +713,24 @@ async fn run_dispatch(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
                             Some(tool_result_preview(&content)),
                         );
                         messages.push(ChatMessage::tool(tc.id, content));
+                        // 收集本轮产出的附件 / 产物：final 正文若漏写引用，消费端据此
+                        // 查漏补缺（见 runtime::collected）。非产出型
+                        // 工具返回空，零开销。
+                        //
+                        // 写入 run 级收集器（`deps.collected`）而不是进程级表：
+                        // 它在进入图之前创建、随唤醒结果移交给消费侧，所有权一路显式。
+                        let produced = crate::service::domain::runtime::collected::collect_produced(
+                            &tool.po.id,
+                            &result.result,
+                        );
+                        if !produced.is_empty() {
+                            match d.collected.lock() {
+                                Ok(mut collected) => collected.record_resources(produced),
+                                // 锁中毒时收集器仍可读：产出是业务数据，宁可带着
+                                // 可能不完整的清单继续，也不静默丢弃
+                                Err(poisoned) => poisoned.into_inner().record_resources(produced),
+                            }
+                        }
                     }
                     Err(e) => {
                         let content = format!("Error: {}", e);

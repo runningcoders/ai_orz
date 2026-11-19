@@ -7,8 +7,9 @@
 //! 打成，导入侧按包整包还原 —— 预置技能与导出快照走完全同一条通路，不再有
 //! 「逐文件 ref_path」的专属分支。
 
-use super::bundle::{self, SkillFileEntry};
+use super::bundle;
 use super::embedded;
+use crate::pkg::skill_package::SkillFileEntry;
 use crate::pkg::utils::fs_perm::is_script_filename;
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -51,8 +52,8 @@ pub fn embedded_default_skill_packages() -> &'static HashMap<String, Vec<u8>> {
 
         let mut packages = HashMap::with_capacity(grouped.len());
         for (skill_id, entries) in grouped {
-            let zip =
-                bundle::pack_skill_zip(&entries).expect("内置技能包打包失败（内存写入不应失败）");
+            let zip = crate::pkg::skill_package::pack_skill_zip(&entries)
+                .expect("内置技能包打包失败（内存写入不应失败）");
             packages.insert(bundle::skill_package_name(&skill_id), zip);
         }
         packages

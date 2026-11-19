@@ -122,6 +122,7 @@ impl ThinkBackend for LegacyBackend {
         .with_usage(&input.usage)
         .with_monitoring(&deps.think_runtime, &deps.policy)
         .with_progress(&deps.progress)
+        .with_collected(&deps.collected)
         .with_thinking_intensity_offset(input.thinking_intensity_offset)
         .with_force_intensity(input.force_intensity);
         if let Some(inbox) = &input.inbox {

@@ -11,7 +11,7 @@
 - [src/pkg/aop/core/mod.rs](src/pkg/aop/core/mod.rs)
 - [src/service/domain/system/mod.rs](src/service/domain/system/mod.rs)
 - [src/service/domain/system/aop_monitor.rs](src/service/domain/system/aop_monitor.rs)
-- [src/consumer/aop_stats_collector.rs](src/consumer/aop_stats_collector.rs)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 - [src/pkg/stats/mod.rs](src/pkg/stats/mod.rs)
 - [src/handlers/health.rs](src/handlers/health.rs)
 </cite>
@@ -60,7 +60,7 @@ C1["consumer/mod.rs"]
 end
 subgraph "统计"
 S1["pkg/stats/mod.rs"]
-S2["consumer/aop_stats_collector.rs"]
+S2["pkg/stats/runtime/aop.rs"]
 end
 H1 --> D1
 H2 --> D1
@@ -83,7 +83,7 @@ C1 --> A1
 - [src/pkg/aop/core/mod.rs:1-14](src/pkg/aop/core/mod.rs#L1-L14)
 - [src/consumer/mod.rs:16-37](src/consumer/mod.rs#L16-L37)
 - [src/pkg/stats/mod.rs:152-170](src/pkg/stats/mod.rs#L152-L170)
-- [src/consumer/aop_stats_collector.rs:43-196](src/consumer/aop_stats_collector.rs#L43-L196)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 
 章节来源
 - [src/handlers/system/mod.rs:1-13](src/handlers/system/mod.rs#L1-L13)
@@ -94,7 +94,7 @@ C1 --> A1
 - [src/pkg/aop/mod.rs:33-60](src/pkg/aop/mod.rs#L33-L60)
 - [src/consumer/mod.rs:16-37](src/consumer/mod.rs#L16-L37)
 - [src/pkg/stats/mod.rs:152-170](src/pkg/stats/mod.rs#L152-L170)
-- [src/consumer/aop_stats_collector.rs:43-196](src/consumer/aop_stats_collector.rs#L43-L196)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 
 ## 核心组件
 - AOP 事件中心与调度：提供全局 Registry、发布/消费、队列监控与统计 Hook，纯框架无业务感知
@@ -254,11 +254,11 @@ AopStatsCollector --> Stats : "互补内存 vs 持久化"
 ```
 
 图示来源
-- [src/consumer/aop_stats_collector.rs:43-196](src/consumer/aop_stats_collector.rs#L43-L196)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 - [src/pkg/stats/mod.rs:1-175](src/pkg/stats/mod.rs#L1-L175)
 
 章节来源
-- [src/consumer/aop_stats_collector.rs:43-196](src/consumer/aop_stats_collector.rs#L43-L196)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 - [src/pkg/stats/mod.rs:1-175](src/pkg/stats/mod.rs#L1-L175)
 
 ### 系统基础数据与定时任务

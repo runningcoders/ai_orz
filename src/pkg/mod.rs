@@ -21,6 +21,7 @@ pub mod password;
 pub mod paths;
 pub mod policy;
 pub mod process;
+pub mod skill_package;
 pub mod wechat_ilink;
 // 脱敏引擎实现在 common::redaction（前后端共享，单一事实源）；此处仅作路径兼容，
 // 使 `crate::pkg::redaction::*` 与 `redaction::warmup()` 等既有引用继续可用。
@@ -28,8 +29,9 @@ pub use common::redaction;
 pub mod request_context;
 pub mod stats;
 pub mod storage;
+pub mod text_budget;
 pub mod think_path;
-pub mod think_trace;
+pub mod tokens;
 pub mod tool_log_retention;
 pub mod tool_registry;
 pub mod tool_tracing;
@@ -90,9 +92,6 @@ pub async fn init_all(config: &AppConfig) {
 
     // Initialize tool call tracing logger (singleton factory)
     tool_tracing::logger::ToolCallLogger::init(config.base_data_path());
-
-    // 轮级思考图轨迹出口（未显式初始化时静默 no-op）
-    think_trace::init(config.base_data_path());
 
     sys_info!("All pkg modules initialized");
 }

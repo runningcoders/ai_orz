@@ -41,6 +41,20 @@ fn file_url(id: &str) -> String {
     format!("/api/v1/project/artifacts/{id}/file")
 }
 
+/// 产物预览卡片的打开目标：产物详情 + 归属展示信息。
+///
+/// 侧栏产物行打开时两份归属信息就地可得；消息正文 `[名](artifact:id)` 引用
+/// 只有 id，取回详情后归属留空（弹窗不展示对应行），两种入口共用同一张弹窗。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArtifactPreviewTarget {
+    /// 产物详情（弹窗按 id 再取源码/文本）
+    pub artifact: ArtifactDetail,
+    /// 所属项目名（空串 = 未知，弹窗不展示该行）
+    pub project_name: String,
+    /// 所属任务标题；`None` = 项目级产物
+    pub task_title: Option<String>,
+}
+
 /// 存储文件名（`file_path` 的 basename）。
 ///
 /// 预览判据与 `<a download>` 都要它：产物的 `name` 常是「季度报告」这类无后缀文案，

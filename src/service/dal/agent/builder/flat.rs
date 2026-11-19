@@ -289,10 +289,7 @@ impl crate::models::prompt_builder::PromptBuilder for FlatPromptBuilder {
         self.flatten_text(&self.inner.build_intent_analyze_initial_messages())
     }
 
-    fn intent_analysis(
-        &mut self,
-        analysis: &crate::service::domain::runtime::awakening::IntentAnalysis,
-    ) {
+    fn intent_analysis(&mut self, analysis: &crate::models::intent_analysis::IntentAnalysis) {
         self.inner.intent_analysis(analysis);
     }
 
@@ -300,7 +297,7 @@ impl crate::models::prompt_builder::PromptBuilder for FlatPromptBuilder {
     /// 若这里不转发，Cli/Remote 在 `poll_front` 吸收新输入后的重跑将看不到修订内容。
     fn intent_revision(
         &mut self,
-        previous: &crate::service::domain::runtime::awakening::IntentAnalysis,
+        previous: &crate::models::intent_analysis::IntentAnalysis,
         inputs: &[String],
     ) {
         self.inner.intent_revision(previous, inputs);
@@ -428,8 +425,8 @@ mod tests {
 
     #[test]
     fn forwards_intent_revision_into_flat_prompt() {
+        use crate::models::intent_analysis::IntentAnalysis;
         use crate::models::prompt_builder::PromptBuilder;
-        use crate::service::domain::runtime::awakening::IntentAnalysis;
 
         let mut builder = FlatPromptBuilder::new();
         builder.intent_revision(&IntentAnalysis::default(), &["新输入：改做 B".to_string()]);

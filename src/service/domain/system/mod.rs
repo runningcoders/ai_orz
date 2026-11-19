@@ -1,4 +1,3 @@
-use crate::consumer::{AopDistributionItem, AopOverview, AopStatsCollector, AopTimeSeriesPoint};
 use crate::models::cron_trigger::CronTriggerPo;
 use crate::pkg::RequestContext;
 use crate::pkg::aop;
@@ -14,7 +13,6 @@ use common::error::Result;
 use std::sync::{Arc, OnceLock};
 
 mod aop_monitor;
-mod aop_stats;
 mod process;
 pub mod seed;
 
@@ -107,10 +105,6 @@ impl SystemDomain for SystemDomainImpl {
         self
     }
 
-    fn aop_stats(&self) -> &dyn AopStats {
-        self
-    }
-
     fn process_manager(&self) -> &dyn ProcessManager {
         self
     }
@@ -121,7 +115,6 @@ pub trait SystemDomain: Send + Sync {
     fn backup_manager(&self) -> &dyn BackupManager;
     fn log_query(&self) -> &dyn LogQuery;
     fn aop_monitor(&self) -> &dyn AopMonitor;
-    fn aop_stats(&self) -> &dyn AopStats;
     fn process_manager(&self) -> &dyn ProcessManager;
     /// 通用后台任务注册中心（委托 pkg 全局单例）
     fn background_task_registry(
@@ -200,29 +193,6 @@ pub trait AopMonitor: Send + Sync {
         filter: aop::queue::EventQueryFilter,
     ) -> Option<Vec<aop::queue::EventSummary>>;
     fn get_event(&self, consumer_name: &str, event_id: &str) -> Option<aop::queue::EventDetail>;
-}
-
-#[async_trait::async_trait]
-pub trait AopStats: Send + Sync {
-    /// 查询概览（全生命周期累计）
-    async fn overview(&self, ctx: RequestContext) -> Result<AopOverview>;
-
-    /// 查询时序数据（滑动窗口 60 分钟，按分钟桶）
-    async fn time_series(
-        &self,
-        ctx: RequestContext,
-        event_kind: Option<String>,
-        consumer_name: Option<String>,
-        status: Option<String>,
-    ) -> Result<Vec<AopTimeSeriesPoint>>;
-
-    /// 查询分布
-    async fn distribution(
-        &self,
-        ctx: RequestContext,
-        group_by: String,
-        status_filter: Option<String>,
-    ) -> Result<Vec<AopDistributionItem>>;
 }
 
 /// 统一后台进程管理（委托 pkg/process 注册中心，带 Agent scope 校验）
@@ -394,20 +364,6 @@ impl LogQuery for SystemDomainImpl {
     }
 }
 
-/// 全局 AopStatsCollector 引用（由 lib.rs 在启动时设置）
-static AOP_STATS_COLLECTOR: once_cell::sync::OnceCell<AopStatsCollector> =
-    once_cell::sync::OnceCell::new();
-
-/// 启动时设置 AopStatsCollector（由 lib.rs 调用）
-pub fn set_aop_stats_collector(collector: AopStatsCollector) {
-    let _ = AOP_STATS_COLLECTOR.set(collector);
-}
-
-/// 获取 AopStatsCollector（内部使用）
-pub(crate) fn aop_stats_collector() -> Option<&'static AopStatsCollector> {
-    AOP_STATS_COLLECTOR.get()
-}
-
 // ==================== 系统级默认定时任务 ====================
 
 /// 系统默认 agent_rest 触发器名（创建与升级判定共用）
@@ -426,7 +382,7 @@ const LEGACY_AGENT_REST_PAYLOAD: &str = r#"{"action":"agent_rest","extra":{"sett
 fn agent_rest_payload() -> String {
     format!(
         r#"{{"action":"agent_rest","extra":{{"settle_limit":{}}}}}"#,
-        crate::service::domain::runtime::legacy_settle::pending::PENDING_MAX_ITEMS
+        common::constants::settle::PENDING_MAX_ITEMS
     )
 }
 
@@ -505,7 +461,7 @@ pub async fn ensure_system_cron_triggers(ctx: &RequestContext) -> Result<()> {
             cron_manager.update_trigger(ctx.clone(), &upgraded).await?;
             sys_info!(
                 "已升级系统默认 agent_rest 触发器 payload: settle_limit 10 → {}",
-                crate::service::domain::runtime::legacy_settle::pending::PENDING_MAX_ITEMS
+                common::constants::settle::PENDING_MAX_ITEMS
             );
         }
     }

@@ -22,46 +22,13 @@ pub fn skill_package_name(skill_id: &str) -> String {
     format!("{}{}.zip", SKILL_PACKAGE_DIR, skill_id)
 }
 
-/// 待打包的技能文件条目
-pub struct SkillFileEntry {
-    /// 相对技能目录的路径（zip 内条目名，如 `skill.md`、`scripts/run.sh`）
-    pub path: String,
-    /// 文件字节（原样保真，不做 UTF-8 解码）
-    pub bytes: Vec<u8>,
-    /// 是否带可执行位（写入 zip 的 unix mode）
-    pub executable: bool,
-}
-
 /// 技能包（名称 = 压缩包内相对路径，bytes = 技能 zip）
+///
+/// 打包格式本体（`SkillFileEntry` / `pack_skill_zip`）在 `pkg::skill_package`；
+/// 这里只留快照产物「名字 + 字节」的组合形状。
 pub struct SkillPackage {
     pub name: String,
     pub bytes: Vec<u8>,
-}
-
-/// 把一个技能的文件列表打成 zip（保留 unix mode，供导入侧还原可执行位）
-pub fn pack_skill_zip(entries: &[SkillFileEntry]) -> Result<Vec<u8>> {
-    let mut buf = Vec::new();
-    {
-        let mut writer = zip::ZipWriter::new(Cursor::new(&mut buf));
-        for entry in entries {
-            let mode = if entry.executable { 0o755 } else { 0o644 };
-            writer
-                .start_file(
-                    entry.path.clone(),
-                    zip::write::SimpleFileOptions::default()
-                        .compression_method(zip::CompressionMethod::Deflated)
-                        .unix_permissions(mode),
-                )
-                .map_err(|e| Error::internal(format!("技能包写入条目失败: {}", e)))?;
-            writer
-                .write_all(&entry.bytes)
-                .map_err(|e| Error::internal(format!("技能包写入内容失败: {}", e)))?;
-        }
-        writer
-            .finish()
-            .map_err(|e| Error::internal(format!("技能包封口失败: {}", e)))?;
-    }
-    Ok(buf)
 }
 
 /// 组装整体压缩包：主文件 + 各技能包

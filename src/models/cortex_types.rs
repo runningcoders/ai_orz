@@ -155,6 +155,17 @@ pub struct ToolDescriptor {
 /// 不需要 CoreTool 的执行逻辑（执行由上层 awakening 负责）。
 impl From<&crate::models::tool::Tool> for ToolDescriptor {
     fn from(tool: &crate::models::tool::Tool) -> Self {
+        // 内置工具的 schema 在注册时已收敛过，这里再跑一次是幂等的；
+        // 真正需要它的是 HTTP 自建工具与外部 MCP 同步的 inputSchema（不可信输入）。
+        let mut parameters = tool
+            .po
+            .parameters_schema
+            .clone()
+            .map(common::llm_schema::to_llm_schema)
+            .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}}));
+        // 通用调用附注：所有工具（内置 / handler / HTTP / shell / MCP）出站前
+        // 都在这里过一道，故只此一处即可覆盖全部来源。
+        common::llm_schema::inject_call_intent(&mut parameters);
         ToolDescriptor {
             // function.name 必须落在跨 provider LCD（^[a-zA-Z0-9_-]{1,128}$）内：
             // DB 的 name 列是**人类显示名**（"List Tool Tags" 带空格），MCP 工具名
@@ -163,14 +174,7 @@ impl From<&crate::models::tool::Tool> for ToolDescriptor {
             // 回站匹配（think_loop）用同一函数，进出对称。
             name: common::llm_schema::to_wire_tool_name(&tool.po.id),
             description: tool.po.description.clone(),
-            // 内置工具的 schema 在注册时已收敛过，这里再跑一次是幂等的；
-            // 真正需要它的是 HTTP 自建工具与外部 MCP 同步的 inputSchema（不可信输入）。
-            parameters: tool
-                .po
-                .parameters_schema
-                .clone()
-                .map(common::llm_schema::to_llm_schema)
-                .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}})),
+            parameters,
         }
     }
 }

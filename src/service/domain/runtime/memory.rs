@@ -74,7 +74,7 @@ impl RuntimeDomainImpl {
                 &ascending,
                 Some(anchor),
                 budget_tokens,
-                crate::service::domain::runtime::compaction::estimate_tokens,
+                crate::pkg::tokens::estimate_tokens,
             );
             if !plan.needs_more() {
                 break;

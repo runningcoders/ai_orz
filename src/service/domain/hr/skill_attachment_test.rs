@@ -390,7 +390,7 @@ async fn import_rejects_shell_metacharacters_in_target_path(pool: SqlitePool) {
 /// 扩展名推断也救不了无扩展名的可执行件。
 #[sqlx::test]
 async fn zip_package_import_restores_binary_and_exec_bit(pool: SqlitePool) {
-    use crate::service::domain::system::seed::bundle::{self, SkillFileEntry};
+    use crate::pkg::skill_package::{SkillFileEntry, pack_skill_zip};
 
     let (domain, ctx, _temp) = init_test_env(pool.clone());
 
@@ -402,7 +402,7 @@ async fn zip_package_import_restores_binary_and_exec_bit(pool: SqlitePool) {
         .unwrap();
 
     let binary: Vec<u8> = vec![0x00, 0xFF, 0xFE, 0x01, 0x80, 0x7F];
-    let package = bundle::pack_skill_zip(&[
+    let package = pack_skill_zip(&[
         SkillFileEntry {
             path: SKILL_MAIN_FILE.to_string(),
             bytes: "# 引导\n".as_bytes().to_vec(),

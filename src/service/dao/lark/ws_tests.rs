@@ -294,3 +294,57 @@ fn terminal_reason_is_sticky_and_clearable() {
     }
     assert!(adapter.terminal_reason().is_none());
 }
+
+/// 表情回应等非订阅事件：只探针 header 即归类 Ignored，不因缺 `sender` 误报坏帧
+#[test]
+fn reaction_event_classified_as_ignored() {
+    let body = br#"{"schema":"2.0","header":{"event_id":"8d93816cc93afd21a62f8f076f85f1ed","token":"","create_time":"1795001004597","event_type":"im.message.reaction.created_v1","tenant_key":"736588c9260f175d","app_id":"cli_aa30e16782219cdc"},"event":{"action_time":"1795001004597","app_id":"cli_aa30e16782219cdc","is_agent":false,"message_id":"om_x100b60ece47a38a0ceaf14e91d31ab3","operator_type":"app","reaction_type":{"emoji_type":"SALUTE"}}}"#;
+    match parse_event_payload(body).expect("header probe should succeed") {
+        EventPayload::Ignored {
+            event_id,
+            event_type,
+        } => {
+            assert_eq!(event_id, "8d93816cc93afd21a62f8f076f85f1ed");
+            assert_eq!(event_type, "im.message.reaction.created_v1");
+        }
+        EventPayload::Message(_) => panic!("reaction event must not be parsed as a message"),
+    }
+}
+
+/// 订阅事件仍完整解析（header 探针不能放过真实消息）
+#[test]
+fn subscribed_message_event_fully_parsed() {
+    let body = br#"{"schema":"2.0","header":{"event_id":"evt-1","event_type":"im.message.receive_v1","create_time":"1795001004597"},"event":{"sender":{"sender_id":{"open_id":"ou_1","user_id":null,"union_id":null},"sender_type":"user"},"message":{"message_id":"om_1","create_time":"1795001004597","chat_id":"oc_1","chat_type":"p2p","message_type":"text","content":"{\"text\":\"hi\"}"}}}"#;
+    match parse_event_payload(body).expect("message event should parse") {
+        EventPayload::Message(event) => {
+            assert_eq!(event.header.event_type, EVENT_TYPE_MESSAGE);
+            assert_eq!(event.sender_open_id(), "ou_1");
+            assert_eq!(event.parse_text().as_deref(), Some("hi"));
+        }
+        EventPayload::Ignored { .. } => panic!("subscribed event must not be ignored"),
+    }
+}
+
+/// 订阅事件 body 真损坏（缺 sender）仍报错：探针不能放宽坏帧门禁
+#[test]
+fn malformed_subscribed_event_still_errors() {
+    let body = br#"{"header":{"event_id":"evt-2","event_type":"im.message.receive_v1","create_time":"1"},"event":{"message":{"message_id":"om_2","create_time":"1"}}}"#;
+    let err = parse_event_payload(body).expect_err("missing sender must fail");
+    assert!(
+        err.to_string().contains("sender"),
+        "unexpected error: {err}"
+    );
+}
+
+/// 无 header 的垃圾载荷仍报错（保持原坏帧不 ACK + 留痕语义）
+#[test]
+fn payload_without_header_errors() {
+    assert!(parse_event_payload(br#"{"foo":1}"#).is_err());
+}
+
+/// event_type 为空串的畸形帧不能被当作「合法但未订阅」ACK
+#[test]
+fn empty_event_type_errors() {
+    let body = br#"{"header":{"event_id":"evt-3","event_type":""},"event":{}}"#;
+    assert!(parse_event_payload(body).is_err());
+}

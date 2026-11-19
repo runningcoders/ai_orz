@@ -35,6 +35,66 @@ const PATH_ADD_REACTION: &str = "/open-apis/im/v1/messages/{message_id}/reaction
 const PATH_MESSAGE_RESOURCE: &str = "/open-apis/im/v1/messages/{message_id}/resources/{file_key}";
 /// 应用机器人信息（返回顶层 `bot.open_id`，不套 `data`）
 const PATH_BOT_INFO: &str = "/open-apis/bot/v3/info";
+/// 上传图片（`?image_type=message`）：multipart 字段名 `image`，返回 `data.image_key`
+const PATH_UPLOAD_IMAGE: &str = "/open-apis/im/v1/images";
+/// 上传文件：multipart 字段名 `file`/`file_name`/`file_type`，返回 `data.file_key`
+const PATH_UPLOAD_FILE: &str = "/open-apis/im/v1/files";
+
+/// 飞书图片消息 content（与 text 的 `{"text":...}` 平行）
+fn image_message_content(image_key: &str) -> String {
+    serde_json::json!({ "image_key": image_key }).to_string()
+}
+
+/// 飞书文件消息 content（与 text / image 平行）
+fn file_message_content(file_key: &str) -> String {
+    serde_json::json!({ "file_key": file_key }).to_string()
+}
+
+/// 飞书视频消息 content（`msg_type:media`）
+///
+/// `image_key` 为可选封面（默认空 = 无封面），这里不生成封面缩略图，省略即可。
+fn media_message_content(file_key: &str) -> String {
+    serde_json::json!({ "file_key": file_key }).to_string()
+}
+
+/// 由文件名推断飞书 `file_type`（飞书用扩展名语义，`stream` 为未知兜底）。
+///
+/// 飞书上传文件接口按 `file_type` 决定预览形态；传错会被当作未知文件处理。
+/// 常见办公文档按扩展名，视频必须 `mp4`（`msg_type:media` 要求），未在内的
+/// 一律 `stream`（可下载，客户端按原名识别）。
+fn lark_file_type(name: &str) -> &'static str {
+    let ext = name
+        .rsplit_once('.')
+        .map(|(_, e)| e.trim().to_ascii_lowercase())
+        .unwrap_or_default();
+    match ext.as_str() {
+        "pdf" => "pdf",
+        "doc" | "docx" => "doc",
+        // 飞书枚举只有 xls（无 xlsx/csv），xlsx/csv 归一到 xls，否则接口 234001 拒收
+        "xls" | "xlsx" | "csv" => "xls",
+        "ppt" | "pptx" => "ppt",
+        // 视频必须用 mp4 上传，否则 msg_type:media 拒收
+        "mp4" => "mp4",
+        _ => "stream",
+    }
+}
+
+/// multipart 文件名清洗：避免引号 / 反斜杠 / 换行破坏 Content-Disposition
+fn safe_upload_filename(name: &str) -> String {
+    let mut cleaned = String::with_capacity(name.len());
+    for c in name.chars() {
+        if c == '"' || c == '\\' || c == '\r' || c == '\n' {
+            cleaned.push('_');
+        } else {
+            cleaned.push(c);
+        }
+    }
+    if cleaned.trim().is_empty() {
+        "image".to_string()
+    } else {
+        cleaned
+    }
+}
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -226,6 +286,438 @@ impl LarkDaoHttpImpl {
         Ok(Some(data.message_id))
     }
 
+    /// 上传图片到飞书，返回 `image_key`（供 `msg_type:image` 使用）
+    ///
+    /// `image_type=message` 走消息图片（非头像），单张大小上限由上游
+    /// `extract_outbound_images` 约束；业务码非 0 / 空 image_key 均视为失败，
+    /// 由调用方降级为文本占位。
+    pub async fn upload_image(
+        &self,
+        token: &str,
+        name: &str,
+        mime_type: &str,
+        bytes: &[u8],
+    ) -> Result<String> {
+        #[derive(Default, Deserialize)]
+        struct UploadImageData {
+            #[serde(default)]
+            image_key: String,
+        }
+
+        let part = reqwest::multipart::Part::bytes(bytes.to_vec())
+            .file_name(safe_upload_filename(name))
+            .mime_str(mime_type)
+            .map_err(|e| {
+                err!(
+                    InvalidRequest,
+                    "飞书图片 MIME 类型无效: mime={} err={}",
+                    mime_type,
+                    e
+                )
+            })?;
+        let form = reqwest::multipart::Form::new().part("image", part);
+        let url = format!("{}{}?image_type=message", API_BASE, PATH_UPLOAD_IMAGE);
+        let resp = self
+            .http
+            .post(&url)
+            .bearer_auth(token)
+            .multipart(form)
+            .send()
+            .await
+            .map_err(|e| from_reqwest("upload_image", e))?
+            .json::<LarkResponse<UploadImageData>>()
+            .await
+            .map_err(|e| from_reqwest("upload_image", e))?;
+
+        let data = resp.check("upload_image")?;
+        if data.image_key.is_empty() {
+            return Err(err!(
+                ThirdPartyError,
+                "lark upload_image succeeded without image_key"
+            ));
+        }
+        Ok(data.image_key)
+    }
+
+    /// 上传文件到飞书，返回 `file_key`（供 `msg_type:file` 使用）
+    ///
+    /// `file_type` 由 [`lark_file_type`] 按扩展名推断（未知用 `stream`）。
+    pub async fn upload_file(&self, token: &str, name: &str, bytes: &[u8]) -> Result<String> {
+        let file_type = lark_file_type(name);
+        self.upload_file_as(token, name, bytes, file_type, "upload_file")
+            .await
+    }
+
+    /// 上传视频到飞书（`file_type=mp4`，供 `msg_type:media` 使用）
+    ///
+    /// 不依赖文件名后缀：`.mov` / `.mkv` 等视频统一按 mp4 上传，否则 media 消息拒收。
+    pub async fn upload_video(&self, token: &str, name: &str, bytes: &[u8]) -> Result<String> {
+        self.upload_file_as(token, name, bytes, "mp4", "upload_video")
+            .await
+    }
+
+    /// 按指定 `file_type` 上传文件的通用实现
+    async fn upload_file_as(
+        &self,
+        token: &str,
+        name: &str,
+        bytes: &[u8],
+        file_type: &'static str,
+        label: &'static str,
+    ) -> Result<String> {
+        #[derive(Default, Deserialize)]
+        struct UploadFileData {
+            #[serde(default)]
+            file_key: String,
+        }
+
+        let part =
+            reqwest::multipart::Part::bytes(bytes.to_vec()).file_name(safe_upload_filename(name));
+        let form = reqwest::multipart::Form::new()
+            .part("file", part)
+            .text("file_name", safe_upload_filename(name))
+            .text("file_type", file_type);
+        let url = format!("{API_BASE}{PATH_UPLOAD_FILE}");
+        let resp = self
+            .http
+            .post(&url)
+            .bearer_auth(token)
+            .multipart(form)
+            .send()
+            .await
+            .map_err(|e| from_reqwest(label, e))?
+            .json::<LarkResponse<UploadFileData>>()
+            .await
+            .map_err(|e| from_reqwest(label, e))?;
+
+        let data = resp.check(label)?;
+        if data.file_key.is_empty() {
+            return Err(err!(
+                ThirdPartyError,
+                "lark upload_file succeeded without file_key"
+            ));
+        }
+        Ok(data.file_key)
+    }
+
+    /// 按 `msg_type` + `content` 发送媒体消息（image / file / media 通用发送口）
+    ///
+    /// 这是所有非文本消息的唯一发送实现：调用方按附件的媒体类型算出
+    /// `msg_type` 与 content JSON，本方法只管发。新增媒体类型无需再加发送方法。
+    async fn send_media_message(
+        &self,
+        token: &str,
+        receive_id: &str,
+        receive_id_type: &str,
+        msg_type: &'static str,
+        content: String,
+        label: &'static str,
+    ) -> Result<Option<String>> {
+        #[derive(Serialize)]
+        struct SendMessageReq<'a> {
+            receive_id: &'a str,
+            msg_type: &'static str,
+            content: String,
+        }
+        #[derive(Default, Deserialize)]
+        struct SendMessageData {
+            #[serde(default)]
+            message_id: String,
+        }
+
+        let url = format!(
+            "{}{}?receive_id_type={}",
+            API_BASE, PATH_SEND_MESSAGE, receive_id_type
+        );
+        let resp = self
+            .http
+            .post(&url)
+            .bearer_auth(token)
+            .json(&SendMessageReq {
+                receive_id,
+                msg_type,
+                content,
+            })
+            .send()
+            .await
+            .map_err(|e| from_reqwest(label, e))?
+            .json::<LarkResponse<SendMessageData>>()
+            .await
+            .map_err(|e| from_reqwest(label, e))?;
+
+        let data = resp.check(label)?;
+        if data.message_id.is_empty() {
+            log_warn!("lark {label} succeeded without message_id");
+            return Ok(None);
+        }
+        Ok(Some(data.message_id))
+    }
+
+    /// 按 `msg_type` + `content` 以引用回复形式发送媒体消息（与发送口成对）
+    async fn reply_media_message(
+        &self,
+        token: &str,
+        reply_to_message_id: &str,
+        msg_type: &'static str,
+        content: String,
+        reply_in_thread: bool,
+        label: &'static str,
+    ) -> Result<Option<String>> {
+        #[derive(Serialize)]
+        struct ReplyMessageReq {
+            content: String,
+            msg_type: &'static str,
+            reply_in_thread: bool,
+        }
+        #[derive(Default, Deserialize)]
+        struct ReplyMessageData {
+            #[serde(default)]
+            message_id: String,
+        }
+
+        let url = format!(
+            "{}{}",
+            API_BASE,
+            PATH_REPLY_MESSAGE.replace("{message_id}", reply_to_message_id)
+        );
+        let resp = self
+            .http
+            .post(&url)
+            .bearer_auth(token)
+            .json(&ReplyMessageReq {
+                content,
+                msg_type,
+                reply_in_thread,
+            })
+            .send()
+            .await
+            .map_err(|e| from_reqwest(label, e))?
+            .json::<LarkResponse<ReplyMessageData>>()
+            .await
+            .map_err(|e| from_reqwest(label, e))?;
+
+        let data = resp.check(label)?;
+        if data.message_id.is_empty() {
+            log_warn!("lark {label} succeeded without message_id");
+            return Ok(None);
+        }
+        Ok(Some(data.message_id))
+    }
+
+    /// 发送图片消息到指定接收方（`msg_type:image`）
+    pub async fn send_image_message(
+        &self,
+        token: &str,
+        receive_id: &str,
+        receive_id_type: &str,
+        image_key: &str,
+    ) -> Result<Option<String>> {
+        self.send_media_message(
+            token,
+            receive_id,
+            receive_id_type,
+            "image",
+            image_message_content(image_key),
+            "send_image",
+        )
+        .await
+    }
+
+    /// 以引用回复形式发送图片消息
+    pub async fn reply_image_message(
+        &self,
+        token: &str,
+        reply_to_message_id: &str,
+        image_key: &str,
+        reply_in_thread: bool,
+    ) -> Result<Option<String>> {
+        self.reply_media_message(
+            token,
+            reply_to_message_id,
+            "image",
+            image_message_content(image_key),
+            reply_in_thread,
+            "reply_image",
+        )
+        .await
+    }
+
+    /// 发送文件消息到指定接收方（`msg_type:file`）
+    pub async fn send_file_message(
+        &self,
+        token: &str,
+        receive_id: &str,
+        receive_id_type: &str,
+        file_key: &str,
+    ) -> Result<Option<String>> {
+        self.send_media_message(
+            token,
+            receive_id,
+            receive_id_type,
+            "file",
+            file_message_content(file_key),
+            "send_file",
+        )
+        .await
+    }
+
+    /// 以引用回复形式发送文件消息
+    pub async fn reply_file_message(
+        &self,
+        token: &str,
+        reply_to_message_id: &str,
+        file_key: &str,
+        reply_in_thread: bool,
+    ) -> Result<Option<String>> {
+        self.reply_media_message(
+            token,
+            reply_to_message_id,
+            "file",
+            file_message_content(file_key),
+            reply_in_thread,
+            "reply_file",
+        )
+        .await
+    }
+
+    /// 发送视频消息到指定接收方（`msg_type:media`，无封面）
+    pub async fn send_video_message(
+        &self,
+        token: &str,
+        receive_id: &str,
+        receive_id_type: &str,
+        file_key: &str,
+    ) -> Result<Option<String>> {
+        self.send_media_message(
+            token,
+            receive_id,
+            receive_id_type,
+            "media",
+            media_message_content(file_key),
+            "send_media",
+        )
+        .await
+    }
+
+    /// 以引用回复形式发送视频消息（`msg_type:media`）
+    pub async fn reply_video_message(
+        &self,
+        token: &str,
+        reply_to_message_id: &str,
+        file_key: &str,
+        reply_in_thread: bool,
+    ) -> Result<Option<String>> {
+        self.reply_media_message(
+            token,
+            reply_to_message_id,
+            "media",
+            media_message_content(file_key),
+            reply_in_thread,
+            "reply_media",
+        )
+        .await
+    }
+
+    /// 逐条上传并发送附件，按统一媒体类型分派：
+    /// - `Image` → `upload_image` + `msg_type:image`
+    /// - `Video` → `upload_video`(file_type=mp4) + `msg_type:media`
+    /// - `File` / `Audio` → `upload_file` + `msg_type:file`（音视频转码能力缺失时保底）
+    ///
+    /// 单条失败仅告警跳过，返回成功条数。文本推送已经成功，附件属于附加能力：
+    /// 任何一条的上传/发送失败都不改变 `push` 的返回值，也不影响 `external_key` 回写。
+    async fn push_attachments(
+        &self,
+        ctx: &RequestContext,
+        token: &str,
+        reply: Option<&LarkReply>,
+        receive: Option<(&str, &str)>,
+        attachments: &[crate::models::outbound_media::OutboundAttachment],
+    ) -> usize {
+        use crate::models::outbound_media::OutboundMediaKind;
+
+        let mut sent = 0;
+        for attachment in attachments {
+            let kind = attachment.kind();
+            // 图片走 images 端点；视频强制 mp4 上传；其余走 files 端点
+            let key = if kind == OutboundMediaKind::Image {
+                self.upload_image(
+                    token,
+                    &attachment.name,
+                    &attachment.mime_type,
+                    &attachment.bytes,
+                )
+                .await
+            } else if kind == OutboundMediaKind::Video {
+                self.upload_video(token, &attachment.name, &attachment.bytes)
+                    .await
+            } else {
+                self.upload_file(token, &attachment.name, &attachment.bytes)
+                    .await
+            };
+            let key = match key {
+                Ok(key) => key,
+                Err(e) => {
+                    log_warn!(
+                        ctx,
+                        "lark_push_attachments",
+                        "附件上传失败，跳过: name={} size={} kind={:?} err={}",
+                        attachment.name,
+                        attachment.bytes.len(),
+                        kind,
+                        e
+                    );
+                    continue;
+                }
+            };
+            let result = match (kind, reply) {
+                (OutboundMediaKind::Image, Some(r)) => {
+                    self.reply_image_message(token, &r.message_id, &key, r.in_thread)
+                        .await
+                }
+                (OutboundMediaKind::Video, Some(r)) => {
+                    self.reply_video_message(token, &r.message_id, &key, r.in_thread)
+                        .await
+                }
+                (_, Some(r)) => {
+                    self.reply_file_message(token, &r.message_id, &key, r.in_thread)
+                        .await
+                }
+                (_, None) => match receive {
+                    Some((receive_id, receive_id_type)) => match kind {
+                        OutboundMediaKind::Image => {
+                            self.send_image_message(token, receive_id, receive_id_type, &key)
+                                .await
+                        }
+                        OutboundMediaKind::Video => {
+                            self.send_video_message(token, receive_id, receive_id_type, &key)
+                                .await
+                        }
+                        _ => {
+                            self.send_file_message(token, receive_id, receive_id_type, &key)
+                                .await
+                        }
+                    },
+                    None => {
+                        log_warn!(ctx, "lark_push_attachments", "附件发送缺少接收方，跳过");
+                        continue;
+                    }
+                },
+            };
+            match result {
+                Ok(_) => sent += 1,
+                Err(e) => log_warn!(
+                    ctx,
+                    "lark_push_attachments",
+                    "附件消息发送失败: name={} kind={:?} err={}",
+                    attachment.name,
+                    kind,
+                    e
+                ),
+            }
+        }
+        sent
+    }
+
     /// HTTP client 引用（供 ws 模块使用）
     pub fn http_client(&self) -> &reqwest::Client {
         &self.http
@@ -331,6 +823,7 @@ impl LarkDao for LarkDaoHttpImpl {
         channel: &MessageChannel,
         credentials: &LarkAppCredentials,
         reply: Option<&LarkReply>,
+        attachments: &[crate::models::outbound_media::OutboundAttachment],
     ) -> Result<Option<String>> {
         let config = channel.config();
         let content = &message.po.content;
@@ -344,34 +837,59 @@ impl LarkDao for LarkDaoHttpImpl {
         // 有回复参数走回复端点（飞书按父消息定位会话，话题消息以话题形式回复）；
         // 无回复参数时：消息带会话 ID（群聊/私聊均有）则按会话直发，
         // 否则回退私聊 open_id。
+        // 无回复参数时解析接收方（群聊 chat_id 优先，私聊 open_id 兜底）；
+        // 有回复参数时走回复端点，无需接收方。图片发送复用同一目标。
+        let receive = if reply.is_none() {
+            Some(
+                match message.po.chat_id.as_deref().filter(|s| !s.is_empty()) {
+                    Some(chat_id) => (chat_id, "chat_id"),
+                    None => {
+                        let open_id = config
+                            .lark_open_id
+                            .as_deref()
+                            .filter(|s| !s.is_empty())
+                            .ok_or_else(|| {
+                                err!(
+                                    InvalidRequest,
+                                    "飞书渠道缺少 lark_open_id 配置 channel_id={}",
+                                    channel.po.id
+                                )
+                            })?;
+                        (open_id, "open_id")
+                    }
+                },
+            )
+        } else {
+            None
+        };
         let message_id = match reply {
             Some(r) => {
                 self.reply_text_message(&token, &r.message_id, content, r.in_thread)
                     .await?
             }
             None => {
-                let (receive_id, receive_id_type) =
-                    match message.po.chat_id.as_deref().filter(|s| !s.is_empty()) {
-                        Some(chat_id) => (chat_id, "chat_id"),
-                        None => {
-                            let open_id = config
-                                .lark_open_id
-                                .as_deref()
-                                .filter(|s| !s.is_empty())
-                                .ok_or_else(|| {
-                                    err!(
-                                        InvalidRequest,
-                                        "飞书渠道缺少 lark_open_id 配置 channel_id={}",
-                                        channel.po.id
-                                    )
-                                })?;
-                            (open_id, "open_id")
-                        }
-                    };
+                let (receive_id, receive_id_type) = receive.expect("reply=None 时已解析");
                 self.send_text_message(&token, receive_id, receive_id_type, content)
                     .await?
             }
         };
+
+        // 附件逐条上传 + 独立发送（图片 image / 其余 file）；单条失败仅告警，
+        // 不影响文本推送结果和外部键回写。
+        if !attachments.is_empty() {
+            let sent = self
+                .push_attachments(&ctx, &token, reply, receive, attachments)
+                .await;
+            log_info!(
+                &ctx,
+                "lark_push_attachments",
+                "channel_id={} total={} sent={}",
+                channel.po.id,
+                attachments.len(),
+                sent
+            );
+        }
+
         log_info!(
             &ctx,
             "lark_push",
@@ -687,6 +1205,47 @@ fn _ensure_event_linked(_: &LarkMessageEvent) {}
 mod tests {
     use super::*;
     use crate::service::dao::lark::LarkDao;
+
+    /// 图片 content 与文件名清洗（纯函数，无网络）
+    #[test]
+    fn image_helpers_wrap_key_and_sanitize_filename() {
+        assert_eq!(
+            image_message_content("img_v2_abc"),
+            r#"{"image_key":"img_v2_abc"}"#
+        );
+        assert_eq!(safe_upload_filename("截图.png"), "截图.png");
+        assert_eq!(safe_upload_filename("a\"b\\c\r\nd.png"), "a_b_c__d.png");
+        assert_eq!(safe_upload_filename("  "), "image");
+    }
+
+    /// 文件 content 与 file_type 按扩展名推断（未知一律 stream 兜底）
+    #[test]
+    fn file_helpers_wrap_key_and_map_file_type() {
+        assert_eq!(
+            file_message_content("file_v2_abc"),
+            r#"{"file_key":"file_v2_abc"}"#
+        );
+        assert_eq!(lark_file_type("季度报告.PDF"), "pdf");
+        assert_eq!(lark_file_type("合同.docx"), "doc");
+        assert_eq!(lark_file_type("名单.XLSX"), "xls");
+        assert_eq!(lark_file_type("汇总.csv"), "xls");
+        assert_eq!(lark_file_type("老表.xls"), "xls");
+        assert_eq!(lark_file_type("方案.pptx"), "ppt");
+        // 视频必须 mp4 上传，否则 msg_type:media 拒收
+        assert_eq!(lark_file_type("片段.MP4"), "mp4");
+        assert_eq!(lark_file_type("demo.mp4"), "mp4");
+        assert_eq!(lark_file_type("data.json"), "stream");
+        assert_eq!(lark_file_type("无扩展名"), "stream");
+    }
+
+    /// 视频 content（`msg_type:media`）：只带 file_key，封面可选故省略
+    #[test]
+    fn media_helpers_wrap_key_without_cover() {
+        assert_eq!(
+            media_message_content("file_v2_video"),
+            r#"{"file_key":"file_v2_video"}"#
+        );
+    }
 
     /// per-app token 缓存隔离：不同 app_id 各自独立条目
     #[tokio::test]

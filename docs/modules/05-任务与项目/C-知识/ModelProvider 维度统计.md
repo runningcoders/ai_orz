@@ -8,7 +8,7 @@
 - [src/service/dal/model_provider.rs](src/service/dal/model_provider.rs)
 - [common/src/api/model_provider.rs](common/src/api/model_provider.rs)
 - [src/handlers/finance/model_provider/mod.rs](src/handlers/finance/model_provider/mod.rs)
-- [src/consumer/aop_stats_collector.rs](src/consumer/aop_stats_collector.rs)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 </cite>
 
 ## 目录
@@ -39,7 +39,7 @@
 - DAL 层：src/service/dal/model_provider.rs 提供 get_stats 封装，统一组装统计查询
 - API 契约：common/src/api/model_provider.rs 定义 GetModelProviderRequest 中的 with_model_call_stats 等参数
 - Handler 路由：src/handlers/finance/model_provider/mod.rs 暴露相关 HTTP 方法入口
-- 实时统计：src/consumer/aop_stats_collector.rs 提供进程内实时概览/分布/时序（非持久化）
+- 实时统计：src/pkg/stats/runtime/aop.rs 提供进程内实时概览/分布/时序（非持久化）
 
 ```mermaid
 graph TB
@@ -54,7 +54,7 @@ E["AOP 实时统计<br/>AopStatsCollector"] -.->|仅内存快照| F["系统监�
 - [src/service/dal/model_provider.rs:98-104](src/service/dal/model_provider.rs#L98-L104)
 - [src/pkg/stats/collector.rs:319-365](src/pkg/stats/collector.rs#L319-L365)
 - [src/pkg/stats/collector.rs:451-527](src/pkg/stats/collector.rs#L451-L527)
-- [src/consumer/aop_stats_collector.rs:74-195](src/consumer/aop_stats_collector.rs#L74-L195)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 
 章节来源
 - [src/pkg/stats/model_call.rs:12-39](src/pkg/stats/model_call.rs#L12-L39)
@@ -75,7 +75,7 @@ E["AOP 实时统计<br/>AopStatsCollector"] -.->|仅内存快照| F["系统监�
 - [src/pkg/stats/collector.rs:319-365](src/pkg/stats/collector.rs#L319-L365)
 - [src/service/dal/model_provider.rs:98-104](src/service/dal/model_provider.rs#L98-L104)
 - [common/src/models/stats.rs:17-28](common/src/models/stats.rs#L17-L28)
-- [src/consumer/aop_stats_collector.rs:74-195](src/consumer/aop_stats_collector.rs#L74-L195)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 
 ## 架构总览
 下图展示从 HTTP 请求到统计落库与查询的整体流程，以及实时统计的并行路径。
@@ -238,10 +238,10 @@ class AopStatsCollector {
 ```
 
 图表来源
-- [src/consumer/aop_stats_collector.rs:49-195](src/consumer/aop_stats_collector.rs#L49-L195)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 
 章节来源
-- [src/consumer/aop_stats_collector.rs:74-195](src/consumer/aop_stats_collector.rs#L74-L195)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 
 ## 依赖关系分析
 - 事件与表：ModelCallEvent → ModelCallStatTable → model_call_events
@@ -262,12 +262,12 @@ AOP["AOP 实时统计"] --> Mon["监控面板"]
 图表来源
 - [src/pkg/stats/model_call.rs:110-219](src/pkg/stats/model_call.rs#L110-L219)
 - [src/pkg/stats/collector.rs:319-365](src/pkg/stats/collector.rs#L319-L365)
-- [src/consumer/aop_stats_collector.rs:74-195](src/consumer/aop_stats_collector.rs#L74-L195)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 
 章节来源
 - [src/pkg/stats/model_call.rs:110-219](src/pkg/stats/model_call.rs#L110-L219)
 - [src/pkg/stats/collector.rs:319-365](src/pkg/stats/collector.rs#L319-L365)
-- [src/consumer/aop_stats_collector.rs:74-195](src/consumer/aop_stats_collector.rs#L74-L195)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 
 ## 性能与成本考量
 - 写入性能

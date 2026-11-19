@@ -175,3 +175,71 @@ async fn test_execute_dedup_allows_retry_after_failed() {
         crate::pkg::process::registry().remove(pid as u32);
     }
 }
+
+/// 出站 schema 必须显式声明 `_intent`：12 个内置工具带 `additionalProperties: false`，
+/// 未声明的字段模型不敢填（填了也会被校验器拒），只靠提示词无法稳定生效。
+#[test]
+fn test_descriptor_declares_call_intent_property() {
+    let tool = make_shell_tool();
+    let descriptor = crate::models::cortex_types::ToolDescriptor::from(&tool);
+    let props = descriptor.parameters["properties"]
+        .as_object()
+        .expect("parameters 必须是带 properties 的对象");
+    assert!(
+        props.contains_key(common::llm_schema::CALL_INTENT_KEY),
+        "每个工具的描述符都要能承载调用附注"
+    );
+    assert_eq!(
+        descriptor.parameters["additionalProperties"],
+        serde_json::json!(false),
+        "注入不得放宽原有约束"
+    );
+    // 业务参数不受影响
+    assert!(props.contains_key("command"));
+}
+
+/// 附注必须在调用工具前被摘除：工具只能看到业务参数。
+///
+/// shell_exec 的 schema 是 `additionalProperties: false` 且执行前先按 schema 校验，
+/// 所以「能跑通」本身就是「附注没漏给工具」的证明（漏了会报 unknown tool argument）。
+#[cfg(unix)]
+#[tokio::test]
+async fn test_execute_strips_call_intent_before_calling_tool() {
+    setup();
+    let dao = new();
+    let tool = make_shell_tool();
+    let args = serde_json::json!({
+        "command": "echo intent-stripped",
+        common::llm_schema::CALL_INTENT_KEY: "  验证附注不进入业务参数  "
+    });
+
+    let (_output, entry) = dao.execute(base_ctx(), &tool, args).await.unwrap();
+
+    assert_eq!(
+        entry.metadata.get("intent").and_then(|v| v.as_str()),
+        Some("验证附注不进入业务参数"),
+        "附注（去空白）要落到 metadata.intent"
+    );
+    assert!(
+        entry
+            .input
+            .get(common::llm_schema::CALL_INTENT_KEY)
+            .is_none(),
+        "记录里的入参只能是业务参数"
+    );
+    // caller_location 仍在：附注是同层追加，不能挤掉既有键
+    assert!(entry.metadata.get("caller_location").is_some());
+}
+
+/// 模型没写附注时不得产生任何痕迹（不能为了这个字段改变既有行为）
+#[cfg(unix)]
+#[tokio::test]
+async fn test_execute_without_intent_leaves_metadata_untouched() {
+    setup();
+    let dao = new();
+    let tool = make_shell_tool();
+    let args = serde_json::json!({"command": "echo no-intent"});
+
+    let (_output, entry) = dao.execute(base_ctx(), &tool, args).await.unwrap();
+    assert!(entry.metadata.get("intent").is_none());
+}

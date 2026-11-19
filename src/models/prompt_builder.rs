@@ -24,6 +24,7 @@
 
 use crate::models::agent::Agent;
 use crate::models::cortex_types::{ChatMessage, ImagePart};
+use crate::models::intent_analysis::IntentAnalysis;
 use crate::models::memory::{Memory, MemoryIndexPlan};
 use crate::models::message::Message;
 use crate::models::skill::SkillPo;
@@ -379,23 +380,14 @@ pub trait PromptBuilder: Send + Sync {
     ///
     /// build() 时会渲染成结构化的"供你参考"区块，放在【当前消息】之前。
     /// 仅 DefaultPromptBuilder 有完整渲染；其他 builder 默认忽略此注入（空函数体）。
-    fn intent_analysis(
-        &mut self,
-        _analysis: &crate::service::domain::runtime::awakening::IntentAnalysis,
-    ) {
-    }
+    fn intent_analysis(&mut self, _analysis: &IntentAnalysis) {}
 
     /// 注入意图增量修订入参（上次结论 + 新增输入）
     ///
     /// 仅 DefaultPromptBuilder 在意图分析 Prompt 的**尾部区块**渲染；
     /// System 段与公共上下文段保持不变，保证前缀缓存命中。
     /// 默认实现为空（其他场景不产生修订）。
-    fn intent_revision(
-        &mut self,
-        _previous: &crate::service::domain::runtime::awakening::IntentAnalysis,
-        _inputs: &[String],
-    ) {
-    }
+    fn intent_revision(&mut self, _previous: &IntentAnalysis, _inputs: &[String]) {}
 
     /// 注入「对话过程中追加的输入」（尾部转向消息）
     ///

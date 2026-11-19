@@ -81,11 +81,11 @@
 //! 不重复判。这样「算出了但没生效」是可观测的，不是静默失效。
 
 use super::cerebellum_context as context;
-use super::compaction::{estimate_tokens, truncate_to_tokens};
 use crate::models::brain::Brain;
 use crate::models::cortex_types::ChatMessage;
 use crate::pkg::RequestContext;
 use crate::pkg::policy::{Metrics, Policy, ScorePolicy};
+use crate::pkg::tokens::{estimate_tokens, truncate_to_tokens};
 use crate::service::dal::brain::{BrainDal, dal};
 use common::enums::{ThinkingIntensity, ThinkingScene};
 use std::sync::Arc;

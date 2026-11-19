@@ -34,8 +34,8 @@ use crate::models::memory::{
 use crate::models::message::Message;
 use crate::models::skill::SkillPo;
 use crate::models::user::UserPo;
-use crate::service::domain::runtime::compaction::{estimate_tokens, truncate_to_tokens};
-use crate::service::domain::runtime::text_budget::{self, tokens_of};
+use crate::pkg::text_budget::{self, tokens_of};
+use crate::pkg::tokens::{estimate_tokens, truncate_to_tokens};
 // ==================== Prompt Builder（Local Agent 默认实现） ====================
 
 /// neural tag 常量：标记为神经级别的工具/技能。
@@ -143,7 +143,7 @@ pub struct DefaultPromptBuilder {
     /// 工具失败统计：(工具名称, 失败次数)
     tool_failures: Vec<(String, u64)>,
     /// 意图分析结果（IntentAnalyze 阶段产出），供 build() 时渲染参考区块使用
-    pub intent_analysis: Option<crate::service::domain::runtime::awakening::IntentAnalysis>,
+    pub intent_analysis: Option<crate::models::intent_analysis::IntentAnalysis>,
     /// 检索命中知识摘要行（仅 awaken 场景：思考图 retrieve 节点产出，重点前置）
     retrieved_knowledge_lines: Vec<String>,
     /// 命中的思维方法技能（仅 awaken 场景：retrieve 节点召回的 thinking_method 类技能）
@@ -151,10 +151,7 @@ pub struct DefaultPromptBuilder {
     /// 上一轮思考摘要（仅 awaken 场景：思考图 discover 回环产出的衔接线索）
     prior_thinking_summary: Option<String>,
     /// 意图增量修订入参（上次结论 + 新增输入，仅修订 Prompt 尾部区块使用）
-    intent_revision: Option<(
-        crate::service::domain::runtime::awakening::IntentAnalysis,
-        Vec<String>,
-    )>,
+    intent_revision: Option<(crate::models::intent_analysis::IntentAnalysis, Vec<String>)>,
     /// 对话过程中追加的输入（尾部转向消息）
     injected_inputs: Vec<String>,
     /// 工作空间上下文：默认工作目录
@@ -983,7 +980,53 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
 
         s.push_str("§5. 禁止无意义工具调用（假忙）：\n");
         s.push_str("   - 自问：如果没有任何工具，我能不能直接回答？\n");
-        s.push_str("   - 若能 → 直接用 Final 文本回复，不要「为了调用工具而调用工具」\n\n");
+        s.push_str("   - 若能 → 直接用 Final 文本回复，不要「为了调用工具而调用工具」\n");
+        // 调用附注：每个工具的参数都带 `_intent`（schema 已声明，选填）。
+        // 它不参与业务，只进工具调用记录与思考轨迹，用于把「调了什么」表达成
+        // 「想干什么」。写空话等于没写，故给正反例。
+        s.push_str("   - 每次调用工具都带 `_intent`：一句话写清这一步要达成什么，它会显示在工具调用面板与思考轨迹里\n");
+        s.push_str("       ✅ `_intent`: \"查 2026Q2 华东退货率，用于对比上月异常\"\n");
+        s.push_str("       ❌ `_intent`: \"搜索\" / \"调用工具\" / 复述工具名 —— 等于没说\n\n");
+
+        s.push_str(
+            "§6. 资源引用（附件 / 产物）的处理（Final 与 send_message 通用，不分收件方）：\n",
+        );
+        s.push_str(
+            "   - 正文支持两种资源引用，写法都是 Markdown 链接、不要写成裸 id 或普通 URL：\n",
+        );
+        s.push_str(
+            "       · `[文件名](attachment:att_xxx)` —— 附件：飞书/微信发来的图片就是此形态，\
+             【资源上下文】区块给出其文件名与类型。站内图片会内联显示、非图片可点击下载。\n",
+        );
+        s.push_str(
+            "       · `[产物名](artifact:art_xxx)` —— 项目产物：用 create_text_artifact /\
+             register_artifact_from_path / create_artifact / mark_artifact 产出的成果物，\
+             返回的 id 就按此格式拼进正文。站内显示为名称 chip，完整内容请在侧栏产物区查看。\n",
+        );
+        s.push_str(
+            "   - 只能用**已存在的资源 id** 拼装：附件的 id 来自对方消息里的引用、\
+             create_text_attachment（纯文本）或 create_attachment_from_path\
+             （磁盘文件如自己生成/下载的图片，传工作目录下相对路径）；\
+             产物的 id 来自上述产物工具。没有现成资源时，引用对方消息里已有的，或请对方先提供。\n",
+        );
+        s.push_str(
+            "   - 该规则对**所有发送方式与所有受众一致**：Final 文本、send_message、\
+             send_message_to_agent 都适用，回复人 / 回复 Agent / 回复群会话一视同仁；\
+             不要因为收件方不同就改变引用写法。\n",
+        );
+        s.push_str(
+            "   - 不要改动、删除或编造 id：无效 id 在站内显示断链、在飞书/微信只留下\
+             `[附件：文件名]` / `[产物：名称]` 纯文本占位，对方拿不到文件；\
+             没有要发送的资源时不要凭空塞引用。\n",
+        );
+        s.push_str(
+            "   - 外部渠道（飞书/微信/邮件等）会把引用降级为上述文本占位\
+             （产物的链接同样带不出去）；其中**飞书与微信**还会把 `attachment:` 的附件\
+             按文件类型自动适配成真正的消息独立发出——常见图片格式（JPEG/PNG/GIF/WebP/BMP）\
+             发图片消息、视频发视频消息，其它图片格式与 PDF/文档/表格/压缩包等发文件消息，\
+             逐条发送、单条失败只跳过该条、正文文本占位仍在，信息不会丢；\
+             语音附件需平台转码暂按文件发送。邮件等其它渠道只保留文本占位，附件不会随邮件发出。\n\n",
+        );
 
         s.push_str(
             "================================================================================\n\n",
@@ -1352,16 +1395,13 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result
     }
 
-    fn intent_analysis(
-        &mut self,
-        analysis: &crate::service::domain::runtime::awakening::IntentAnalysis,
-    ) {
+    fn intent_analysis(&mut self, analysis: &crate::models::intent_analysis::IntentAnalysis) {
         self.intent_analysis = Some(analysis.clone());
     }
 
     fn intent_revision(
         &mut self,
-        previous: &crate::service::domain::runtime::awakening::IntentAnalysis,
+        previous: &crate::models::intent_analysis::IntentAnalysis,
         inputs: &[String],
     ) {
         self.intent_revision = Some((previous.clone(), inputs.to_vec()));

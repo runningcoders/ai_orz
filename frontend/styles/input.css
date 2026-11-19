@@ -401,6 +401,14 @@
 .mention-chip.mention-federated {
   border-style: dashed;
 }
+/* 正文产物引用：点击就地打开预览弹窗（事件委托见 pages/message/chat.rs）。
+   不引入新配色，沿用 .mention-chip 的 HUD 视觉，只补可点提示。 */
+.mention-chip.mention-artifact {
+  cursor: pointer;
+}
+.mention-chip.mention-artifact:hover {
+  filter: brightness(1.12);
+}
 
 /* ========== @ 提及候选菜单（输入框上方浮层） ========== */
 /* 与 slash 菜单同一层叠策略：absolute 挂在输入区容器内，不脱离文档流，

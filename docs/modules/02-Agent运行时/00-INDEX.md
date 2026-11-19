@@ -6,7 +6,7 @@
 >
 > 本文件自动生成：改内容请改源文件后跑 `make wiki-index`。
 
-本模块共 45 篇：A 设计 10 · B 落地方案 16 · C 知识 19。
+本模块共 46 篇：A 设计 11 · B 落地方案 16 · C 知识 19。
 
 ## A 设计（design）
 
@@ -14,6 +14,7 @@
 - [决策型策略设计（策略引擎承载小脑场景）](<A-设计/cerebellum_decision_strategy_design.md>) — `现行`
 - [思考循环中的新输入收集与意图回退设计（可中断唤醒）](<A-设计/inbox_poll_and_intent_revision_design.md>) — `现行`
 - [意图感知两阶段唤醒设计](<A-设计/intent_aware_two_stage_awaken_design.md>) — `已废弃`
+- [运行时数据总线设计（收集、移交与写穿）](<A-设计/runtime_data_bus_design.md>) — `现行`
 - [Runtime Domain 设计](<A-设计/runtime_design.md>) — `现行`
 - [Runtime Domain 推进路线图](<A-设计/runtime_domain_roadmap.md>) — `已废弃`
 - [思考生命周期设计（Think Lifecycle）](<A-设计/think_lifecycle_design.md>) — `现行`

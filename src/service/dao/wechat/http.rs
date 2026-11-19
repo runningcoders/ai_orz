@@ -14,8 +14,8 @@ use super::IlinkDownloadedImage;
 use super::WechatDao;
 use super::ilink::{
     CursorStore, IlinkChannelCredentials, MessageChannelStateWriter, PollLoopRegistry,
-    SessionGuard, download_image, get_typing_ticket, send_text, send_typing as ilink_send_typing,
-    short_token,
+    SessionGuard, download_image, get_typing_ticket, send_outbound_attachment, send_text,
+    send_typing as ilink_send_typing, short_token,
 };
 use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
@@ -114,6 +114,7 @@ impl WechatDao for WechatDaoHttpImpl {
         message: &Message,
         channel: &MessageChannel,
         credentials: &IlinkChannelCredentials,
+        attachments: &[crate::models::outbound_media::OutboundAttachment],
     ) -> Result<Option<String>> {
         // 暂停期出站快速失败（方案 D5，官方 `assertSessionActive` 口径）：
         // 省一次必然失败的请求，并给出可读原因而不是让用户等到超时。
@@ -147,6 +148,35 @@ impl WechatDao for WechatDaoHttpImpl {
         })?;
 
         let message_id = send_text(credentials, &peer, &context_token, content).await?;
+
+        // 附件逐条上传 + 独立发送（图片 image_item / 其余 file_item）；单条失败仅告警，
+        // 不改变文本推送结果与 external_key 回写（与飞书同口径）
+        if !attachments.is_empty() {
+            let mut sent = 0;
+            for attachment in attachments {
+                match send_outbound_attachment(credentials, &peer, &context_token, attachment).await
+                {
+                    Ok(_) => sent += 1,
+                    Err(e) => log_warn!(
+                        &ctx,
+                        "wechat_push_attachments",
+                        "附件发送失败，跳过: name={} size={} err={}",
+                        attachment.name,
+                        attachment.bytes.len(),
+                        e
+                    ),
+                }
+            }
+            log_info!(
+                &ctx,
+                "wechat_push_attachments",
+                "channel_id={} total={} sent={}",
+                channel.po.id,
+                attachments.len(),
+                sent
+            );
+        }
+
         log_info!(
             &ctx,
             "wechat_push",
