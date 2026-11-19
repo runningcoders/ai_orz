@@ -63,6 +63,8 @@
 核心能力已落地：
 
 - 🤖 **Agent 全生命周期**：创建、入职（自动补装基础技能/工具包）、绑定工具、唤醒执行；多回合循环控制与任务完成检测
+- 🧠 **思考轨迹（ThinkTrace，架构图中称「思维轨迹」）**：轮级 append-only JSONL 落盘（`agents/{agent_id}/think_trace/{YYYYMMDD}.jsonl`），含推理摘要、工具调用及 `internal_intent` 意图附注、小脑留痕；`GET /api/v1/hr/agents/think-traces` 与对话页侧栏「思考」Tab 可查，run 未结束也能看到已完成轮次
+- ⚡ **小脑快判断（System One）**：进入主循环前的亚秒级预判，覆盖入口门直回、意图分析价值门、对话链深收敛判定；依赖可选配置的决策模型 Provider（`Jev` / `Decision`），未配置或调用失败静默降级、不影响基础对话，留痕进思考轨迹。⚠️ System One 协议口径依据公开文档交叉实证，尚未经真实端点实测
 - 🔌 **A2A 协议完整支持**：作为 Client 注册外部 Agent（CLI/Remote）委派任务；作为 Server 对外暴露协议端点；异步结果回传（Push 回调 + 30 秒轮询兜底）
 - 🧠 **四层记忆**：Core / Working / Short-term / Long-term（含知识图谱），FTS5 + 向量混合搜索；定时沉淀（agent_rest）自动将短期记忆整理入长期图谱
 - 🛠️ **工具与技能体系**：Auto（LLM 原生）/ Manual（提示词转发）双模式 + 调用追踪；12 份预置技能（7 个神经技能常驻 Prompt），技能摘要 + id 常驻、全文 get_skill 按需加载；实践沉淀可更新技能副本 / 创建新技能（自我进化）
@@ -70,7 +72,7 @@
 - 📨 **消息渠道系统**：飞书 P2P 私信已上线（WebSocket 长连接 + 出站推送 + 退避重连），微信（iLink 长轮询）与邮件（IMAP 受管轮询）入站已接入，多渠道适配器架构就绪（Slack/Webhook 待实现）
 - 🔑 **用户身份凭证**：用户级凭证中枢（加密存储），渠道仅存凭证引用；前端身份凭证管理页（飞书为首个凭证类型：应用绑定/OAuth 设备流/自动绑定）
 - 📋 **任务协作 + 进度追踪**：项目 + 任务 + Agent 间任务分配，状态机、执行计划/执行结果显式记录、DAG 依赖、实时进度汇总，支持委派给外部 A2A Agent
-- 💬 **对话体验**：用户 ↔ Agent 双向对话、SSE 实时推送、附件上传、聊天信息侧栏（总览/任务/产物/工具）、Markdown + Mermaid 全链路渲染
+- 💬 **对话体验**：用户 ↔ Agent 双向对话、SSE 实时推送、附件上传（Agent 出站图片/视频/文件全渠道适配）、聊天信息侧栏（总览/任务/产物/Agent/工具/思考）、Markdown + Mermaid 全链路渲染
 - ⏰ **定时触发器**：cron trigger 完整 CRUD/Pause/Resume；启动自动注入 2 条系统默认任务（Agent 记忆沉淀 + 项目进度巡检）
 - 🔍 **综合搜索**：FTS5 关键词 + 向量语义 + 知识图谱三合一
 - 📊 **多维统计与监控**：Agent / Project / Task / Tool / ModelProvider 五维度统计、AOP 队列监控、系统健康仪表盘
@@ -218,6 +220,8 @@ make wiki-stale    # 诊断：文档里引用的失效代码路径
 - [外部 Agent 接入 A2A](<./docs/modules/07-外部Agent(A2A)/C-知识/A2A 集成指南.md>) — Client/Server 双角色 + 异步回调轮询
 - [Runtime Domain 设计](./docs/modules/02-Agent运行时/A-设计/runtime_design.md) — Agent 唤醒与工具二分
 - [思考生命周期设计](./docs/modules/02-Agent运行时/A-设计/think_lifecycle_design.md) — 唤醒图引擎（`pkg/think_path`）的理想态与落地蓝图
+- [思维轨迹架构](./docs/modules/00-总览与架构/C-知识/思维轨迹架构.md) — 轮级 JSONL 落盘 + 查询作用域守门 + 前端轨迹面板
+- [小脑快判断（System One）](<./docs/modules/02-Agent运行时/C-知识/小脑快判断（System One）.md>) — 亚秒级预判 + 三层静默降级边界
 - [飞书渠道集成设计](./docs/modules/04-对话与消息/A-设计/lark_channel_integration_design.md) — 用户级凭证中枢 + WS 重连
 - [前端架构](./docs/modules/11-前端应用/A-设计/frontend_architecture.md) — Dioxus 0.7 + HUD 设计系统
 
