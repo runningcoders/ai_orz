@@ -363,19 +363,8 @@ impl super::ProjectManage for ProjectDomainImpl {
             return Ok(project);
         }
 
-        if !target.is_empty() {
-            let agent = crate::service::domain::hr::domain()
-                .agent_manage()
-                .get_agent(
-                    ctx.clone(),
-                    &target,
-                    crate::service::dal::agent::AgentFetchOptions::default(),
-                )
-                .await?;
-            if agent.is_none() {
-                bail_err!(NotFound, "接手的 Agent 不存在: {}", target);
-            }
-        }
+        // ⚠️ 目标 Agent 是否存在由 handler 校验（`transfer_project_owner`）：
+        // 那是「参数合法性」，跨域查 hr 属于编排，域内做会形成 project → hr 的域间调用。
 
         project.po.owner_agent_id = if target.is_empty() {
             None

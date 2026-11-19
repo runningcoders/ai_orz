@@ -281,8 +281,12 @@ async fn run_gate_full_with_pending(
 ) -> (Option<ChainReplyVerdict>, usize, Vec<serde_json::Value>) {
     // 全局 Storage 单例：单跑本模块时 `test_ctx()` 依赖它已初始化
     crate::pkg::storage::test_support::init_for_test().await;
-    // 轨迹落盘基址：`record_cerebellum` 未初始化时静默丢弃（无副作用设计）
-    crate::pkg::think_trace::init(std::env::temp_dir().join("ai_orz_chain_reply_test"));
+    // 写穿重定向到内存：不碰文件系统，也就不依赖全局落盘基址（用例可并行）
+    let scope = crate::service::domain::runtime::think_trace::TraceSink::memory(
+        "test-agent",
+        run_id,
+        "test",
+    );
     let ctx = test_ctx();
     let mock = Arc::new(MockBrainDal::new(script));
     let got = judge_chain_reply(
@@ -293,14 +297,45 @@ async fn run_gate_full_with_pending(
         messages,
         &facts,
         pending,
-        run_id,
+        &scope,
     )
     .await;
+    stash_traces(run_id, &scope);
     (got, mock.calls(), mock.states())
 }
 
+fn stash_traces(run_id: &str, scope: &crate::service::domain::runtime::think_trace::TraceSink) {
+    let items: Vec<ThinkTraceCerebellum> = scope
+        .recorded()
+        .into_iter()
+        .filter_map(|line| {
+            serde_json::from_value::<crate::service::domain::runtime::think_trace::ThinkTraceEntry>(
+                line,
+            )
+            .ok()
+        })
+        .flat_map(|entry| entry.cerebellum)
+        .collect();
+    // 同一 run 可能多次进本辅助函数（续跑 / 多次判定）：与写穿的「一行一条」
+    // 同义，按 run 累积而不是覆盖
+    if let Ok(mut map) = traces_registry().lock() {
+        map.entry(run_id.to_string()).or_default().extend(items);
+    }
+}
+
+fn traces_registry()
+-> &'static std::sync::Mutex<std::collections::HashMap<String, Vec<ThinkTraceCerebellum>>> {
+    static REG: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, Vec<ThinkTraceCerebellum>>>,
+    > = std::sync::OnceLock::new();
+    REG.get_or_init(Default::default)
+}
+
 fn take_traces(run_id: &str) -> Vec<ThinkTraceCerebellum> {
-    crate::pkg::think_trace::take_cerebellum(run_id)
+    traces_registry()
+        .lock()
+        .map(|mut map| map.remove(run_id).unwrap_or_default())
+        .unwrap_or_default()
 }
 
 // ---------- 预算分配（容量即预算，无时延反推轴） ----------

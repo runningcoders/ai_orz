@@ -18,7 +18,8 @@
 //! ## 批3/4 预留
 //!
 //! - [`build_resolved_registry`] 批3 混排主线复用（签名向后兼容承诺）；
-//! - `AttachmentDal::read_file` bytes 通道归批4 vision 传参（本批不预留代码）。
+//! - `AttachmentDal::read_file` bytes 通道：出站附件走 [`extract_outbound_attachments`]
+//!   （图片 + 文档等，按 MIME 分派），vision 传参仍归批4。
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -30,6 +31,7 @@ use common::markdown_protocol::{
 };
 use pulldown_cmark::{Event, Parser, TagEnd};
 
+use crate::models::outbound_media::{OutboundAttachment, OutboundMediaKind};
 use crate::pkg::RequestContext;
 use crate::service::dal::artifact::ArtifactDal;
 use crate::service::dal::attachment::AttachmentDal;
@@ -209,99 +211,229 @@ pub async fn resolve_message_resources(
     (attachments, artifacts)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn collect_ids_scopes_to_resource_schemes() {
-        let text = "看 [@张伟](agent:agt_1) 的 [设计稿](attachment:att_1) 与 [报告](artifact:art_2)，\
-                    未注册 [x](user:u1) 与普通 [链接](https://e.com) 忽略";
-        let (att, art) = collect_resource_ids(text);
-        assert_eq!(att, HashSet::from(["att_1".to_string()]));
-        assert_eq!(art, HashSet::from(["art_2".to_string()]));
+/// 按正文出现顺序收集 `attachment:` 引用 id（首次出现为准，重复忽略）。
+///
+/// 出站图片逐张独立发送，顺序必须稳定——`collect_resource_ids` 返回 `HashSet`
+/// 只适合无顺序语义的解析表，这里单独提供有序版本。
+fn collect_attachment_ids_in_order(content: &str) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut ids = Vec::new();
+    for (r, _) in extract_refs(content) {
+        if r.scheme == "attachment" && seen.insert(r.id.clone()) {
+            ids.push(r.id);
+        }
     }
+    ids
+}
 
-    #[test]
-    fn degrade_passthrough_without_registered_refs() {
-        // 幂等：无已注册协议引用 → 原文零改动
-        let reg = ProtocolRegistry::default_registry();
-        let src = "# 标题\n\n普通段落，含 [链接](https://e.com) 与 [x](user:u1)。\n";
-        assert_eq!(degrade_content_for_external(src, &reg), src);
+/// 出站大小判定（纯函数，锁死「先按声明值预拦、再按实测值复核」两段口径）
+///
+/// `actual=None` 表示尚未读取字节：只在声明值超限时返回跳过；读后传入实测值，
+/// 以实测为准（meta 滞后 / 文件在两次检查之间变化都靠这一步兜底）。
+/// 返回 `Some(size)` 表示应跳过，数值用于正文提示。
+pub fn outbound_oversize(declared: usize, actual: Option<usize>, limit: usize) -> Option<usize> {
+    if declared > limit {
+        return Some(declared);
     }
+    actual.filter(|size| *size > limit)
+}
 
-    #[test]
-    fn degrade_replaces_resolved_and_falls_back_on_miss() {
-        let mut att = HashMap::new();
-        att.insert(
-            "att_1".to_string(),
-            ResolvedPayload {
-                name: "设计稿.png".to_string(),
-                summary: Some("image/png · 1".to_string()),
-            },
-        );
-        let reg = build_resolved_registry(att, HashMap::new());
-        let out = degrade_content_for_external(
-            "请查收 [设计稿](attachment:att_1)，另有 [丢失](attachment:att_x)。",
-            &reg,
-        );
-        assert!(out.contains("[附件：设计稿.png]"), "命中实名：{out}");
-        assert!(out.contains("[附件：丢失]"), "未命中快照兜底：{out}");
-        assert!(!out.contains("attachment:"));
+/// 因渠道上限或读取失败未随本条消息发送的附件
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SkippedAttachmentReason {
+    /// 超过渠道大小上限（资产本身没问題，站内可看）
+    #[default]
+    OverLimit,
+    /// 读取字节失败（库里有记录但读不出来）
+    ReadFailed,
+}
+
+/// 因渠道上限或读取失败未随本条消息发送的附件
+///
+/// 附件是站内资产，创建环节不设渠道上限；能不能随消息发出去是**推送时**的事。
+/// 这里只记录「被跳过的是谁、多大、为什么」，由调用方拼进正文提示，
+/// 保证信息不丢（渠道文本里仍能看到 `[附件：名]` 占位 + 这句说明）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SkippedAttachment {
+    /// 附件原名（与正文占位一致）
+    pub name: String,
+    /// 实际字节数（超限为实测值；读取失败为库里的声明值）
+    pub size: usize,
+    /// 该类媒体的渠道上限（字节）
+    pub limit: usize,
+    /// 跳过原因
+    pub reason: SkippedAttachmentReason,
+}
+
+/// 出站附件批次：可发送的载荷 + 因超限被跳过的清单
+#[derive(Debug, Default)]
+pub struct OutboundAttachmentBatch {
+    /// 随渠道 payload 透传的附件（按正文引用顺序）
+    pub attachments: Vec<OutboundAttachment>,
+    /// 超限被跳过的附件（按正文引用顺序）
+    pub skipped: Vec<SkippedAttachment>,
+}
+
+/// 从正文 `attachment:` 引用提取可出站的附件字节（按引用出现顺序，去重）。
+///
+/// - 仅认 status==1 的附件；图片走图片通道（MIME 白名单），其余走文件通道；
+///   artifact 引用不动；
+/// - 查询失败 / 读取失败 → WARN 跳过该条（不算「超限」，不写进正文提示）；
+/// - 超过该类媒体的渠道上限 → 记入 [`OutboundAttachmentBatch::skipped`]，由调用方
+///   在正文里说明「未随本条消息发送」（不静默丢信息）；
+/// - 无引用时零 IO，存量消息行为逐字节不变。
+pub async fn extract_outbound_attachments(
+    ctx: &RequestContext,
+    attachment_dal: &Arc<dyn AttachmentDal>,
+    content: &str,
+    // 纯附件消息的正文即附件 id（file_meta 形态），不走 markdown 引用；
+    // 由调用方按消息形态传入，避免把「消息结构」知识塞进文本解析器。
+    direct_attachment_id: Option<&str>,
+) -> OutboundAttachmentBatch {
+    let mut batch = OutboundAttachmentBatch::default();
+    let mut ids = collect_attachment_ids_in_order(content);
+    if let Some(id) = direct_attachment_id
+        && !ids.iter().any(|existing| existing == id)
+    {
+        ids.insert(0, id.to_string());
     }
-
-    #[test]
-    fn degrade_resolves_batch1_semantic_boundary_nested_emphasis() {
-        // 批1 登记语义边界：结构化内层（加粗）链接——批2 组件 render 接管后消解
-        let reg = ProtocolRegistry::default_registry();
-        let out = degrade_content_for_external("[**张伟**](attachment:att_1) 看看", &reg);
-        assert!(out.contains("[附件：张伟]"), "消解成立：{out}");
-        assert!(!out.contains("**"));
+    for id in ids {
+        let Some(attachment) = attachment_dal
+            .get_by_id(ctx.clone(), &id)
+            .await
+            .ok()
+            .flatten()
+            .filter(|a| a.po.status == 1)
+        else {
+            continue;
+        };
+        // 先算分类（借用值），再把 original_name 移进载荷
+        let mime = attachment.po.effective_mime_type();
+        let kind = OutboundMediaKind::from_mime_and_name(&mime, &attachment.po.original_name);
+        let limit = kind.max_bytes();
+        // 先用库里的 size 拦一次：超限就不必把字节读进内存（附件可达数百 MB）
+        let declared = attachment.po.size.max(0) as usize;
+        if declared > limit {
+            log_warn!(
+                ctx,
+                "outbound_attachment",
+                "附件超出站上限，跳过: id={} size={} limit={} kind={:?}",
+                id,
+                declared,
+                limit,
+                kind
+            );
+            batch.skipped.push(SkippedAttachment {
+                name: attachment.po.original_name,
+                size: declared,
+                limit,
+                reason: SkippedAttachmentReason::OverLimit,
+            });
+            continue;
+        }
+        let bytes = match attachment_dal.read_file(&attachment) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                log_warn!(
+                    ctx,
+                    "outbound_attachment",
+                    "读取附件失败，跳过出站: id={} err={}",
+                    id,
+                    e
+                );
+                // 读取失败也要正文提示：只用占位符会让对方以为附件丢了
+                batch.skipped.push(SkippedAttachment {
+                    name: attachment.po.original_name,
+                    size: declared,
+                    limit,
+                    reason: SkippedAttachmentReason::ReadFailed,
+                });
+                continue;
+            }
+        };
+        // meta 可能滞后于实际内容（历史数据 / 写入竞态），以真实字节为准
+        if let Some(size) = outbound_oversize(declared, Some(bytes.len()), limit) {
+            log_warn!(
+                ctx,
+                "outbound_attachment",
+                "附件超出站上限，跳过: id={} size={} limit={} kind={:?}",
+                id,
+                size,
+                limit,
+                kind
+            );
+            batch.skipped.push(SkippedAttachment {
+                name: attachment.po.original_name,
+                size,
+                limit,
+                reason: SkippedAttachmentReason::OverLimit,
+            });
+            continue;
+        }
+        batch.attachments.push(OutboundAttachment {
+            name: attachment.po.original_name,
+            mime_type: mime,
+            bytes,
+        });
     }
+    batch
+}
 
-    #[test]
-    fn degrade_mention_renders_via_component() {
-        let reg = ProtocolRegistry::default_registry();
-        let out = degrade_content_for_external("[@张伟](agent:agt_1) 进度如何", &reg);
-        assert!(out.contains("@张伟"));
-        assert!(!out.contains("agent:"));
+/// 生成「附件未随本条消息发送」的正文提示（无跳过项时返回空串）
+///
+/// 渠道文本是纯文本语境（各渠道 markdown 支持程度不一），故用一句自然语言
+/// 追加在末尾，不依赖任何标记语法；`degrade_content_for_external` 产出的
+/// `[附件：名]` 占位仍在原位，这里只补「为什么没发」。
+pub fn skipped_attachment_notice(skipped: &[SkippedAttachment]) -> String {
+    if skipped.is_empty() {
+        return String::new();
     }
-
-    #[test]
-    fn artifact_summary_truncates_long_description() {
-        let long = "很".repeat(100);
-        let s = artifact_summary(FileType::Document, &long).unwrap();
-        assert!(s.starts_with("文档 · "));
-        assert!(s.ends_with('…'));
-        assert!(s.chars().count() < 100, "截断生效：{s}");
-
-        // 空 description：仅文件类型标签
-        assert_eq!(artifact_summary(FileType::Image, "  ").unwrap(), "图片");
-    }
-
-    #[test]
-    fn has_resource_refs_true_when_resource_ref_present() {
-        assert!(content_has_resource_refs("看 [设计稿](attachment:att_1)"));
-        assert!(content_has_resource_refs("报告见 [报告](artifact:art_2)"));
-        assert!(content_has_resource_refs(
-            "混排 [@张伟](agent:agt_1) + [附件](attachment:a1)"
+    let over_limit: Vec<String> = skipped
+        .iter()
+        .filter(|s| s.reason == SkippedAttachmentReason::OverLimit)
+        .map(|s| {
+            format!(
+                "「{}」{}（渠道上限 {}）",
+                s.name,
+                human_size(s.size),
+                human_size(s.limit)
+            )
+        })
+        .collect();
+    let read_failed: Vec<String> = skipped
+        .iter()
+        .filter(|s| s.reason == SkippedAttachmentReason::ReadFailed)
+        .map(|s| format!("「{}」", s.name))
+        .collect();
+    let mut reasons = Vec::new();
+    if !over_limit.is_empty() {
+        reasons.push(format!(
+            "以下附件超过渠道大小上限，未随本条消息发送，可在站内查看：{}",
+            over_limit.join("；")
         ));
     }
-
-    #[test]
-    fn has_resource_refs_false_for_mention_and_plain_text() {
-        assert!(!content_has_resource_refs(
-            "[@张伟](agent:agt_1) 请跟进 [@任务](task:t_9)"
+    if !read_failed.is_empty() {
+        reasons.push(format!(
+            "以下附件读取失败，未随本条消息发送，可在站内查看：{}",
+            read_failed.join("；")
         ));
-        assert!(!content_has_resource_refs("普通文本，无任何协议引用"));
     }
+    format!("\n\n（{}）", reasons.join("；"))
+}
 
-    #[test]
-    fn has_resource_refs_false_for_unregistered_or_malformed() {
-        assert!(!content_has_resource_refs("普通 [链接](https://e.com)"));
-        assert!(!content_has_resource_refs("[x](user:u1) 未注册不算混排"));
-        assert!(!content_has_resource_refs(
-            "歪格式 [x](attachment) 缺 id 段"
-        ));
+/// 人类可读的字节数（提示文案用）
+fn human_size(bytes: usize) -> String {
+    const KB: f64 = 1024.0;
+    const MB: f64 = 1024.0 * 1024.0;
+    let b = bytes as f64;
+    if b >= MB {
+        format!("{:.1} MB", b / MB)
+    } else if b >= KB {
+        format!("{:.0} KB", b / KB)
+    } else {
+        format!("{} B", bytes)
     }
 }
+#[cfg(test)]
+#[path = "resource_resolver_tests.rs"]
+mod tests;

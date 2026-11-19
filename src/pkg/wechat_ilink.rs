@@ -21,7 +21,10 @@
 //!
 //! 协议来源（权威 spec）：腾讯官方插件 `@tencent-weixin/openclaw-weixin` 的
 //! `src/api/types.ts`（proto 的 TypeScript 镜像）与 `src/api/api.ts`（传输层），
-//! 本次核对版本 `2.4.9`。`NousResearch/hermes-agent` 的 `gateway/platforms/weixin.py`
+//! 出站媒体链路另见 `src/messaging/send-media.ts` / `cdn/upload.ts`。
+//! 核对基线 `2.4.9`；已复核稳定 latest `2.4.10`（媒体协议零变化）与
+//! `3.0.0-beta-0`（出站 media 三路路由与字段均未变，仅透传超时/取消信号）。
+//! `NousResearch/hermes-agent` 的 `gateway/platforms/weixin.py`
 //! 是独立实现，关键字段与官方插件完全一致，可互证。
 //! 详见 docs/plan/微信iLink协议对齐重构方案.md 与设计文档 §5.1/§5.2。
 //! 协议字段如有变更，只需修改本文件与 `dao/wechat/ilink.rs`。

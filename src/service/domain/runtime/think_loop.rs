@@ -26,8 +26,8 @@ use super::types::ThinkLoopResult;
 use crate::models::agent::Agent;
 use crate::models::cortex_types::ChatMessage;
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
-use crate::pkg::think_trace::ThinkTraceCerebellum;
 use crate::service::domain::runtime::RuntimeDomainImpl;
+use crate::service::domain::runtime::think_trace::{ThinkTraceCerebellum, TraceFinishGuard};
 use common::enums::ThinkingScene;
 use common::error::{Result, err};
 use std::sync::Arc;
@@ -331,11 +331,14 @@ impl RuntimeDomainImpl {
             force_intensity,
             usage,
             inbox,
+            collected,
         } = params;
 
         // 唤醒级用量：None = 本次循环独立计量（compact / intent / settle）
         let usage = usage.unwrap_or_else(super::types::WakeUsage::shared);
         let base = super::types::WakeUsage::snapshot(&usage);
+        // 唤醒级产出收集器：None = 本次循环自建（内部小循环），图结束即随 deps 回收
+        let collected = collected.unwrap_or_else(super::RoundCollected::shared);
 
         // brain 统一在此解析：四个场景取的都是 agent.brain，
         // 不必让每个调用点各自判空一遍「大脑未唤醒」。
@@ -345,6 +348,20 @@ impl RuntimeDomainImpl {
             .as_ref()
             .ok_or_else(|| err!(Internal, "Agent 大脑未唤醒，请先调用 wake_agent_brain()"))?
             .clone();
+
+        // 轨迹身份信封：本函数内所有写穿留痕共用一份（小脑留痕散落在路由 /
+        // 强度 / 精选三处，逐点构造会各克隆一遍并容易漏填 project/task）
+        let scope = crate::service::domain::runtime::think_trace::TraceSink::new(
+            &agent.po.id,
+            trace_id,
+            scene.as_str(),
+        )
+        .with_scope(
+            ctx.project_id().map(|s| s.as_str()),
+            ctx.task_id().map(|s| s.as_str()),
+        );
+
+        let mut trace_finish_guard = TraceFinishGuard::new(scope.clone(), "finished");
 
         // 入口留痕（早于小脑路由）：「think loop entered」被小脑路由挡在后面，
         // 小脑那一步一旦挂住/降级，现场就只剩 brain woken → 再无下文。
@@ -370,7 +387,7 @@ impl RuntimeDomainImpl {
         // 排查只能靠翻 wake_brain 日志倒推。
         //
         // 放在这里而不是 wake_brain：装配发生在 awaken 之前，那里没有 trace_id，
-        // 而 `record_cerebellum` 对空 run_id 是「直接丢弃」——写在装配点等于没写。
+        // 而 `TraceSink` 对空 run_id 是「直接丢弃」——写在装配点等于没写。
         // 本位置在 brain 解析之后、小脑路由之前，trace_id 已就绪，且无论本周期
         // 后续走 Direct / Proceed / Skip 哪条分支，这一条都先落地。
         //
@@ -381,7 +398,7 @@ impl RuntimeDomainImpl {
         // 每周期一条：compaction 回环时同一 run 会有多条同值条目，这是刻意的
         // —— 条数本身反映周期数，不做去重（去重需要跨周期状态，收益不抵复杂度）。
         if let Some(item) = bootstrap_not_assembled_item(brain.cerebellum.as_ref()) {
-            crate::pkg::think_trace::record_cerebellum(trace_id, item);
+            scope.cerebellum(item);
         }
 
         // 唤醒级时长预算：本周期只能用到剩余额度（跨周期累计耗时见 base）。
@@ -448,17 +465,14 @@ impl RuntimeDomainImpl {
                             false,
                         ),
                     };
-                crate::pkg::think_trace::record_cerebellum(
-                    trace_id,
-                    ThinkTraceCerebellum {
-                        scene: cerebellum_router::ENTRY_GATE_SCENE.to_string(),
-                        decision: route_decision,
-                        confidence: route_confidence,
-                        degraded: route_degraded,
-                        applied: route_applied,
-                        latency_ms: gate_latency_ms,
-                    },
-                );
+                scope.cerebellum(ThinkTraceCerebellum {
+                    scene: cerebellum_router::ENTRY_GATE_SCENE.to_string(),
+                    decision: route_decision,
+                    confidence: route_confidence,
+                    degraded: route_degraded,
+                    applied: route_applied,
+                    latency_ms: gate_latency_ms,
+                });
                 log_info!(
                     &ctx,
                     "think_loop",
@@ -488,17 +502,14 @@ impl RuntimeDomainImpl {
                                 Some(cerebellum_router::POOL_FALLBACK_DEGRADED.to_string()),
                             ),
                         };
-                        crate::pkg::think_trace::record_cerebellum(
-                            trace_id,
-                            ThinkTraceCerebellum {
-                                scene: cerebellum_router::ENTRY_POOL_SCENE.to_string(),
-                                decision: pool_decision,
-                                confidence: pool_confidence,
-                                degraded: pool_degraded,
-                                applied: pool_applied,
-                                latency_ms: pool_latency_ms,
-                            },
-                        );
+                        scope.cerebellum(ThinkTraceCerebellum {
+                            scene: cerebellum_router::ENTRY_POOL_SCENE.to_string(),
+                            decision: pool_decision,
+                            confidence: pool_confidence,
+                            degraded: pool_degraded,
+                            applied: pool_applied,
+                            latency_ms: pool_latency_ms,
+                        });
                         log_info!(
                             &ctx,
                             "think_loop",
@@ -506,6 +517,7 @@ impl RuntimeDomainImpl {
                             confidence,
                             pool_applied
                         );
+                        trace_finish_guard.set_reason("cerebellum_direct");
                         return Ok(ThinkLoopResult::Final {
                             content,
                             messages,
@@ -557,31 +569,25 @@ impl RuntimeDomainImpl {
                 //  无可用答案 / 分数坏），不再一律折叠成 no_usable_answer
                 match selection.choice {
                     Some(choice) => {
-                        crate::pkg::think_trace::record_cerebellum(
-                            trace_id,
-                            ThinkTraceCerebellum {
-                                scene: thinking_strength::trace_scene(scene).to_string(),
-                                decision: choice.strength.score().to_string(),
-                                confidence: Some(choice.confidence),
-                                degraded: None,
-                                applied: provider_capable,
-                                latency_ms: selection.latency_ms,
-                            },
-                        );
+                        scope.cerebellum(ThinkTraceCerebellum {
+                            scene: thinking_strength::trace_scene(scene).to_string(),
+                            decision: choice.strength.score().to_string(),
+                            confidence: Some(choice.confidence),
+                            degraded: None,
+                            applied: provider_capable,
+                            latency_ms: selection.latency_ms,
+                        });
                         Some(choice.strength)
                     }
                     None => {
-                        crate::pkg::think_trace::record_cerebellum(
-                            trace_id,
-                            ThinkTraceCerebellum {
-                                scene: thinking_strength::trace_scene(scene).to_string(),
-                                decision: "fallback".to_string(),
-                                confidence: None,
-                                degraded: selection.degraded.map(str::to_string),
-                                applied: false,
-                                latency_ms: selection.latency_ms,
-                            },
-                        );
+                        scope.cerebellum(ThinkTraceCerebellum {
+                            scene: thinking_strength::trace_scene(scene).to_string(),
+                            decision: "fallback".to_string(),
+                            confidence: None,
+                            degraded: selection.degraded.map(str::to_string),
+                            applied: false,
+                            latency_ms: selection.latency_ms,
+                        });
                         None
                     }
                 }
@@ -621,6 +627,7 @@ impl RuntimeDomainImpl {
                     max_rounds,
                     start_round,
                 );
+                trace_finish_guard.set_reason("no_available_rounds");
                 return Ok(ThinkLoopResult::MaxRoundsExceeded {
                     messages,
                     total_rounds: max_rounds,
@@ -635,6 +642,7 @@ impl RuntimeDomainImpl {
                     timeout_secs,
                     base.elapsed_secs,
                 );
+                trace_finish_guard.set_reason("timeout_budget_exhausted");
                 return Ok(ThinkLoopResult::MaxRoundsExceeded {
                     messages,
                     total_rounds: start_round,
@@ -665,6 +673,8 @@ impl RuntimeDomainImpl {
                     usage,
                     base,
                     inbox,
+                    collected,
+                    trace_sink: scope.clone(),
                 },
             )
             .await
@@ -681,13 +691,16 @@ impl RuntimeDomainImpl {
             .await
             {
                 Ok(inner) => inner,
-                Err(_elapsed) => Err(err!(
-                    Internal,
-                    "brain think timeout after {}s (wake budget {}s, already spent {}s)",
-                    remaining_timeout,
-                    timeout_secs,
-                    base.elapsed_secs
-                )),
+                Err(_elapsed) => {
+                    trace_finish_guard.set_reason("external_timeout");
+                    Err(err!(
+                        Internal,
+                        "brain think timeout after {}s (wake budget {}s, already spent {}s)",
+                        remaining_timeout,
+                        timeout_secs,
+                        base.elapsed_secs
+                    ))
+                }
             }
         }
     }
@@ -847,19 +860,29 @@ mod tests {
     }
 
     #[test]
-    fn bootstrap_item_survives_buffer_round_trip() {
-        // 判定 → 记账 → 取出：证明这条留痕真能落到 run 收尾行里，而不是只存在于
-        // 一个 Nobody 读取的 Option。落盘基址未注入时 record 会静默返回，
-        // 故断言前先注入（与 think_trace 既有用例同口径）。
-        crate::pkg::think_trace::init(std::env::temp_dir().join("ai_orz_think_loop_bootstrap"));
-        let run_id = "test-run-bootstrap-not-assembled";
-        let _ = crate::pkg::think_trace::take_cerebellum(run_id); // 清场防串味
-
+    fn bootstrap_item_survives_write_through_round_trip() {
+        // 判定 → 写穿 → 取回：证明这条留痕真能落到轨迹里，而不是只存在于
+        // 一个 Nobody 读取的 Option。用内存 sink，不依赖全局落盘基址。
+        let scope = crate::service::domain::runtime::think_trace::TraceSink::memory(
+            "test-agent",
+            "test-run-bootstrap-not-assembled",
+            "awaken",
+        );
         let item = bootstrap_not_assembled_item::<()>(None).expect("前置条件：装配为空");
-        crate::pkg::think_trace::record_cerebellum(run_id, item);
+        scope.cerebellum(item);
 
-        let items = crate::pkg::think_trace::take_cerebellum(run_id);
-        assert_eq!(items.len(), 1, "记账条目必须能被收尾 take 取到");
+        let items: Vec<crate::service::domain::runtime::think_trace::ThinkTraceCerebellum> = scope
+            .recorded()
+            .into_iter()
+            .filter_map(|line| {
+                serde_json::from_value::<
+                    crate::service::domain::runtime::think_trace::ThinkTraceEntry,
+                >(line)
+                .ok()
+            })
+            .flat_map(|entry| entry.cerebellum)
+            .collect();
+        assert_eq!(items.len(), 1, "记账条目必须能被写穿落盘");
         assert_eq!(items[0].scene, "bootstrap");
         assert_eq!(items[0].decision, "not_assembled");
     }

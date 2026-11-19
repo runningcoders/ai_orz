@@ -118,7 +118,8 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for MarkArtifactToolFactory {
                 "that completes a task. The output is copied into the project's artifact ",
                 "storage with a tool-output tag; the original log stays under normal retention. ",
                 "Provide the call_id from the earlier tool result. Requires a project context ",
-                "(explicit project_id or the current conversation's project)."
+                "(explicit project_id or the current conversation's project). Returns an ",
+                "artifact_id, which can be referenced in messages as [name](artifact:id)."
             )
             .to_string(),
             protocol: ToolProtocol::Builtin,

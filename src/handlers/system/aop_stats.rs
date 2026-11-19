@@ -1,6 +1,9 @@
 //! AOP 实时统计 HTTP 接口（3 个端点）
 //!
 //! 直接读取内存中的 AopStatsCollector 快照，零 DB 查询，毫秒级响应。
+//!
+//! 读口在 handler：collector 是纯基础设施单例（`pkg::stats::runtime::aop`），
+//! 经 SystemDomain 转一手只会让 `domain → consumer` 成立，没有任何领域逻辑可放。
 
 use ai_orz_macros::generate_http_handler;
 use common::api::{
@@ -11,15 +14,21 @@ use common::api::{
 use common::error::Result;
 
 use crate::pkg::RequestContext;
-use crate::service::domain::system::domain;
+use crate::pkg::stats::runtime::aop;
+
+/// 取全局收集器；未初始化时按内部错误返回（服务启动装配缺失）
+fn collector() -> Result<&'static aop::AopStatsCollector> {
+    aop::collector()
+        .ok_or_else(|| common::error::Error::internal("AopStatsCollector not initialized"))
+}
 
 /// GET /api/v1/system/aop/stats/overview
 #[generate_http_handler]
 pub async fn get_stats_overview(
-    ctx: RequestContext,
+    _ctx: RequestContext,
     _params: GetStatsOverviewRequest,
 ) -> Result<AopStatsOverviewResponse> {
-    let result = domain().aop_stats().overview(ctx).await?;
+    let result = collector()?.overview().await;
     Ok(AopStatsOverviewResponse {
         total_published: result.total_published,
         total_consumed: result.total_consumed,
@@ -32,19 +41,18 @@ pub async fn get_stats_overview(
 /// GET /api/v1/system/aop/stats/time-series
 #[generate_http_handler]
 pub async fn get_stats_time_series(
-    ctx: RequestContext,
+    _ctx: RequestContext,
     params: GetStatsTimeSeriesRequest,
 ) -> Result<AopStatsTimeSeriesResponse> {
-    let points = domain()
-        .aop_stats()
+    // 请求侧是严格枚举（§3.6）；统计链路按线格式字符串过滤，转换收口在此
+    let event_kind = params.event_kind.map(|t| t.as_str().to_string());
+    let points = collector()?
         .time_series(
-            ctx,
-            // 请求侧是严格枚举（§3.6）；统计链路按线格式字符串过滤，转换收口在此
-            params.event_kind.map(|t| t.as_str().to_string()),
-            params.consumer_name,
-            params.status,
+            event_kind.as_deref(),
+            params.consumer_name.as_deref(),
+            params.status.as_deref(),
         )
-        .await?;
+        .await;
 
     let points: Vec<AopStatsTimeSeriesPoint> = points
         .into_iter()
@@ -59,13 +67,12 @@ pub async fn get_stats_time_series(
 /// GET /api/v1/system/aop/stats/distribution
 #[generate_http_handler]
 pub async fn get_stats_distribution(
-    ctx: RequestContext,
+    _ctx: RequestContext,
     params: GetStatsDistributionRequest,
 ) -> Result<AopStatsDistributionResponse> {
-    let items = domain()
-        .aop_stats()
-        .distribution(ctx, params.group_by, params.status)
-        .await?;
+    let items = collector()?
+        .distribution(&params.group_by, params.status.as_deref())
+        .await;
 
     let items: Vec<AopStatsDistributionItem> = items
         .into_iter()

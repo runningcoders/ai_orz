@@ -718,8 +718,42 @@ impl MessageDelivery for MessageDomainImpl {
             )
             .await;
             let registry = resource_resolver::build_resolved_registry(attachments, artifacts);
-            let degraded =
-                resource_resolver::degrade_content_for_external(cmd.message.content(), &registry);
+            // 纯附件消息（正文即附件 id + file_meta）不是 markdown 引用：外部渠道
+            // 不该收到一串裸 id，换成与混排一致的 `[附件：名]` 占位。
+            let mut degraded = match cmd.message.file_meta() {
+                Some(meta) => {
+                    let name = std::path::Path::new(&meta.file_path)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("附件");
+                    format!("[附件：{name}]")
+                }
+                None => resource_resolver::degrade_content_for_external(
+                    cmd.message.content(),
+                    &registry,
+                ),
+            };
+            // 出站附件（图片 + 文档等）：在降级前从原文提取，字节随渠道 payload
+            // 透传；SSE 站内仍走原文，由前端自行渲染。无引用时零 IO。
+            // file_meta 形态的正文即附件 id，单独传入，避免解析成 markdown 引用。
+            let direct_attachment_id = cmd.message.file_meta().map(|_| cmd.message.content());
+            let outbound_batch = resource_resolver::extract_outbound_attachments(
+                &ctx,
+                &self.attachment_dal,
+                cmd.message.content(),
+                direct_attachment_id,
+            )
+            .await;
+            // 附件是站内资产，创建时不设渠道上限；发不出去是推送时才知道的事。
+            // 超限的跳过字节，但必须在正文里说清——否则用户只看到占位、
+            // 以为附件丢了。正文若已以换行结尾，先裁掉再加提示（避免空行叠加）。
+            if !outbound_batch.skipped.is_empty() {
+                let trimmed = degraded.trim_end_matches('\n').len();
+                degraded.truncate(trimmed);
+                degraded.push_str(&resource_resolver::skipped_attachment_notice(
+                    &outbound_batch.skipped,
+                ));
+            }
             // 降级零改动（无协议引用，幂等）→ 原消息分发；有改动 → 局部降级副本，
             // 仅作用于本次渠道分发，库内消息保持协议原文（SSE 站内同原文）。
             let degraded_message;
@@ -732,7 +766,13 @@ impl MessageDelivery for MessageDomainImpl {
                 &degraded_message
             };
             self.message_channel_dal
-                .deliver_message(ctx.clone(), outbound, cmd.user_id, reply_target)
+                .deliver_message(
+                    ctx.clone(),
+                    outbound,
+                    cmd.user_id,
+                    reply_target,
+                    &outbound_batch.attachments,
+                )
                 .await?
         } else {
             crate::service::dal::message_channel::DeliveryResult::empty()

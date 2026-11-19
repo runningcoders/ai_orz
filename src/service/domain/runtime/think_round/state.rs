@@ -6,7 +6,7 @@
 //! 与 `ThinkLoopProgress` 同一套路：节点顺序执行，锁只在同步片段内持有。
 
 use crate::models::cortex_types::{ChatMessage, TokenUsage, ToolCallRequest};
-use crate::pkg::think_trace::{ThinkTraceRound, ThinkTraceToolCall};
+use crate::service::domain::runtime::think_trace::{ThinkTraceRound, ThinkTraceToolCall};
 use crate::service::domain::runtime::types::ThinkLoopResult;
 use std::collections::{HashMap, HashSet};
 
@@ -26,8 +26,15 @@ pub(crate) fn truncate_trace_text(text: &str, max_chars: usize) -> String {
 }
 
 /// 工具调用入参预览：序列化失败时退化为空对象
+///
+/// `_intent` 不进食参预览——它是调用附注，单独进 [`ThinkTraceToolCall::intent`]，
+/// 与业务参数混在一起会让「这步到底传了什么」变模糊。
 pub(crate) fn tool_arguments_preview(arguments: &serde_json::Value) -> String {
-    let raw = serde_json::to_string(arguments).unwrap_or_else(|_| "{}".to_string());
+    let mut business = arguments.clone();
+    if let Some(obj) = business.as_object_mut() {
+        obj.remove(common::llm_schema::CALL_INTENT_KEY);
+    }
+    let raw = serde_json::to_string(&business).unwrap_or_else(|_| "{}".to_string());
     truncate_trace_text(&raw, TRACE_TOOL_PREVIEW_MAX_CHARS)
 }
 
@@ -41,6 +48,7 @@ pub(crate) fn pending_tool_trace(tc: &ToolCallRequest) -> ThinkTraceToolCall {
     ThinkTraceToolCall {
         call_id: None,
         name: tc.name.clone(),
+        intent: common::llm_schema::read_call_intent(&tc.arguments),
         arguments: tool_arguments_preview(&tc.arguments),
         result: None,
         status: "pending".to_string(),
@@ -141,5 +149,37 @@ impl RoundState {
             result: None,
             trace_rounds: Vec::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pending_tool_trace_separates_intent_from_arguments() {
+        let tc = ToolCallRequest {
+            id: "call-1".to_string(),
+            name: "search_memory".to_string(),
+            arguments: serde_json::json!({
+                "q": "历史",
+                common::llm_schema::CALL_INTENT_KEY: "查历史记录用于比对"
+            }),
+        };
+        let trace = pending_tool_trace(&tc);
+        assert_eq!(trace.intent.as_deref(), Some("查历史记录用于比对"));
+        // 入参预览只放业务参数：「传了什么」与「想干什么」在 UI 上是两行
+        assert!(!trace.arguments.contains("_intent"));
+        assert!(trace.arguments.contains("历史"));
+    }
+
+    #[test]
+    fn pending_tool_trace_without_intent_keeps_none() {
+        let tc = ToolCallRequest {
+            id: "call-2".to_string(),
+            name: "search_memory".to_string(),
+            arguments: serde_json::json!({"q": "历史"}),
+        };
+        assert!(pending_tool_trace(&tc).intent.is_none());
     }
 }

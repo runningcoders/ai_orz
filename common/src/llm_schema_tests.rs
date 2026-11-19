@@ -250,3 +250,80 @@ fn 自引用_schema_不死循环_保留_defs_兜底() {
     );
     assert!(out["$defs"]["Node"].is_object());
 }
+
+// ==================== 调用附注 `_intent` ====================
+
+#[test]
+fn inject_call_intent_adds_property_idempotently() {
+    let mut schema = serde_json::json!({
+        "type": "object",
+        "properties": {"path": {"type": "string"}},
+        "additionalProperties": false
+    });
+    inject_call_intent(&mut schema);
+    inject_call_intent(&mut schema);
+    let props = schema["properties"].as_object().unwrap();
+    assert!(props.contains_key(CALL_INTENT_KEY));
+    assert_eq!(props["path"]["type"], serde_json::json!("string"));
+    // 幂等：重复注入不得覆盖或复制
+    assert_eq!(
+        props.keys().filter(|k| *k == CALL_INTENT_KEY).count(),
+        1,
+        "重复注入只保留一个"
+    );
+    assert_eq!(schema["additionalProperties"], serde_json::json!(false));
+}
+
+#[test]
+fn inject_call_intent_repairs_missing_root_shape() {
+    // 空 schema（无参工具写成 {}）也必须能承载附注
+    let mut schema = serde_json::json!({});
+    inject_call_intent(&mut schema);
+    assert_eq!(schema["type"], serde_json::json!("object"));
+    assert!(schema["properties"][CALL_INTENT_KEY].is_object());
+}
+
+#[test]
+fn take_call_intent_removes_key_and_returns_text() {
+    let mut args = serde_json::json!({
+        "path": "work/a.md",
+        CALL_INTENT_KEY: "  核对上月订单总额  "
+    });
+    assert_eq!(
+        take_call_intent(&mut args).as_deref(),
+        Some("核对上月订单总额")
+    );
+    // 业务参数原样保留，附注不得泄漏给工具
+    assert_eq!(args, serde_json::json!({"path": "work/a.md"}));
+}
+
+#[test]
+fn take_call_intent_tolerates_missing_and_bad_shapes() {
+    let mut no_intent = serde_json::json!({"path": "a"});
+    assert_eq!(take_call_intent(&mut no_intent), None);
+
+    let mut blank = serde_json::json!({CALL_INTENT_KEY: "   "});
+    assert_eq!(take_call_intent(&mut blank), None);
+
+    // 非字符串（模型偶发写成对象/数组）不能导致调用失败
+    let mut obj_intent = serde_json::json!({CALL_INTENT_KEY: {"why": "x"}});
+    assert_eq!(take_call_intent(&mut obj_intent), None);
+    assert!(obj_intent.get(CALL_INTENT_KEY).is_none());
+
+    // 非对象参数（null / 数组）直接放行
+    let mut null_args = serde_json::Value::Null;
+    assert_eq!(take_call_intent(&mut null_args), None);
+}
+
+#[test]
+fn take_call_intent_truncates_by_chars() {
+    let long = "长".repeat(CALL_INTENT_MAX_CHARS + 40);
+    let mut args = serde_json::json!({CALL_INTENT_KEY: long});
+    let out = take_call_intent(&mut args).unwrap();
+    assert_eq!(
+        out.chars().count(),
+        CALL_INTENT_MAX_CHARS + 1,
+        "截断后含省略号，按字符计数（不能按字节切，中文会切坏）"
+    );
+    assert!(out.ends_with('…'));
+}

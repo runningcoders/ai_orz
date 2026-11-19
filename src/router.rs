@@ -935,6 +935,10 @@ fn finance_routes() -> Router {
             post(handlers::finance::attachment::create_text_attachment::create_text_attachment_handler),
         )
         .route(
+            "/attachments/from-path",
+            post(handlers::finance::attachment::create_attachment_from_path::create_attachment_from_path_handler),
+        )
+        .route(
             "/attachments",
             get(handlers::finance::attachment::list_attachments::list_attachments_handler),
         )

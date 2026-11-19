@@ -75,6 +75,8 @@ pub fn new(
 
 // ==================== DAL 接口 ====================
 
+use crate::models::outbound_media::OutboundAttachment;
+
 /// 消息渠道 DAL 接口
 #[async_trait::async_trait]
 pub trait MessageChannelDal: Send + Sync {
@@ -149,6 +151,7 @@ pub trait MessageChannelDal: Send + Sync {
         message: &Message,
         user_id: &str,
         reply_target: Option<ReplyTarget>,
+        attachments: &[OutboundAttachment],
     ) -> Result<DeliveryResult>;
 
     /// 发送入站回执（一次性副作用，不落库、不进消息链、不推 SSE）
@@ -330,6 +333,7 @@ impl MessageChannelDal for MessageChannelDalImpl {
         message: &Message,
         user_id: &str,
         reply_target: Option<ReplyTarget>,
+        attachments: &[OutboundAttachment],
     ) -> Result<DeliveryResult> {
         let ctx = enrich_ctx!(&ctx, message);
         // 1. 查询用户的所有活跃渠道
@@ -383,7 +387,13 @@ impl MessageChannelDal for MessageChannelDalImpl {
         for po in filtered_channels {
             let channel = MessageChannel::from_po(po);
             let result = self
-                .push_to_channel(ctx.clone(), message, &channel, reply_target.as_ref())
+                .push_to_channel(
+                    ctx.clone(),
+                    message,
+                    &channel,
+                    reply_target.as_ref(),
+                    attachments,
+                )
                 .await;
 
             // 4. 更新渠道推送状态
@@ -587,6 +597,7 @@ impl MessageChannelDalImpl {
         message: &Message,
         channel: &MessageChannel,
         reply_target: Option<&ReplyTarget>,
+        attachments: &[OutboundAttachment],
     ) -> std::result::Result<(), common::error::Error> {
         match channel.channel_type() {
             ChannelType::Lark => {
@@ -604,6 +615,7 @@ impl MessageChannelDalImpl {
                         channel,
                         &credentials,
                         lark_reply.as_ref(),
+                        attachments,
                     )
                     .await
                 {
@@ -638,7 +650,7 @@ impl MessageChannelDalImpl {
                     .await?;
                 match self
                     .wechat_dao
-                    .push(ctx.clone(), message, channel, &credentials)
+                    .push(ctx.clone(), message, channel, &credentials, attachments)
                     .await
                 {
                     // 推送成功：回写外部键映射（"wechat:{message_id}"），口径与飞书一致。

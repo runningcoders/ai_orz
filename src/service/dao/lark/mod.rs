@@ -141,9 +141,11 @@ pub trait LarkDao: Send + Sync {
     /// - `credentials`: 已解析的飞书应用凭证（DAL 层从渠道引用解析）
     /// - `reply`: 引用回复参数；`None` 时走普通发送端点（`POST /messages`），
     ///   `Some` 时走回复端点（`POST /messages/:message_id/reply`）
+    /// - `attachments`: 正文中 `attachment:` 引用解析出的附件字节；图片以
+    ///   `msg_type:image`、其余以 `msg_type:file` 逐条独立发出，单条失败仅告警
     ///
     /// 返回飞书侧 message_id（om_xxx），DAL 层据此回写消息的外部键映射，
-    /// 供后续入站回复反查父消息、贯通跨渠道消息链。
+    /// 供后续入站回复反查父消息、贯通跨渠道消息链。图片消息的 ID 不参与回写。
     async fn push(
         &self,
         ctx: RequestContext,
@@ -151,6 +153,7 @@ pub trait LarkDao: Send + Sync {
         channel: &MessageChannel,
         credentials: &LarkAppCredentials,
         reply: Option<&LarkReply>,
+        attachments: &[crate::models::outbound_media::OutboundAttachment],
     ) -> Result<Option<String>>;
 
     /// 给指定消息添加表情回复（入站「轻回执」）

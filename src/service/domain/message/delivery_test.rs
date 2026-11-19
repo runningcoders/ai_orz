@@ -380,8 +380,8 @@ async fn test_send_to_agent_with_attachments_composes_refs_into_one_message(pool
     );
 }
 
-/// 附件引用必须能被唤醒侧解析：`collect_current_message_attachment_ids` 是
-/// 「附件有没有进模型」的唯一入口，正文拼装改口径时这里必须继续命中。
+/// 附件引用必须能被唤醒侧解析：`Message::attachment_ref_ids` 是「附件有没有进模型」
+/// 的唯一入口（解析逻辑在 models，唤醒与投递共用），正文拼装改口径时这里必须继续命中。
 #[sqlx::test]
 async fn test_composed_attachment_refs_are_visible_to_awakening(pool: SqlitePool) {
     let (domain, ctx) = init_test_env(pool);
@@ -423,8 +423,7 @@ async fn test_composed_attachment_refs_are_visible_to_awakening(pool: SqlitePool
     assert!(!sent.po.content.trim().is_empty());
     assert_eq!(sent.po.message_type, MessageType::Mixed);
 
-    let collected =
-        crate::service::domain::runtime::awakening::collect_current_message_attachment_ids(&sent);
+    let collected = sent.attachment_ref_ids();
     assert_eq!(collected, att_ids, "唤醒侧必须能从正文引用里收集到附件");
 }
 

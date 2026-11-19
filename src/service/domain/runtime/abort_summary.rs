@@ -27,12 +27,12 @@
 //! - **不改错误语义**：兜底只做「存档」，失败照常向上抛，重试/通知决策仍在消费者侧。
 //! - **全链路尽力而为**：任何一步失败都只记 warn，绝不把兜底失败变成新的错误。
 
-use super::compaction::{estimate_tokens, truncate_to_tokens};
-use super::text_budget;
 use super::types::{ProgressSnapshot, RoundDigest, ThinkLoopProgress};
 use crate::models::agent::Agent;
 use crate::models::memory::{MemoryCreateParams, MemoryTrace, ShortTermMemoryIndexPo};
 use crate::pkg::request_context::RequestContext;
+use crate::pkg::text_budget;
+use crate::pkg::tokens::{estimate_tokens, truncate_to_tokens};
 use crate::service::domain::runtime::{RuntimeDomain, RuntimeDomainImpl};
 use common::enums::MemoryStatus;
 use common::error::Error;

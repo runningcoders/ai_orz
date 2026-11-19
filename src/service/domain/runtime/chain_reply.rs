@@ -113,7 +113,7 @@
 //!
 //! # 观测
 //!
-//! 每次进入本门都写一条 `record_cerebellum{scene: "chain_reply", decision}`。
+//! 每次进入本门都写穿一条留痕（`TraceSink::cerebellum`，scene = `chain_reply`）。
 //! `decision` 六值 = `not_triggered` / `empty_input` / `continue` / `close` /
 //! `close_default` / `fallback`。**记账条目同样占轨迹名额**
 //! —— 一次唤醒最多 1 条（一次回发判定一次），单 run 32 条上限内绰绰有余。
@@ -121,13 +121,13 @@
 //! 判断「硬墙能否退场」的依据。
 
 use super::cerebellum_context as context;
-use super::compaction::{estimate_tokens, truncate_to_tokens};
 use crate::models::brain::Brain;
 use crate::pkg::RequestContext;
 use crate::pkg::agent_runtime_state::{AgentRuntimeStateManager, CerebellumGuardVerdict};
 use crate::pkg::policy::{DecisionPolicy, DecisionValue, Metrics, PickOne, PickOnePolicy, Policy};
-use crate::pkg::think_trace::{ThinkTraceCerebellum, record_cerebellum};
+use crate::pkg::tokens::{estimate_tokens, truncate_to_tokens};
 use crate::service::dal::brain::{BrainDal, dal};
+use crate::service::domain::runtime::think_trace::ThinkTraceCerebellum;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -800,7 +800,7 @@ pub(crate) fn render_one(index: usize, message: &ChainMessage) -> String {
     )
 }
 
-/// 链内正文的截断标注（实现见 `compaction::truncate_to_tokens`，
+/// 链内正文的截断标注（实现见 `pkg::tokens::truncate_to_tokens`，
 /// 小脑 state 裁剪共用同一实现、只差这段文案）
 const BODY_TRUNCATION_SUFFIX: &str = "…（正文已截断）";
 
@@ -1120,7 +1120,7 @@ pub(crate) async fn judge_chain_reply(
     messages: &[ChainMessage],
     facts: &ChainPressureFacts,
     pending_reply: &str,
-    trace_id: &str,
+    scope: &crate::service::domain::runtime::think_trace::TraceSink,
 ) -> Option<ChainReplyVerdict> {
     // ① 未装配 Brain = 降级，不是错误（本门绝不阻断主流程，也不 panic）
     //
@@ -1161,8 +1161,7 @@ pub(crate) async fn judge_chain_reply(
             hard_window_depth = facts.hard_window_depth,
             "chain depth hits the absolute ceiling: close regardless of cerebellum verdict"
         );
-        record_cerebellum(
-            trace_id,
+        scope.cerebellum(
             // `applied = false`：天花板在 `depth >= 32 >= hard(8)`，该区间静态判定
             // 本就 `Escalate → CloseChainAsNotify`，下游**没变**；且本态根本没问小脑
             // （`degraded = ceiling_forced`），记 true 等于把「没判」记成「生效」，
@@ -1203,16 +1202,13 @@ pub(crate) async fn judge_chain_reply(
             probe_every = crate::pkg::agent_runtime_state::CEREBELLUM_PROBE_EVERY,
             "chain reply gate skipped by circuit breaker (endpoint keeps failing)"
         );
-        record_cerebellum(
-            trace_id,
-            trace(
-                DECISION_FALLBACK,
-                None,
-                Some(DEGRADED_CIRCUIT_OPEN),
-                false,
-                None,
-            ),
-        );
+        scope.cerebellum(trace(
+            DECISION_FALLBACK,
+            None,
+            Some(DEGRADED_CIRCUIT_OPEN),
+            false,
+            None,
+        ));
         return None;
     }
     if matches!(guard_verdict, CerebellumGuardVerdict::Probe) {
@@ -1261,16 +1257,13 @@ pub(crate) async fn judge_chain_reply(
             body_budget = body_budget,
             "chain reply gate skipped: provider capacity below judge skeleton"
         );
-        record_cerebellum(
-            trace_id,
-            trace(
-                DECISION_FALLBACK,
-                None,
-                Some(DEGRADED_CAPACITY),
-                false,
-                None,
-            ),
-        );
+        scope.cerebellum(trace(
+            DECISION_FALLBACK,
+            None,
+            Some(DEGRADED_CAPACITY),
+            false,
+            None,
+        ));
         return None;
     }
 
@@ -1334,10 +1327,7 @@ pub(crate) async fn judge_chain_reply(
         // 空输入没发请求、也没证明端点坏了 ⇒ 按裁定口径记「健康」（清零）：
         // 只有 timeout / call_error 才是熔断证据，其余一律不累加。
         runtime_state.record_cerebellum_healthy(&brain.agent_id);
-        record_cerebellum(
-            trace_id,
-            trace(DECISION_EMPTY_INPUT, None, None, false, None),
-        );
+        scope.cerebellum(trace(DECISION_EMPTY_INPUT, None, None, false, None));
         log_info!(
             ctx,
             "chain_reply",
@@ -1362,10 +1352,13 @@ pub(crate) async fn judge_chain_reply(
             used = brain.cerebellum_quota.used(),
             "cerebellum call budget exhausted, fall back to original logic"
         );
-        record_cerebellum(
-            trace_id,
-            trace(DECISION_FALLBACK, None, Some(DEGRADED_BUDGET), false, None),
-        );
+        scope.cerebellum(trace(
+            DECISION_FALLBACK,
+            None,
+            Some(DEGRADED_BUDGET),
+            false,
+            None,
+        ));
         return None;
     }
 
@@ -1419,16 +1412,13 @@ pub(crate) async fn judge_chain_reply(
             omitted = input.omitted,
             "chain reply gate degraded to static threshold"
         );
-        record_cerebellum(
-            trace_id,
-            trace(
-                DECISION_FALLBACK,
-                None,
-                Some(reason.as_str()),
-                false,
-                Some(latency_ms),
-            ),
-        );
+        scope.cerebellum(trace(
+            DECISION_FALLBACK,
+            None,
+            Some(reason.as_str()),
+            false,
+            Some(latency_ms),
+        ));
         return None;
     }
 
@@ -1478,16 +1468,13 @@ pub(crate) async fn judge_chain_reply(
             overrode_static_wall = overrode_static_wall,
             "chain reply gate has no usable answer, default to close (notify only)"
         );
-        record_cerebellum(
-            trace_id,
-            trace(
-                DECISION_CLOSE_DEFAULT,
-                None,
-                Some(reason),
-                !overrode_static_wall,
-                Some(latency_ms),
-            ),
-        );
+        scope.cerebellum(trace(
+            DECISION_CLOSE_DEFAULT,
+            None,
+            Some(reason),
+            !overrode_static_wall,
+            Some(latency_ms),
+        ));
         return Some(ChainReplyVerdict::Close { confidence: None });
     };
 
@@ -1511,16 +1498,13 @@ pub(crate) async fn judge_chain_reply(
             output_tokens = outcome.usage.output_tokens,
             "chain closed by cerebellum (no new information / no need to reply)"
         );
-        record_cerebellum(
-            trace_id,
-            trace(
-                DECISION_CLOSE,
-                Some(pick.confidence),
-                None,
-                !overrode_static_wall,
-                Some(latency_ms),
-            ),
-        );
+        scope.cerebellum(trace(
+            DECISION_CLOSE,
+            Some(pick.confidence),
+            None,
+            !overrode_static_wall,
+            Some(latency_ms),
+        ));
         return Some(ChainReplyVerdict::Close {
             confidence: Some(pick.confidence),
         });
@@ -1547,16 +1531,13 @@ pub(crate) async fn judge_chain_reply(
             output_tokens = outcome.usage.output_tokens,
             "chain closed silently by cerebellum (nothing the peer needs to know)"
         );
-        record_cerebellum(
-            trace_id,
-            trace(
-                DECISION_SILENT,
-                Some(pick.confidence),
-                None,
-                true,
-                Some(latency_ms),
-            ),
-        );
+        scope.cerebellum(trace(
+            DECISION_SILENT,
+            Some(pick.confidence),
+            None,
+            true,
+            Some(latency_ms),
+        ));
         return Some(ChainReplyVerdict::Silent {
             confidence: pick.confidence,
         });
@@ -1590,16 +1571,13 @@ pub(crate) async fn judge_chain_reply(
         omitted = input.omitted,
         "chain reply gate lets the chain continue (soft wall)"
     );
-    record_cerebellum(
-        trace_id,
-        trace(
-            DECISION_CONTINUE,
-            Some(pick.confidence),
-            None,
-            overrode_static_wall,
-            Some(latency_ms),
-        ),
-    );
+    scope.cerebellum(trace(
+        DECISION_CONTINUE,
+        Some(pick.confidence),
+        None,
+        overrode_static_wall,
+        Some(latency_ms),
+    ));
     Some(ChainReplyVerdict::Continue {
         confidence: pick.confidence,
     })
@@ -1613,7 +1591,7 @@ pub(crate) async fn judge_chain_reply_with_default_dao(
     messages: &[ChainMessage],
     facts: &ChainPressureFacts,
     pending_reply: &str,
-    trace_id: &str,
+    scope: &crate::service::domain::runtime::think_trace::TraceSink,
 ) -> Option<ChainReplyVerdict> {
     judge_chain_reply(
         ctx,
@@ -1623,7 +1601,7 @@ pub(crate) async fn judge_chain_reply_with_default_dao(
         messages,
         facts,
         pending_reply,
-        trace_id,
+        scope,
     )
     .await
 }

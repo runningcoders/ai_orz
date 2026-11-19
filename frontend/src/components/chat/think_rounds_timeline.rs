@@ -366,6 +366,7 @@ pub fn ThinkRoundsTimeline(rounds: Vec<ThinkTraceRoundDto>) -> Element {
                                     {
                                         let name = tool.name.clone();
                                         let status = tool.status.clone();
+                                        let intent = tool.intent.clone();
                                         let arguments = tool.arguments.clone();
                                         let result = tool.result.clone();
                                         let result_preview = result
@@ -388,6 +389,15 @@ pub fn ThinkRoundsTimeline(rounds: Vec<ThinkTraceRoundDto>) -> Element {
                                                             title: "{id}",
                                                             "{preview_text(&id, 24)}"
                                                         }
+                                                    }
+                                                }
+                                                // 模型自述的调用意图：比工具名更直接地表达「这步在干什么」。
+                                                // 缺失（模型没写）时整行不渲染，不留空壳。
+                                                if let Some(intent) = intent.clone() {
+                                                    div {
+                                                        class: "text-[11px] text-base-content/75 leading-snug",
+                                                        title: "{intent}",
+                                                        "{intent}"
                                                     }
                                                 }
                                                 details {

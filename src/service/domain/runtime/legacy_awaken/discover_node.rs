@@ -8,18 +8,19 @@
 //!
 //! 观测口径（design §3.7）：日志 + fingerprint 覆盖，不新增事件类型。
 
-use super::super::compaction::{context_capacity_of, truncate_to_tokens};
-use super::super::text_budget;
+use super::super::compaction::context_capacity_of;
 use super::blueprint::{SIGNAL_NEW_FINDINGS, SIGNAL_NO_NEW_FINDINGS};
 use super::context::{AwakenDeps, DiscoveryOutcome, RetrievalPack, read_bus};
 use super::nodes::{Artifacts, BudgetState};
 use super::retrieve_node::diff_terms;
 use crate::models::agent::Agent;
 use crate::models::cortex_types::ChatMessage;
+use crate::pkg::text_budget;
 use crate::pkg::think_path::{
     ContextKey, LoadDepth, NodeContract, NodeId, NodeOutcome, NodeSignal, PhaseId, ThinkBus,
     ThinkNode,
 };
+use crate::pkg::tokens::truncate_to_tokens;
 use async_trait::async_trait;
 use common::error::Result;
 use std::sync::Arc;

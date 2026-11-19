@@ -822,3 +822,209 @@ fn test_build_send_typing_body() {
     assert_eq!(body["status"], 1);
     assert!(body.get("base_info").is_some(), "协议要求携带 base_info");
 }
+
+/// AES-128-ECB + PKCS7 密文长度：整块必须补一整块（与官方 ceil((n+1)/16) 一致）
+#[test]
+fn test_aes_ecb_padded_size() {
+    assert_eq!(aes_ecb_padded_size(0), 16);
+    assert_eq!(aes_ecb_padded_size(1), 16);
+    assert_eq!(aes_ecb_padded_size(15), 16);
+    assert_eq!(aes_ecb_padded_size(16), 32);
+    assert_eq!(aes_ecb_padded_size(17), 32);
+}
+
+/// hex 编码：filekey / aeskey 的上报格式
+#[test]
+fn test_encode_hex() {
+    assert_eq!(encode_hex(&[]), "");
+    assert_eq!(encode_hex(&[0x00, 0x0f, 0x10, 0xff]), "000f10ff");
+}
+
+/// 出站 aes_key 必须是 base64(hex 文本)，与官方 send.ts 一致（不是 base64(原始 16 字节)）
+#[test]
+fn test_encode_aes_key_for_json() {
+    let key = [0xabu8; 16];
+    let encoded = encode_aes_key_for_json(&key);
+    use base64::Engine as _;
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(&encoded)
+        .unwrap();
+    assert_eq!(decoded.len(), 32, "base64 解出来应是 32 字符 hex 文本");
+    assert_eq!(String::from_utf8(decoded).unwrap(), encode_hex(&key));
+}
+
+/// 出站加密与入站解密往返：同一套 AES-128-ECB / PKCS7 必须互逆
+#[test]
+fn test_encrypt_decrypt_aes_128_ecb_roundtrip() {
+    let key = [0x42u8; 16];
+    for plaintext in [
+        vec![],
+        b"short".to_vec(),
+        vec![7u8; 16],
+        vec![9u8; 17],
+        vec![3u8; 100],
+    ] {
+        let ciphertext = encrypt_aes_128_ecb(&plaintext, &key).unwrap();
+        assert_eq!(ciphertext.len(), aes_ecb_padded_size(plaintext.len()));
+        assert_eq!(decrypt_aes_128_ecb(&ciphertext, &key).unwrap(), plaintext);
+    }
+}
+
+/// getuploadurl 请求体：media_type=1、no_need_thumb、base_info、密文长度都必带
+#[test]
+fn test_build_get_upload_url_body() {
+    let body = build_get_upload_url_body(
+        "filekey1",
+        UPLOAD_MEDIA_TYPE_IMAGE,
+        "peer_1",
+        5,
+        "md5hex",
+        16,
+        "aeskeyhex",
+    );
+
+    assert_eq!(body["filekey"], "filekey1");
+    assert_eq!(body["media_type"], UPLOAD_MEDIA_TYPE_IMAGE);
+    // 文件附件走 FILE=3（官方 UploadMediaType.FILE），其余字段与图片同构
+    let file_body = build_get_upload_url_body(
+        "filekey2",
+        UPLOAD_MEDIA_TYPE_FILE,
+        "peer_1",
+        5,
+        "md5hex",
+        16,
+        "aeskeyhex",
+    );
+    assert_eq!(file_body["media_type"], UPLOAD_MEDIA_TYPE_FILE);
+    // 视频走 VIDEO=2（官方 UploadMediaType.VIDEO）
+    let video_body = build_get_upload_url_body(
+        "filekey3",
+        UPLOAD_MEDIA_TYPE_VIDEO,
+        "peer_1",
+        5,
+        "md5hex",
+        16,
+        "aeskeyhex",
+    );
+    assert_eq!(video_body["media_type"], UPLOAD_MEDIA_TYPE_VIDEO);
+    assert_eq!(body["to_user_id"], "peer_1");
+    assert_eq!(body["rawsize"], 5);
+    assert_eq!(body["rawfilemd5"], "md5hex");
+    assert_eq!(body["filesize"], 16);
+    assert_eq!(body["no_need_thumb"], true);
+    assert_eq!(body["aeskey"], "aeskeyhex");
+    assert!(
+        body.get("base_info").is_some(),
+        "官方 getuploadurl 必须带 base_info（sendmessage 才不带）"
+    );
+}
+
+/// getuploadurl 响应解析：优先 full_url；ret 非 0 / 两者皆缺 / 非 JSON 均报错
+#[test]
+fn test_parse_upload_url_response() {
+    let ok = parse_upload_url_response(
+        r#"{"ret":0,"upload_full_url":" https://cdn.weixin.qq.com/u?x=1 ","upload_param":"param1"}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        ok.upload_full_url.as_deref(),
+        Some("https://cdn.weixin.qq.com/u?x=1")
+    );
+    assert_eq!(ok.upload_param.as_deref(), Some("param1"));
+
+    let param_only = parse_upload_url_response(r#"{"ret":0,"upload_param":"p"}"#).unwrap();
+    assert!(param_only.upload_full_url.is_none());
+    assert_eq!(param_only.upload_param.as_deref(), Some("p"));
+
+    assert!(parse_upload_url_response(r#"{"ret":-1,"errmsg":"bad"}"#).is_err());
+    assert!(parse_upload_url_response(r#"{"ret":0}"#).is_err());
+    assert!(parse_upload_url_response("not json").is_err());
+}
+
+/// 图片 sendmessage 请求体：image_item 字段形态（aes_key base64 / encrypt_type 1 / mid_size）
+#[test]
+fn test_build_image_send_body() {
+    let body = build_image_send_body("peer_1", "ctx_1", "client_1", "dl_param", "YWJj", 32);
+
+    assert_eq!(body["msg"]["to_user_id"], "peer_1");
+    assert_eq!(body["msg"]["client_id"], "client_1");
+    assert_eq!(body["msg"]["context_token"], "ctx_1");
+    assert_eq!(body["msg"]["message_type"], wechat_ilink::MESSAGE_TYPE_BOT);
+    assert_eq!(
+        body["msg"]["message_state"],
+        wechat_ilink::MESSAGE_STATE_FINISH
+    );
+    assert!(body["msg"]["from_user_id"].as_str().unwrap().is_empty());
+    let items = body["msg"]["item_list"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["type"], wechat_ilink::MESSAGE_ITEM_TYPE_IMAGE);
+    assert_eq!(
+        items[0]["image_item"]["media"]["encrypt_query_param"],
+        "dl_param"
+    );
+    assert_eq!(items[0]["image_item"]["media"]["aes_key"], "YWJj");
+    assert_eq!(items[0]["image_item"]["media"]["encrypt_type"], 1);
+    assert_eq!(items[0]["image_item"]["mid_size"], 32);
+    assert!(
+        body.get("base_info").is_none(),
+        "官方 sendmessage 不带 base_info"
+    );
+}
+
+/// 文件 sendmessage 请求体：file_item 字段形态（file_name + len 明文字符串）
+#[test]
+fn test_build_file_send_body() {
+    let body = build_file_send_body(
+        "peer_1",
+        "ctx_1",
+        "client_1",
+        "dl_param",
+        "YWJj",
+        "季度报告.pdf",
+        12345,
+    );
+
+    assert_eq!(body["msg"]["to_user_id"], "peer_1");
+    let items = body["msg"]["item_list"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["type"], wechat_ilink::MESSAGE_ITEM_TYPE_FILE);
+    assert_eq!(
+        items[0]["file_item"]["media"]["encrypt_query_param"],
+        "dl_param"
+    );
+    assert_eq!(items[0]["file_item"]["media"]["aes_key"], "YWJj");
+    assert_eq!(items[0]["file_item"]["media"]["encrypt_type"], 1);
+    assert_eq!(items[0]["file_item"]["file_name"], "季度报告.pdf");
+    assert_eq!(
+        items[0]["file_item"]["len"], "12345",
+        "官方 file_item.len 是明文大小的字符串"
+    );
+    assert!(body.get("base_info").is_none());
+}
+
+/// 视频 sendmessage 请求体：video_item 字段形态（video_size 密文长度 + media 三件套）
+#[test]
+fn test_build_video_send_body() {
+    let body = build_video_send_body("peer_1", "ctx_1", "client_1", "dl_param", "YWJj", 4096);
+
+    assert_eq!(body["msg"]["to_user_id"], "peer_1");
+    let items = body["msg"]["item_list"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["type"], wechat_ilink::MESSAGE_ITEM_TYPE_VIDEO);
+    assert_eq!(
+        items[0]["video_item"]["media"]["encrypt_query_param"],
+        "dl_param"
+    );
+    assert_eq!(items[0]["video_item"]["media"]["aes_key"], "YWJj");
+    assert_eq!(items[0]["video_item"]["media"]["encrypt_type"], 1);
+    assert_eq!(items[0]["video_item"]["video_size"], 4096);
+    assert!(body.get("base_info").is_none());
+}
+
+/// 出站目标校验：peer / context_token 缺一即拒
+#[test]
+fn test_validate_send_target() {
+    assert!(validate_send_target("", "ctx").is_err());
+    assert!(validate_send_target("peer", "").is_err());
+    assert!(validate_send_target("peer", "ctx").is_ok());
+}

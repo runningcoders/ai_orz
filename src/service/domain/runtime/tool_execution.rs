@@ -322,20 +322,15 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
         // ① CLI 型（D28「CLI 型 = po.config.command」不变式）
         if let Some((command, install_hint)) = cli_tool_source(&tool.po) {
             let cache_key = tool.po.id.clone();
-            if let Some((status, at)) = readiness_cache().lock().unwrap().get(&cache_key)
-                && at.elapsed() < READINESS_CACHE_TTL
-            {
-                return status.clone();
+            if let Some(status) = crate::pkg::tool_registry::readiness_cache::get(&cache_key) {
+                return status;
             }
             let status = tool_readiness::cli_binary_readiness(
                 &command,
                 install_hint.as_deref().unwrap_or_default(),
                 "或在工具配置中修改命令路径",
             );
-            readiness_cache()
-                .lock()
-                .unwrap()
-                .insert(cache_key, (status.clone(), std::time::Instant::now()));
+            crate::pkg::tool_registry::readiness_cache::put(cache_key, status.clone());
             return status;
         }
 
@@ -347,10 +342,8 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
             return RuntimeReady::Ready;
         }
         let cache_key = format!("{}|{}", tool.po.id, ctx.user_id.clone().unwrap_or_default());
-        if let Some((status, at)) = readiness_cache().lock().unwrap().get(&cache_key)
-            && at.elapsed() < READINESS_CACHE_TTL
-        {
-            return status.clone();
+        if let Some(status) = crate::pkg::tool_registry::readiness_cache::get(&cache_key) {
+            return status;
         }
         let status = match self.resolve_tool_credentials(ctx, &requirements).await {
             Ok(Some(_)) => RuntimeReady::Ready,
@@ -361,59 +354,12 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
             // 探测异常不阻塞调用方（best-effort）
             Err(_) => RuntimeReady::Unknown,
         };
-        readiness_cache()
-            .lock()
-            .unwrap()
-            .insert(cache_key, (status.clone(), std::time::Instant::now()));
+        crate::pkg::tool_registry::readiness_cache::put(cache_key, status.clone());
         status
     }
 }
 
-// ==================== readiness TTL 缓存与 CLI 数据源 ====================
-
-/// 就绪判定缓存 TTL：窗口内重复列表请求复用上次判定
-const READINESS_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(30);
-
-/// 就绪判定缓存（key 型按 `tool_id|user_id`、CLI 型按 `tool_id`）
-static READINESS_CACHE: std::sync::OnceLock<
-    std::sync::Mutex<std::collections::HashMap<String, (RuntimeReady, std::time::Instant)>>,
-> = std::sync::OnceLock::new();
-
-fn readiness_cache()
--> &'static std::sync::Mutex<std::collections::HashMap<String, (RuntimeReady, std::time::Instant)>>
-{
-    READINESS_CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
-}
-
-/// 清除指定工具的就绪缓存
-///
-/// 【生产可见 2026-10-21】内置工具就绪自愈写入新 `command` 后必须立刻失效，
-/// 否则最长 30s 内列表仍显示旧判定（「修了但看起来没修」）。生产调用方：
-/// `ToolProviderManage::reconcile_builtin_tool_readiness`；测试沿用同一入口。
-pub(crate) fn invalidate_readiness_cache(tool_id: &str) {
-    let prefix = format!("{}|", tool_id);
-    readiness_cache()
-        .lock()
-        .unwrap()
-        .retain(|k, _| !k.starts_with(&prefix) && k != tool_id);
-}
-
-/// 测试辅助：把指定工具的缓存时间戳拨回 TTL 前（模拟过期触发重新判定）
-#[cfg(test)]
-pub(super) fn expire_readiness_cache(tool_id: &str) {
-    let prefix = format!("{}|", tool_id);
-    readiness_cache()
-        .lock()
-        .unwrap()
-        .iter_mut()
-        .for_each(|(k, (_, at))| {
-            if k == tool_id || k.starts_with(&prefix) {
-                *at = std::time::Instant::now()
-                    - READINESS_CACHE_TTL
-                    - std::time::Duration::from_secs(1);
-            }
-        });
-}
+// ==================== CLI 数据源 ====================
 
 /// CLI 型工具的命令与安装引导来源：PO config 优先，Builtin 工厂默认 PO 兜底。
 ///

@@ -14,7 +14,7 @@
 - [src/models/events/mod.rs](src/models/events/mod.rs) — 领域事件目录（复数，16 类）
 - [src/consumer/mod.rs](src/consumer/mod.rs) — `consumer::init` 注册消费者
 - [src/producer/mod.rs](src/producer/mod.rs) — `producer::init` 注册生产者
-- [src/consumer/aop_stats_collector.rs](src/consumer/aop_stats_collector.rs) — 指标聚合
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs) — 指标聚合
 - [src/consumer/aop_stats_hook.rs](src/consumer/aop_stats_hook.rs) — 指标埋点 Hook
 - [Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅](docs/modules/10-异步基建(AOP)/C-知识/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅.md)
 
@@ -113,7 +113,7 @@ REG -.-> STATS
 - [src/pkg/aop/core/event.rs](src/pkg/aop/core/event.rs)
 - [src/pkg/aop/core/registry.rs](src/pkg/aop/core/registry.rs)
 - [src/pkg/aop/queue/mod.rs](src/pkg/aop/queue/mod.rs)
-- [src/consumer/aop_stats_collector.rs](src/consumer/aop_stats_collector.rs)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 - [src/consumer/aop_stats_hook.rs](src/consumer/aop_stats_hook.rs)
 
 ## 架构总览
@@ -291,10 +291,10 @@ H->>C : record(kind, consumer, failed, duration)
 
 图表来源
 - [src/consumer/aop_stats_hook.rs](src/consumer/aop_stats_hook.rs)
-- [src/consumer/aop_stats_collector.rs](src/consumer/aop_stats_collector.rs)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 
 章节来源
-- [src/consumer/aop_stats_collector.rs](src/consumer/aop_stats_collector.rs)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 - [src/consumer/aop_stats_hook.rs](src/consumer/aop_stats_hook.rs)
 
 ## 依赖关系分析
@@ -366,7 +366,7 @@ BUS["业务模块"] --> REG
 章节来源
 - [src/pkg/aop/queue/in_memory.rs](src/pkg/aop/queue/in_memory.rs)
 - [src/pkg/aop/core/registry.rs](src/pkg/aop/core/registry.rs)
-- [src/consumer/aop_stats_collector.rs](src/consumer/aop_stats_collector.rs)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 
 ## 结论
 AOP 事件系统通过清晰的层次划分与可插拔抽象，实现了高内聚、低耦合的事件驱动架构。其优先级与顺序键机制保障了关键消息的处理语义；`EventTopic` 闭环枚举统一了主题表达；统计与监控钩子提供了运行时可观测性；内存队列满足大多数场景需求，同时为持久化队列预留了扩展点。结合「DAL-as-Producer」归属模型与 `finish_consumption` 单点收尾，重试判定权下沉消费者（`decide_retry`），可在复杂业务中稳定运行并持续演进。
@@ -410,7 +410,7 @@ AOP 事件系统通过清晰的层次划分与可插拔抽象，实现了高内�
 章节来源
 - [src/pkg/aop/core/registry.rs](src/pkg/aop/core/registry.rs)
 - [src/pkg/aop/queue/in_memory.rs](src/pkg/aop/queue/in_memory.rs)
-- [src/consumer/aop_stats_collector.rs](src/consumer/aop_stats_collector.rs)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 
 ### 监控方案
 - 指标维度
@@ -423,5 +423,5 @@ AOP 事件系统通过清晰的层次划分与可插拔抽象，实现了高内�
   - 失败率突增、平均耗时飙升、队列积压超过阈值、最老事件年龄过大
 
 章节来源
-- [src/consumer/aop_stats_collector.rs](src/consumer/aop_stats_collector.rs)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 - [src/consumer/aop_stats_hook.rs](src/consumer/aop_stats_hook.rs)

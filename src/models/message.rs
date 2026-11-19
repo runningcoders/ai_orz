@@ -118,6 +118,32 @@ impl Message {
         }
     }
 
+    /// 正文中的资源引用 id，按 scheme 分桶：`(attachment_ids, artifact_ids)`，去重保序
+    ///
+    /// 「这条消息引了哪些资源」是消息自身的属性，故与 [`Self::attachment_ref_ids`]
+    /// 同留在 models：runtime 的唤醒装配与消息域的投递断言都要用，放进任一域都会
+    /// 形成域间引用。
+    pub fn resource_ref_ids(&self) -> (Vec<String>, Vec<String>) {
+        classify_resource_ref_ids(self.content())
+    }
+
+    /// 当前消息携带的附件 id：纯附件消息（正文即 id）+ 正文里的 `attachment:` 引用
+    ///
+    /// 去重保序，纯附件形态排在首位。
+    pub fn attachment_ref_ids(&self) -> Vec<String> {
+        let mut ids: Vec<String> = Vec::new();
+        // 附件消息的正文就是附件 id（file_meta 有值才算）
+        if self.file_meta().is_some() {
+            ids.push(self.content().to_string());
+        }
+        for id in self.resource_ref_ids().0 {
+            if !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+        ids
+    }
+
     /// 将消息格式化为 Prompt 可读的字符串
     ///
     /// 委托给 MessagePo::to_prompt()
@@ -716,6 +742,26 @@ impl crate::models::vector::Vectorizable for MessagePo {
             ..Default::default()
         }
     }
+}
+
+/// 正文资源引用分类（纯函数，便于单测）：attachment / artifact 分桶、去重保序；
+/// mention 等其余 scheme 不在资源上下文范围。
+///
+/// 解析协议（`common::markdown_protocol`）是消息域的语义，执行层只消费结论 ⇒
+/// 函数留在 models，唤醒装配与投递断言各自调用，两侧不互相引用。
+pub fn classify_resource_ref_ids(content: &str) -> (Vec<String>, Vec<String>) {
+    let mut att_ids: Vec<String> = Vec::new();
+    let mut art_ids: Vec<String> = Vec::new();
+    for (r, _snapshot) in common::markdown_protocol::extract_refs(content) {
+        let scheme = r.scheme.as_str();
+        let id = r.id;
+        match scheme {
+            "attachment" if !att_ids.contains(&id) => att_ids.push(id),
+            "artifact" if !art_ids.contains(&id) => art_ids.push(id),
+            _ => {}
+        }
+    }
+    (att_ids, art_ids)
 }
 
 #[cfg(test)]

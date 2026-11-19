@@ -14,8 +14,8 @@
 //! memory trace 没有 project 维度（`MemoryTrace` 不带 project_id），调用方传
 //! `allow_project = false`，否则「只有 project 作用域」的请求会退化成全量查询。
 
+use super::think_trace::{MAX_THINK_TRACE_QUERY_LIMIT, ThinkTraceQuery};
 use crate::pkg::request_context::RequestContext;
-use crate::pkg::think_trace::{MAX_THINK_TRACE_QUERY_LIMIT, ThinkTraceQuery};
 use common::enums::{CallerType, UserRole};
 use common::error::Result;
 

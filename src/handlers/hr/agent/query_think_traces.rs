@@ -6,8 +6,8 @@
 //!   默认对话带前台 `agent_id`（与工具调用列表同源的组织方式）。
 
 use crate::pkg::RequestContext;
-use crate::pkg::think_trace::{ThinkTraceEntry, ThinkTraceQuery};
 use crate::service::domain::runtime::domain;
+use crate::service::domain::runtime::think_trace::{ThinkTraceEntry, ThinkTraceQuery};
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{
     PagedResult, QueryThinkTracesRequest, ThinkTraceCerebellumDto, ThinkTraceListItem,
@@ -91,6 +91,7 @@ fn to_list_item(entry: ThinkTraceEntry) -> ThinkTraceListItem {
                     .map(|t| ThinkTraceToolCallDto {
                         call_id: t.call_id,
                         name: t.name,
+                        intent: t.intent,
                         arguments: t.arguments,
                         result: t.result,
                         status: t.status,
@@ -158,7 +159,7 @@ mod tests {
         // 编译器不会提醒这里漏映射 —— 轨迹里有了、接口里没有，前端永远看不到。
         // 所以先把 6 个字段全部填成**非默认值**，再逐项比对：任何一项漏映射
         // （或被静默改成默认值）这条立即红。
-        use crate::pkg::think_trace::{ThinkTraceCerebellum, ThinkTraceEntry};
+        use crate::service::domain::runtime::think_trace::{ThinkTraceCerebellum, ThinkTraceEntry};
         let entry = ThinkTraceEntry {
             cerebellum: vec![ThinkTraceCerebellum {
                 scene: "chain_reply".to_string(),
@@ -179,6 +180,38 @@ mod tests {
         assert_eq!(c.degraded.as_deref(), Some("circuit_open"));
         assert!(c.applied);
         assert_eq!(c.latency_ms, Some(1_234), "p95 时延的回收点不能丢");
+    }
+
+    #[test]
+    fn tool_call_fields_map_one_to_one_into_dto() {
+        // 与 cerebellum 同款护栏：tool_calls 的字段也是手写映射，后端新增字段时
+        // 编译器不会提醒这里漏映射。`intent` 是本次新增项，必须连同老字段一起
+        // 用非默认值断言，防止「轨迹里有、前端永远看不到」。
+        use crate::service::domain::runtime::think_trace::{ThinkTraceEntry, ThinkTraceToolCall};
+        let entry = ThinkTraceEntry {
+            rounds: vec![
+                crate::service::domain::runtime::think_trace::ThinkTraceRound {
+                    tool_calls: vec![ThinkTraceToolCall {
+                        call_id: Some("call_1".to_string()),
+                        name: "fs_read".to_string(),
+                        intent: Some("读取项目说明以确认范围".to_string()),
+                        arguments: "{\"path\":\"README.md\"}".to_string(),
+                        result: Some("ok".to_string()),
+                        status: "ok".to_string(),
+                    }],
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let dto = to_list_item(entry);
+        let t = &dto.rounds[0].tool_calls[0];
+        assert_eq!(t.call_id.as_deref(), Some("call_1"));
+        assert_eq!(t.name, "fs_read");
+        assert_eq!(t.intent.as_deref(), Some("读取项目说明以确认范围"));
+        assert!(t.arguments.contains("README.md"));
+        assert_eq!(t.result.as_deref(), Some("ok"));
+        assert_eq!(t.status, "ok");
     }
 
     #[test]

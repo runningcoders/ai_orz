@@ -54,6 +54,10 @@ pub(crate) struct RoundDeps {
     pub base: WakeUsage,
     /// 唤醒级收件箱（`Some` 时轮级图插入 `poll_round`）
     pub inbox: Option<Arc<Mutex<crate::service::domain::runtime::inbox::InboxState>>>,
+    /// 唤醒级业务产出收集器（dispatch 写入，随 `AwakeningResult` 移交）
+    pub collected: Arc<Mutex<crate::service::domain::runtime::RoundCollected>>,
+    /// 与 `run_think_loop` 共享的轨迹信封（含「是否已收尾」位，供 RAII guard 去重）
+    pub trace_sink: crate::service::domain::runtime::think_trace::TraceSink,
 }
 
 /// 唤醒级轮次编号（1 基）= 进入本周期前已消耗的轮次 + 本周期内局部轮次
@@ -115,6 +119,15 @@ impl std::fmt::Debug for RoundDeps {
 }
 
 impl RoundDeps {
+    /// 本次 run 的轨迹身份信封：写穿观测数据的唯一入口
+    ///
+    /// 由 `run_think_loop` 构造并传入（同一份 clone），不再每次现造：
+    /// 收尾去重位 `closed` 必须与外层 RAII guard 共享，否则图正常跑完后
+    /// guard 还会补写一行最小 close。
+    pub(crate) fn trace_sink(&self) -> crate::service::domain::runtime::think_trace::TraceSink {
+        self.trace_sink.clone()
+    }
+
     /// 取走终止结果
     ///
     /// 图自然终止（无合法候选）时 `state.result` 可能为空——按老循环语义

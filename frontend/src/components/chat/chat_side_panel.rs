@@ -45,7 +45,7 @@ use dioxus_router::Link;
 use crate::api::hr::get_agent;
 use crate::api::project::{get_project, get_task, list_project_tasks, query_tasks};
 use crate::components::agent_summary::{agent_badge_row, agent_identity_row};
-use crate::components::artifact_preview_modal::ArtifactPreviewModal;
+use crate::components::artifact_preview_modal::{ArtifactPreviewModal, ArtifactPreviewTarget};
 use crate::components::avatar_bubble::AvatarTone;
 use crate::components::chat::ProjectAgentsTab;
 use crate::components::chat::ThinkTracesTab;
@@ -110,19 +110,6 @@ const TASK_GRAPH_H: f64 = 200.0;
 /// 放大弹窗画布尺寸（max-w-5xl 弹窗内容区，减去弹窗内边距）
 const TASK_GRAPH_ZOOM_W: f64 = 920.0;
 const TASK_GRAPH_ZOOM_H: f64 = 620.0;
-
-/// 产物预览卡片的打开目标。
-///
-/// 归属信息（项目名 / 任务标题）在打开时就地捕获：侧栏本就有这两份数据，
-/// 弹窗不必再为一行文字多发一次请求。
-#[derive(Debug, Clone, PartialEq)]
-struct ArtifactPreviewTarget {
-    artifact: ArtifactDetail,
-    /// 所属项目名（空串 = 未知，弹窗不展示该行）
-    project_name: String,
-    /// 所属任务标题；`None` = 项目级产物
-    task_title: Option<String>,
-}
 
 /// 产物预览的打开入口。
 ///

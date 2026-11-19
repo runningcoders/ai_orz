@@ -306,7 +306,7 @@ data/
 |------|------|------|
 | 轮次编排 | [src/service/domain/runtime/think_loop.rs](src/service/domain/runtime/think_loop.rs) | 851 行；一轮 = 一次完整的「思考 → 动作 → 再思考」循环 |
 | 阶段编排引擎 | [src/pkg/think_path/](src/pkg/think_path/) | 13 个文件 / 2,499 行（engine / arbiter / blueprint / policy / run / strategy） |
-| 落盘出口 | [src/pkg/think_trace.rs](src/pkg/think_trace.rs) | 677 行；轮级 append-only，两段式（partial 增量行 + 收尾全量行）；查询走旁车索引 `.jsonl.idx`（索引过滤 + 按字节偏移 seek 只读命中行） |
+| 落盘出口 | [src/service/domain/runtime/think_trace.rs](src/service/domain/runtime/think_trace.rs) | 855 行（+ 旁车索引 191 行）；轮级 append-only，两段式（partial 增量行 + 收尾全量行）；查询走旁车索引 `.jsonl.idx`（索引过滤 + 按字节偏移 seek 只读命中行） |
 | 查询入口 | [src/handlers/hr/agent/query_think_traces.rs](src/handlers/hr/agent/query_think_traces.rs) | 作用域守门：按 agent / project / task 维度收口 |
 | 统计消费 | [src/consumer/think_round_stats_consumer.rs](src/consumer/think_round_stats_consumer.rs) | 订阅轮次事件做用量统计 |
 | 前端消费 | [frontend/src/utils/think_path_graph.rs](frontend/src/utils/think_path_graph.rs)、`frontend/src/components/chat/` 下的轨迹时间线、轨迹面板与小脑轨迹表 | 五文件合计 4,114 行（886 + 607 + 1,809 + 504 + 308） |
@@ -487,10 +487,17 @@ domain: [ToolDomain ←---- (ToolDal + AgentDal + MessageDal)] (组合：多个 
 ## 设计原则
 
 1. **严格分层不跨级调用** → 遵循 `handlers → domain → dal → dao → models` 层级依赖
-2. **所有 service 层方法必须传递 RequestContext** → 方便日志追踪和扩展
-3. **原始细节不占内存** → 短期长期都在数据库，只在需要时检索
-4. **渐进式演进** → 短期积累到一定数量触发归纳，不断更新核心记忆和知识图谱
-5. **人类可读 + 程序易解析** → 原始细节按天 JSONL 存储，不需要工具直接查看，统计分析也方便
+2. **域之间只通过参数交互** → 一个域不得引用另一个域。需要两份数据时由上层适配层
+   （handler / consumer）编排：先调 A，把结果作为参数传给 B。两侧共用的**值对象
+   必须下沉 `models`（实体/值对象）或 `common`（跨 crate 共享）**，共用的**纯算法 /
+   常量**下沉 `pkg` / `common::constants`。判断标准是「谁拥有它的语义」，不是「谁在用」。
+3. **反向依赖绝对禁止** → `dal → domain`、`models → domain`、`domain → 适配层`
+   （`consumer` / `handlers`）、`dao → dal`、`pkg → service`。出现这类引用一律视为
+   「类型 / 常量放错了层」：抽出来下沉，而不是用 re-export 或 feature 掩盖。
+4. **所有 service 层方法必须传递 RequestContext** → 方便日志追踪和扩展
+5. **原始细节不占内存** → 短期长期都在数据库，只在需要时检索
+6. **渐进式演进** → 短期积累到一定数量触发归纳，不断更新核心记忆和知识图谱
+7. **人类可读 + 程序易解析** → 原始细节按天 JSONL 存储，不需要工具直接查看，统计分析也方便
 
 ---
 

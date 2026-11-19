@@ -235,6 +235,13 @@ pub fn ToolCallsTab(
                         let started = format_timestamp_opt(Some(e.started_at as i64));
                         let pid_opt = running_pid_badge(&pid_by_call, &call_id);
                         let is_expanded = expanded_call_id() == Some(call_id.clone());
+                        // 模型自述的调用意图（`_intent` 附注，随 metadata 落库）
+                        let intent = e
+                            .metadata
+                            .get("intent")
+                            .and_then(|v| v.as_str())
+                            .map(str::to_string)
+                            .filter(|s| !s.trim().is_empty());
                         let input_summary = truncate_json_text(&e.input, SUMMARY_MAX_CHARS);
                         let output_summary = e
                             .output
@@ -298,6 +305,15 @@ pub fn ToolCallsTab(
                                                 },
                                                 "⚙ PID {pid}"
                                             }
+                                        }
+                                    }
+                                    // 第三行（可选）：调用意图——工具名只说明「调了什么」，
+                                    // 这一行说明「为什么调」。模型没写就整行不渲染。
+                                    if let Some(intent) = intent.clone() {
+                                        div {
+                                            class: "mt-0.5 text-[12px] leading-snug text-base-content/75 line-clamp-2",
+                                            title: "{intent}",
+                                            "{intent}"
                                         }
                                     }
                                     // 第三行：开始时间靠左、用时靠右

@@ -38,8 +38,9 @@ use common::error::Result;
 use std::sync::Arc;
 
 use super::awakening::build_scene_tool_descriptors;
-use super::text_budget;
 use super::think_loop::build_policy_for_scene;
+use crate::pkg::text_budget;
+use crate::pkg::tokens::{estimate_tokens, truncate_to_tokens};
 
 /// 压缩场景的思考轮次上限（**溢出回环 / 正常收尾存档**用）
 ///
@@ -147,69 +148,6 @@ pub(crate) const COMPACTION_CHAIN_MIN_TOOL_CALLS: u64 = 2;
 /// 容量未配置 ⇒ `0`＝该维度禁用（不猜兜底值；另两个维度仍然生效）。
 pub(crate) fn compaction_chain_min_tool_tokens(capacity: Option<u64>) -> u64 {
     quick_turn_hard_cap_tokens(capacity).unwrap_or(0) as u64
-}
-
-/// 是否 CJK 字符（中日韩表意文字 / 假名 / 谚文 / 全角标点）
-///
-/// 只用于 token 估算：CJK 一字约等于 1 token，拉丁文约 4 字符 1 token。
-fn is_cjk(ch: char) -> bool {
-    matches!(
-        ch,
-        '\u{3400}'..='\u{4DBF}'
-            | '\u{4E00}'..='\u{9FFF}'
-            | '\u{3040}'..='\u{30FF}'
-            | '\u{AC00}'..='\u{D7AF}'
-            | '\u{FF00}'..='\u{FFEF}'
-    )
-}
-
-/// 估算一段文本的 token 数（不引真实 tokenizer，够策略分级用）
-///
-/// 规则：CJK 按 1 token/字；其余（拉丁字母/数字/ASCII 标点）按 4 字符/token，
-/// 向上取整。混合文本按字符逐类累加，避免同一段中英夹杂时估算失真。
-pub(crate) fn estimate_tokens(text: &str) -> usize {
-    let mut cjk = 0usize;
-    let mut other = 0usize;
-    for ch in text.chars() {
-        if is_cjk(ch) {
-            cjk += 1;
-        } else {
-            other += 1;
-        }
-    }
-    cjk + other.div_ceil(4)
-}
-
-/// 按 token 预算截断到最大可行前缀，并留下调用方指定的截断标注
-///
-/// 标注本身的 token 也计入 `budget`：否则「正好截到预算」再拼一段标注就会越界
-/// （实测过 436 > 400）。返回值恒满足 `estimate_tokens(..) <= budget`。
-///
-/// **唯一实现**：链内正文裁剪（`chain_reply`）与小脑 state 裁剪（`dal::brain`）
-/// 共用本函数，只差标注文案——两处文案语义不同，故由调用方传入，不写死。
-pub(crate) fn truncate_to_tokens(text: &str, budget: usize, suffix: &str) -> String {
-    if estimate_tokens(text) <= budget {
-        return text.to_string();
-    }
-    let body_budget = budget.saturating_sub(estimate_tokens(suffix));
-    let chars: Vec<char> = text.chars().collect();
-    let (mut lo, mut hi) = (0usize, chars.len());
-    while lo < hi {
-        let mid = (lo + hi).div_ceil(2);
-        let prefix: String = chars[..mid].iter().collect();
-        if estimate_tokens(&prefix) <= body_budget {
-            lo = mid;
-        } else {
-            hi = mid - 1;
-        }
-    }
-    // 预算连一个字符都装不下：只留标注，保证「有内容被截」这一事实可见
-    if lo == 0 {
-        return suffix.to_string();
-    }
-    let mut out: String = chars[..lo].iter().collect();
-    out.push_str(suffix);
-    out
 }
 
 /// 估算「用户消息 + 助手回复」的合计 token 数（首尾两侧文本规模）

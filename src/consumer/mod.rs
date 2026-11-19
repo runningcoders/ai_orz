@@ -1,6 +1,5 @@
 pub mod a2a_poll;
 pub mod agent_loop_consumer;
-pub mod aop_stats_collector;
 pub mod aop_stats_hook;
 pub mod email_inbound;
 pub mod federation_directory;
@@ -160,7 +159,4 @@ pub async fn init() -> Result<()> {
     Ok(())
 }
 
-pub use aop_stats_collector::{
-    AopDistributionItem, AopOverview, AopStatsCollector, AopTimeSeriesPoint,
-};
 pub use aop_stats_hook::AopStatsHook;

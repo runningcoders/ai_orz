@@ -148,6 +148,21 @@ pub struct CreateTextAttachmentRequest {
 /// JSON 创建小型 UTF-8 文本 Attachment 响应。
 pub type CreateTextAttachmentResponse = AttachmentDetail;
 
+/// JSON 从磁盘文件创建 Attachment 请求（Agent 工具：传工作目录下相对路径，后端自取字节）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Params)]
+pub struct CreateAttachmentFromPathRequest {
+    /// 源文件路径：相对当前 Agent 的数据目录（agents/{agent_id}/），必须为普通文件，
+    /// 不接受绝对路径或 `..` 穿越；用 `fs_write` 落盘后传其相对路径即可。
+    pub source_path: String,
+    /// 可选文件名，不传时取 source_path 的最后一段。
+    pub file_name: Option<String>,
+    /// 可选 MIME 类型，泛型 `application/octet-stream` 或留空时按文件名后缀推断。
+    pub mime_type: Option<String>,
+}
+
+/// JSON 从磁盘文件创建 Attachment 响应。
+pub type CreateAttachmentFromPathResponse = AttachmentDetail;
+
 /// 写入附件摘要请求（Agent 识别附件后调用）。
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Params)]
 pub struct SaveAttachmentDescriptionRequest {

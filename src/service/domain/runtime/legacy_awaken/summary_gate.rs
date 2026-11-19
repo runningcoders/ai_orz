@@ -33,7 +33,7 @@
 //!
 //! # 观测：轨迹是唯一载体
 //!
-//! 每次真正问门都写一条 `record_cerebellum{scene: "summary_gate", decision}`，
+//! 每次真正问门都写穿一条留痕（`TraceSink::cerebellum`，scene = `summary_gate`），
 //! `decision` 三值 = `skip` / `summarize` / `fallback`。
 //! **「不适用」不写轨迹**（未装配 provider / 本来不压缩）：它是「本组织没配小脑」
 //! 或「这轮无需决策」，不是一次决策，混进分母会把跳过率算低。
@@ -41,9 +41,9 @@
 use crate::models::brain::Brain;
 use crate::pkg::RequestContext;
 use crate::pkg::policy::{Metrics, PickOnePolicy, Policy};
-use crate::pkg::think_trace::{ThinkTraceCerebellum, record_cerebellum};
 use crate::service::dal::brain::BrainDal;
 use crate::service::domain::runtime::cerebellum_context as context;
+use crate::service::domain::runtime::think_trace::ThinkTraceCerebellum;
 use std::sync::Arc;
 
 /// 场景标识（日志 / 计量口径，也是 `DecisionRequest.scene`）
@@ -170,7 +170,7 @@ pub(crate) async fn maybe_skip(
     dal: Arc<dyn BrainDal>,
     brain: Option<&Brain>,
     text: &str,
-    trace_id: &str,
+    scope: &crate::service::domain::runtime::think_trace::TraceSink,
     would_compress: bool,
 ) -> Option<SkipSummary> {
     // ⓪ 本地可判的先判：阈值策略已经判「不该压」⇒ 无可跳过，直接不问。
@@ -213,10 +213,13 @@ pub(crate) async fn maybe_skip(
             used = brain.cerebellum_quota.used(),
             "cerebellum call budget exhausted, fall back to original logic"
         );
-        record_cerebellum(
-            trace_id,
-            trace(DECISION_FALLBACK, None, Some(DEGRADED_BUDGET), false, None),
-        );
+        scope.cerebellum(trace(
+            DECISION_FALLBACK,
+            None,
+            Some(DEGRADED_BUDGET),
+            false,
+            None,
+        ));
         return None;
     }
 
@@ -246,16 +249,13 @@ pub(crate) async fn maybe_skip(
             latency_ms = latency_ms,
             "summary gate degraded to original logic"
         );
-        record_cerebellum(
-            trace_id,
-            trace(
-                DECISION_FALLBACK,
-                None,
-                Some(reason.as_str()),
-                false,
-                traced_latency_ms,
-            ),
-        );
+        scope.cerebellum(trace(
+            DECISION_FALLBACK,
+            None,
+            Some(reason.as_str()),
+            false,
+            traced_latency_ms,
+        ));
         return None;
     }
 
@@ -271,16 +271,13 @@ pub(crate) async fn maybe_skip(
             latency_ms = latency_ms,
             "summary gate produced no usable answer"
         );
-        record_cerebellum(
-            trace_id,
-            trace(
-                DECISION_FALLBACK,
-                None,
-                Some(DEGRADED_NO_ANSWER),
-                false,
-                traced_latency_ms,
-            ),
-        );
+        scope.cerebellum(trace(
+            DECISION_FALLBACK,
+            None,
+            Some(DEGRADED_NO_ANSWER),
+            false,
+            traced_latency_ms,
+        ));
         return None;
     };
 
@@ -294,16 +291,13 @@ pub(crate) async fn maybe_skip(
             latency_ms = latency_ms,
             "turn summary skipped by cerebellum, falling back to quick store"
         );
-        record_cerebellum(
-            trace_id,
-            trace(
-                DECISION_SKIP,
-                Some(pick.confidence),
-                None,
-                true,
-                traced_latency_ms,
-            ),
-        );
+        scope.cerebellum(trace(
+            DECISION_SKIP,
+            Some(pick.confidence),
+            None,
+            true,
+            traced_latency_ms,
+        ));
         return Some(SkipSummary);
     }
 
@@ -318,16 +312,13 @@ pub(crate) async fn maybe_skip(
         latency_ms = latency_ms,
         "summary gate lets original compaction run"
     );
-    record_cerebellum(
-        trace_id,
-        trace(
-            DECISION_SUMMARIZE,
-            Some(pick.confidence),
-            None,
-            false,
-            traced_latency_ms,
-        ),
-    );
+    scope.cerebellum(trace(
+        DECISION_SUMMARIZE,
+        Some(pick.confidence),
+        None,
+        false,
+        traced_latency_ms,
+    ));
     None
 }
 

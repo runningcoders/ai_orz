@@ -200,18 +200,53 @@ async fn run_gate(
 ) -> (Option<SkipSummary>, usize) {
     // 全局 Storage 单例：单跑本模块时 `test_ctx()` 依赖它已初始化
     crate::pkg::storage::test_support::init_for_test().await;
-    // 轨迹落盘基址：`record_cerebellum` 未初始化时静默丢弃（无副作用设计），
-    // 断言轨迹条数前必须先注入（`OnceLock`，重复调用无副作用）
-    crate::pkg::think_trace::init(std::env::temp_dir().join("ai_orz_summary_gate_test"));
+    // 写穿重定向到内存：不碰文件系统，也就不依赖全局落盘基址（用例可并行）
+    let scope = crate::service::domain::runtime::think_trace::TraceSink::memory(
+        "test-agent",
+        run_id,
+        "test",
+    );
     let ctx = test_ctx();
     let mock = Arc::new(MockBrainDal::new(script));
-    let got = maybe_skip(&ctx, mock.clone(), brain, text, run_id, would_compress).await;
+    let got = maybe_skip(&ctx, mock.clone(), brain, text, &scope, would_compress).await;
+    stash_traces(run_id, &scope);
     (got, mock.calls())
+}
+
+/// 把本 run 已写出的留痕暂存起来，供 `take_traces` 按 run_id 取用
+fn stash_traces(run_id: &str, scope: &crate::service::domain::runtime::think_trace::TraceSink) {
+    let items: Vec<ThinkTraceCerebellum> = scope
+        .recorded()
+        .into_iter()
+        .filter_map(|line| {
+            serde_json::from_value::<crate::service::domain::runtime::think_trace::ThinkTraceEntry>(
+                line,
+            )
+            .ok()
+        })
+        .flat_map(|entry| entry.cerebellum)
+        .collect();
+    // 同一 run 可能多次进本辅助函数（续跑 / 多次判定）：与写穿的「一行一条」
+    // 同义，按 run 累积而不是覆盖
+    if let Ok(mut map) = traces_registry().lock() {
+        map.entry(run_id.to_string()).or_default().extend(items);
+    }
+}
+
+fn traces_registry()
+-> &'static std::sync::Mutex<std::collections::HashMap<String, Vec<ThinkTraceCerebellum>>> {
+    static REG: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, Vec<ThinkTraceCerebellum>>>,
+    > = std::sync::OnceLock::new();
+    REG.get_or_init(Default::default)
 }
 
 /// 取本 run 的小脑轨迹（并清理，避免跨用例串味）
 fn take_traces(run_id: &str) -> Vec<ThinkTraceCerebellum> {
-    crate::pkg::think_trace::take_cerebellum(run_id)
+    traces_registry()
+        .lock()
+        .map(|mut map| map.remove(run_id).unwrap_or_default())
+        .unwrap_or_default()
 }
 
 // ---------- 策略形态与标签 ----------
@@ -543,7 +578,6 @@ async fn test_trace_latency_measured_when_called() {
 #[tokio::test]
 async fn test_request_state_is_single_rendered_context_block() {
     crate::pkg::storage::test_support::init_for_test().await;
-    crate::pkg::think_trace::init(std::env::temp_dir().join("ai_orz_summary_gate_test"));
     let ctx = test_ctx();
     let brain = brain_with_quota(5);
     let mock = Arc::new(MockBrainDal::new(vec![None]));
@@ -553,7 +587,11 @@ async fn test_request_state_is_single_rendered_context_block() {
         mock.clone(),
         Some(&brain),
         sentinel,
-        "run-counterfact",
+        &crate::service::domain::runtime::think_trace::TraceSink::memory(
+            "test-agent",
+            "run-counterfact",
+            "test",
+        ),
         true,
     )
     .await;

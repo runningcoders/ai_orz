@@ -115,6 +115,11 @@ pub(crate) struct AwakenDeps {
     pub retrieve_searches: AtomicUsize,
     /// 唤醒级收件箱：三处挂点共享的游标、吸收清单与回退计数
     pub inbox: Arc<Mutex<InboxState>>,
+    /// run 级业务产出收集器：dispatch 写入、跨周期累计、随 `AwakeningResult` 移交
+    ///
+    /// 与 `progress` / `usage` 同一范式（run 级、显式共享），区别是它承载
+    /// **业务数据**：丢失会让用户拿不到本轮生成的文件，因此不留在进程级表里。
+    pub collected: Arc<Mutex<crate::service::domain::runtime::RoundCollected>>,
     /// Phase 1（意图识别）最后一次调用的初始消息快照
     ///
     /// Phase 2 以此作为请求前缀，追加意图结论与执行段即可命中 prompt cache。
@@ -143,6 +148,21 @@ impl AwakenDeps {
             text: self.message.content().to_string(),
             message_id: Some(self.message.po.id.clone()),
         }
+    }
+
+    /// 本次 run 的轨迹身份信封：写穿观测数据的唯一入口
+    ///
+    /// 场景固定 `Awaken`（沉淀走 `SettleDeps`，各图各一份上下文）。
+    pub fn trace_sink(&self) -> crate::service::domain::runtime::think_trace::TraceSink {
+        crate::service::domain::runtime::think_trace::TraceSink::new(
+            &self.agent.po.id,
+            &self.trace_id,
+            common::enums::ThinkingScene::Awaken.as_str(),
+        )
+        .with_scope(
+            self.ctx.project_id().map(|s| s.as_str()),
+            self.ctx.task_id().map(|s| s.as_str()),
+        )
     }
 }
 
@@ -396,6 +416,7 @@ pub(crate) fn build_deps_with_backend(
         retrieval: Mutex::new(RetrievalState::default()),
         retrieve_searches: AtomicUsize::new(0),
         inbox,
+        collected: crate::service::domain::runtime::RoundCollected::shared(),
         intent_seed: Mutex::new(None),
         shadow,
         started_at: Instant::now(),

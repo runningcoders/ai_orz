@@ -32,9 +32,9 @@ use crate::models::brain::Brain;
 use crate::models::skill::SkillPo;
 use crate::pkg::RequestContext;
 use crate::pkg::policy::{Candidate, KEY_CANDIDATES, KEY_QUESTION, Metrics, Policy, RankPolicy};
+use crate::pkg::tokens::truncate_to_tokens;
 use crate::service::dal::brain::{BrainDal, dal};
 use crate::service::domain::runtime::cerebellum_context;
-use crate::service::domain::runtime::compaction::truncate_to_tokens;
 use std::collections::HashMap;
 use std::sync::Arc;
 

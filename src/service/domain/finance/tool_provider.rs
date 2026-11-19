@@ -376,7 +376,7 @@ impl FinanceDomainImpl {
             );
 
             // ---------- 让新判定立刻可见（否则最长 30s 仍显示旧状态） ----------
-            crate::service::domain::runtime::invalidate_readiness_cache(&tool.po.id);
+            crate::pkg::tool_registry::readiness_cache::invalidate(&tool.po.id);
 
             healed += 1;
             log_info!(

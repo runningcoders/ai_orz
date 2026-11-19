@@ -50,7 +50,7 @@ use crate::models::brain::Brain;
 use crate::models::cortex_types::ChatMessage;
 use crate::models::memory::{Memory, MemoryPo};
 
-use super::compaction::{estimate_tokens, truncate_to_tokens};
+use crate::pkg::tokens::{estimate_tokens, truncate_to_tokens};
 
 /// state 里承载分块正文的键名
 ///
@@ -569,7 +569,7 @@ fn omission_note(omitted: usize) -> String {
 ///
 /// 取舍（与 dal 的「不静默改语义」并列）：**预算服从可解析性** —— 预算再小也宁可
 /// 超 1~2 token，绝不产出「裸 `## 标题`」。截断复用
-/// `compaction::truncate_to_tokens`，不写第二份 token 估算实现。
+/// `pkg::tokens::truncate_to_tokens`，不写第二份 token 估算实现。
 fn truncate_body_keep_visible(body: &str, budget: usize) -> String {
     let kept = truncate_to_tokens(body, budget, "");
     if !kept.trim().is_empty() {

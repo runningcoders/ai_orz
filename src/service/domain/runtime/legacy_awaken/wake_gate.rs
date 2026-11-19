@@ -42,16 +42,16 @@
 //!
 //! # 观测：轨迹是唯一载体
 //!
-//! 每次真正问门都写一条 `record_cerebellum{scene: "wake_gate", decision}`，
+//! 每次真正问门都写穿一条留痕（`TraceSink::cerebellum`，scene = `wake_gate`），
 //! `decision` 四值 = `shallow` / `deep` / `fallback`（非首轮不问门 ⇒ 不写轨迹，
 //! 否则浅答率的分母会被续跑轮重复计入）。
 
 use crate::models::brain::Brain;
 use crate::pkg::RequestContext;
 use crate::pkg::policy::{Metrics, PickOnePolicy, Policy};
-use crate::pkg::think_trace::{ThinkTraceCerebellum, record_cerebellum};
 use crate::service::dal::brain::BrainDal;
 use crate::service::domain::runtime::cerebellum_context as context;
+use crate::service::domain::runtime::think_trace::ThinkTraceCerebellum;
 use common::enums::ThinkingIntensity;
 use std::sync::Arc;
 
@@ -186,7 +186,7 @@ pub(crate) async fn maybe_shallow(
     dal: Arc<dyn BrainDal>,
     brain: Option<&Brain>,
     text: &str,
-    trace_id: &str,
+    scope: &crate::service::domain::runtime::think_trace::TraceSink,
     total_rounds: usize,
 ) -> Option<Shallow> {
     // ⓪ 只在整次唤醒的第一轮问：续跑 / 溢出回环都在同一 run 里，再问一次
@@ -228,10 +228,13 @@ pub(crate) async fn maybe_shallow(
             used = brain.cerebellum_quota.used(),
             "cerebellum call budget exhausted, fall back to original logic"
         );
-        record_cerebellum(
-            trace_id,
-            trace(DECISION_FALLBACK, None, Some(DEGRADED_BUDGET), false, None),
-        );
+        scope.cerebellum(trace(
+            DECISION_FALLBACK,
+            None,
+            Some(DEGRADED_BUDGET),
+            false,
+            None,
+        ));
         return None;
     }
 
@@ -261,16 +264,13 @@ pub(crate) async fn maybe_shallow(
             latency_ms = latency_ms,
             "wake gate degraded to original logic"
         );
-        record_cerebellum(
-            trace_id,
-            trace(
-                DECISION_FALLBACK,
-                None,
-                Some(reason.as_str()),
-                false,
-                traced_latency_ms,
-            ),
-        );
+        scope.cerebellum(trace(
+            DECISION_FALLBACK,
+            None,
+            Some(reason.as_str()),
+            false,
+            traced_latency_ms,
+        ));
         return None;
     }
 
@@ -286,16 +286,13 @@ pub(crate) async fn maybe_shallow(
             latency_ms = latency_ms,
             "wake gate produced no usable answer"
         );
-        record_cerebellum(
-            trace_id,
-            trace(
-                DECISION_FALLBACK,
-                None,
-                Some(DEGRADED_NO_ANSWER),
-                false,
-                traced_latency_ms,
-            ),
-        );
+        scope.cerebellum(trace(
+            DECISION_FALLBACK,
+            None,
+            Some(DEGRADED_NO_ANSWER),
+            false,
+            traced_latency_ms,
+        ));
         return None;
     };
 
@@ -309,16 +306,13 @@ pub(crate) async fn maybe_shallow(
             latency_ms = latency_ms,
             "awaken answered in shallow mode by cerebellum"
         );
-        record_cerebellum(
-            trace_id,
-            trace(
-                DECISION_SHALLOW,
-                Some(pick.confidence),
-                None,
-                true,
-                traced_latency_ms,
-            ),
-        );
+        scope.cerebellum(trace(
+            DECISION_SHALLOW,
+            Some(pick.confidence),
+            None,
+            true,
+            traced_latency_ms,
+        ));
         return Some(Shallow);
     }
 
@@ -333,16 +327,13 @@ pub(crate) async fn maybe_shallow(
         latency_ms = latency_ms,
         "wake gate lets original path run"
     );
-    record_cerebellum(
-        trace_id,
-        trace(
-            DECISION_DEEP,
-            Some(pick.confidence),
-            None,
-            false,
-            traced_latency_ms,
-        ),
-    );
+    scope.cerebellum(trace(
+        DECISION_DEEP,
+        Some(pick.confidence),
+        None,
+        false,
+        traced_latency_ms,
+    ));
     None
 }
 

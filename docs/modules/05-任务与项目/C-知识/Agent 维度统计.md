@@ -9,7 +9,7 @@
 - [docs/stats_query_design.md](docs/modules/09-统计与监控/A-设计/stats_query_design.md)
 - [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs)
 - [src/handlers/system/aop_stats.rs](src/handlers/system/aop_stats.rs)
-- [src/consumer/aop_stats_collector.rs](src/consumer/aop_stats_collector.rs)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 - [src/consumer/aop_stats_hook.rs](src/consumer/aop_stats_hook.rs)
 - [frontend/src/components/stats.rs](frontend/src/components/stats.rs)
 - [DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表](docs/modules/09-统计与监控/C-知识/DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表/DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表.md)
@@ -255,7 +255,7 @@ DAL --> RESP["返回 AgentStats / ModelCallStats"]
 章节来源
 - [frontend/src/components/stats.rs:303-425](frontend/src/components/stats.rs#L303-L425)
 - [src/handlers/system/aop_stats.rs](src/handlers/system/aop_stats.rs)
-- [src/consumer/aop_stats_collector.rs](src/consumer/aop_stats_collector.rs)
+- [src/pkg/stats/runtime/aop.rs](src/pkg/stats/runtime/aop.rs)
 - [src/consumer/aop_stats_hook.rs](src/consumer/aop_stats_hook.rs)
 
 ## 依赖关系分析

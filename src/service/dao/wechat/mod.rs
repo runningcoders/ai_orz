@@ -36,6 +36,9 @@ pub trait WechatDao: Send + Sync {
     /// 对端标识：渠道 `wechat_peer_id`，未配置时回落最近活跃会话；
     /// `context_token` 取自 `inbound_state.sessions`（会话令牌滚动刷新）。
     ///
+    /// `attachments` 为正文附件引用解析出的字节：图片走 `image_item`，其余走
+    /// `file_item`；逐条独立发送，单条失败仅告警不影响文本返回。
+    ///
     /// 返回服务端 `SendMessageResp.message_id`（平台侧权威消息 ID，用于回写
     /// `messages.external_key`）；服务端未返回该字段时为 `None`（不伪造）。
     async fn push(
@@ -44,6 +47,7 @@ pub trait WechatDao: Send + Sync {
         message: &crate::models::message::Message,
         channel: &MessageChannel,
         credentials: &IlinkChannelCredentials,
+        attachments: &[crate::models::outbound_media::OutboundAttachment],
     ) -> std::result::Result<Option<String>, common::error::Error>;
 
     /// 发送一次性「正在输入」状态（iLink `getconfig` + `sendtyping`）

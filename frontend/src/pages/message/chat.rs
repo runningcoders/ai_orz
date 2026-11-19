@@ -10,6 +10,7 @@ use crate::api::message::{
     load_latest_messages, load_older_messages, poll_new_messages, send_message_to_agent,
 };
 use crate::api::project::{create_project, get_project, list_projects, query_projects};
+use crate::components::artifact_preview_modal::{ArtifactPreviewModal, ArtifactPreviewTarget};
 use crate::components::avatar_bubble::{AvatarBubble, AvatarTone, BubbleAlign};
 use crate::components::chat::{CancelThinkingButton, ChatSidePanel};
 use crate::components::markdown::MarkdownRenderer;
@@ -38,6 +39,55 @@ use common::api::{
     GetReceptionAgentResponse, ListAgentsRequest, ListProjectsRequest, ListProjectsResponseItem,
     MessageListItem, ProjectQueryRequest, SendMessageToAgentParams,
 };
+
+/// 从消息正文的产物 chip 点击里取 artifact id。
+///
+/// chip 由 `utils::mention::render_resource_chip` 注入为带
+/// `data-mention-kind="artifact" data-mention-id="..."` 的 `<span>`；Dioxus 不为
+/// 注入 HTML 建 VNode，故在最外层消息列表容器做事件委托（与文档中心
+/// `pages/system/docs.rs` 对 `a.doc-link-internal` 的处理同一范式）。
+fn artifact_id_from_click(evt: &MouseEvent) -> Option<String> {
+    let data = evt.data();
+    let web_evt = data.downcast::<web_sys::MouseEvent>()?;
+    let target = web_evt.target()?.dyn_into::<web_sys::Element>().ok()?;
+    let Ok(Some(chip)) = target.closest("[data-mention-kind='artifact']") else {
+        return None;
+    };
+    chip.get_attribute("data-mention-id")
+}
+
+/// 消息列表容器上的产物 chip 点击处理：命中则按 id 取详情并就地弹窗，
+/// 未命中时直接返回（不拦截事件，消息项的展开/回复等交互照常工作）。
+fn open_artifact_preview_from_click(
+    evt: MouseEvent,
+    mut preview: Signal<Option<ArtifactPreviewTarget>>,
+    preview_gen: Signal<u64>,
+    err_toast: crate::store::toast::ToastState,
+) {
+    let Some(id) = artifact_id_from_click(&evt) else {
+        return;
+    };
+    evt.stop_propagation();
+    // 捕获点击时代次：异步取详情期间若切了会话/话题（代次已递增），回包丢弃，
+    // 避免把上一个上下文的产物预览弹到新会话里。
+    let epoch = preview_gen();
+    spawn(async move {
+        match crate::api::project::get_artifact(&id).await {
+            Ok(artifact) => {
+                if preview_gen() != epoch {
+                    return;
+                }
+                preview.set(Some(ArtifactPreviewTarget {
+                    artifact,
+                    // 正文引用只有 id：归属信息无从得知，弹窗不展示对应行
+                    project_name: String::new(),
+                    task_title: None,
+                }))
+            }
+            Err(e) => err_toast.error(format!("打开产物预览失败: {e}")),
+        }
+    });
+}
 
 /// 全局名称目录里查不到某 Agent 时，按需拉取该 Agent 的单条详情并回填到目录，
 /// 使气泡能显示真实名字而非兜底「Agent <id>」。每个 id 最多触发一次请求。
@@ -169,6 +219,10 @@ pub fn MessageChat(project: Option<String>) -> Element {
 
     // 新建项目弹窗状态
     let mut show_create_project = use_signal(|| false);
+    // 正文产物 chip 点击后的就地预览目标（事件委托挂在消息列表容器上）
+    let mut artifact_preview = use_signal(|| Option::<ArtifactPreviewTarget>::None);
+    // 预览请求代次：点击后异步取详情期间若切会话/话题，回包据此丢弃，避免旧预览弹到新上下文
+    let mut artifact_preview_gen = use_signal(|| 0u64);
     let mut new_project_name = use_signal(String::new);
     let mut new_project_desc = use_signal(String::new);
     let mut creating_project = use_signal(|| false);
@@ -1038,9 +1092,11 @@ pub fn MessageChat(project: Option<String>) -> Element {
         // 修复 M1：不再直接调用 load_messages，由 use_effect 响应 selected_project 变化触发
         // 修复 L3：切换会话时清理 tool_expanded 状态
         tool_expanded.set(std::collections::HashSet::new());
-        // 切换会话时同步清理回复 / 话题状态
+        // 切换会话时同步清理回复 / 话题状态 / 产物预览弹窗
         reply_target.set(None);
         thread_root.set(None);
+        artifact_preview.set(None);
+        artifact_preview_gen += 1;
         if is_mobile() {
             sidebar_open.set(false);
         }
@@ -1060,9 +1116,11 @@ pub fn MessageChat(project: Option<String>) -> Element {
         navigator.replace(Route::MessageChat { project: None });
         // 修复 L3：切换会话时清理 tool_expanded 状态
         tool_expanded.set(std::collections::HashSet::new());
-        // 切换会话时同步清理回复 / 话题状态
+        // 切换会话时同步清理回复 / 话题状态 / 产物预览弹窗
         reply_target.set(None);
         thread_root.set(None);
+        artifact_preview.set(None);
+        artifact_preview_gen += 1;
         if is_mobile() {
             sidebar_open.set(false);
         }
@@ -1244,6 +1302,9 @@ pub fn MessageChat(project: Option<String>) -> Element {
                 } else {
                     div {
                         class: "flex flex-col gap-1 min-h-full",
+                        // 正文产物 chip 是注入 HTML（无 VNode），在这里做事件委托：
+                        // 命中 [data-mention-kind=artifact] → 按 id 取详情 → 就地弹窗。
+                        onclick: move |evt| open_artifact_preview_from_click(evt, artifact_preview, artifact_preview_gen, toast),
                         for entry in group_messages_by_date(&messages()) {
                             match entry {
                                 MessageListEntry::DateDivider(label) => rsx! {
@@ -1297,7 +1358,11 @@ pub fn MessageChat(project: Option<String>) -> Element {
             Callback::new(move |_: ()| reply_target.set(Some(reply_msg.clone())))
         };
         // 打开右侧话题讨论区（按消息链根 ID）
-        let on_open_thread = Callback::new(move |root_id: String| thread_root.set(Some(root_id)));
+        let on_open_thread = Callback::new(move |root_id: String| {
+            artifact_preview.set(None);
+            artifact_preview_gen += 1;
+            thread_root.set(Some(root_id));
+        });
         let reply_ctx = ReplyCtx {
             quoted,
             on_reply,
@@ -1526,6 +1591,9 @@ pub fn MessageChat(project: Option<String>) -> Element {
                 } else {
                     div {
                         class: "flex flex-col gap-1 min-h-full",
+                        // 正文产物 chip 是注入 HTML（无 VNode），在这里做事件委托：
+                        // 命中 [data-mention-kind=artifact] → 按 id 取详情 → 就地弹窗。
+                        onclick: move |evt| open_artifact_preview_from_click(evt, artifact_preview, artifact_preview_gen, toast),
                         for entry in group_messages_by_date(&messages()) {
                             match entry {
                                 MessageListEntry::DateDivider(label) => rsx! {
@@ -1579,7 +1647,11 @@ pub fn MessageChat(project: Option<String>) -> Element {
             Callback::new(move |_: ()| reply_target.set(Some(reply_msg.clone())))
         };
         // 打开右侧话题讨论区（按消息链根 ID）
-        let on_open_thread = Callback::new(move |root_id: String| thread_root.set(Some(root_id)));
+        let on_open_thread = Callback::new(move |root_id: String| {
+            artifact_preview.set(None);
+            artifact_preview_gen += 1;
+            thread_root.set(Some(root_id));
+        });
         let reply_ctx = ReplyCtx {
             quoted,
             on_reply,
@@ -1889,11 +1961,18 @@ pub fn MessageChat(project: Option<String>) -> Element {
                         button {
                             class: "btn hud-btn btn-ghost btn-sm btn-square",
                             title: "关闭话题讨论区",
-                            onclick: move |_| thread_root.set(None),
+                            onclick: move |_| {
+                                artifact_preview.set(None);
+                                artifact_preview_gen += 1;
+                                thread_root.set(None);
+                            },
                             "×"
                         }
                     }
-                    div { class: "flex-1 overflow-y-auto p-3 space-y-3",
+                    div {
+                        class: "flex-1 overflow-y-auto p-3 space-y-3",
+                        // 话题面板与主消息流是兄弟节点，冒泡不到上面的委托，单独挂一次
+                        onclick: move |evt| open_artifact_preview_from_click(evt, artifact_preview, artifact_preview_gen, toast),
                         if thread_loading() {
                             div { class: "flex items-center justify-center py-8",
                                 Loading { size: "sm" }
@@ -1963,6 +2042,17 @@ pub fn MessageChat(project: Option<String>) -> Element {
                     on_close: move |_| panel_open.set(false),
                     agent_info: target_agent_info,
                     target_agent_id: target_agent_id,
+                }
+            }
+
+            // 正文产物引用点击：复用侧栏同一张预览弹窗。
+            // 挂在 Router 内（ArtifactPreviewModal 用了 use_navigator），顶层条件渲染即可。
+            if let Some(target) = artifact_preview() {
+                ArtifactPreviewModal {
+                    artifact: target.artifact,
+                    project_name: target.project_name,
+                    task_title: target.task_title,
+                    on_close: move |_| artifact_preview.set(None),
                 }
             }
 

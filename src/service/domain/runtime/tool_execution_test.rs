@@ -2233,11 +2233,11 @@ mod tests {
 
     use crate::pkg::tool_registry::browser::BrowserToolFactory;
     use crate::pkg::tool_registry::get_registry;
+    use crate::pkg::tool_registry::readiness_cache::{
+        expire as expire_readiness_cache, invalidate as invalidate_readiness_cache,
+    };
     use crate::pkg::tool_registry::tavily_search::TavilySearchToolFactory;
     use crate::service::domain::runtime::RuntimeToolExecution;
-    use crate::service::domain::runtime::tool_execution::{
-        expire_readiness_cache, invalidate_readiness_cache,
-    };
     use common::api::RuntimeReady;
 
     /// CLI 型 PO（config 带 command，可选 install_hint）

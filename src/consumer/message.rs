@@ -1087,30 +1087,9 @@ impl MessageConsumer {
                     awaken_result.trace_ids.first().map(String::as_str),
                 )
                 .await;
-            // ══════ chain_reply 留痕补丁行（AMan 2026-11-10 拍板：追加补丁行）══════
-            //
-            // 现缺陷：本函数上面那次判定跑在 awaken **返回之后** —— 此时该 run
-            // 的收尾行已落盘、`take_cerebellum` 也已把缓冲取走并 remove，于是
-            // chain_reply 之后记的留痕落进一个永不 take 的键上，结构上永远查不到。
-            //
-            // 修法：判完立刻补一次 take + 追加一条 `partial=false` 空载荷补丁行，
-            // 查询侧按 `(agent_id, run_id, scene)` 合并回原轨迹（详见
-            // `runtime::flush_cerebellum_patch` 的时序前提）。
-            //
-            // 放在 `judge_chain_reply_by_cerebellum` 之后、路由执行之前：
-            // ①留痕已写完（判定过程就是写入过程）；②即使后面发送失败，轨迹也
-            // 已经完整 —— 观测数据不该被投递结果左右。
-            // 没有留痕时该函数不落盘（返回 0），因此本调用对「静态命中 / 无压力 /
-            // 未装配」这些零调用路径没有任何副作用。
-            if let Some(trace_id) = awaken_result.trace_ids.first() {
-                runtime_domain::flush_cerebellum_patch(
-                    agent_id,
-                    trace_id,
-                    common::enums::ThinkingScene::Awaken.as_str(),
-                    project_id,
-                    task_id,
-                );
-            }
+            // chain_reply 的留痕已在判定过程中**写穿落盘**（`TraceSink::cerebellum`），
+            // 不再需要「判完补一行补丁」：写穿发生在判定当时，与 awaken 的收尾行
+            // 谁先谁后都能靠查询侧按 `(agent_id, run_id, scene)` 合并收回同一条轨迹。
             let route = match cerebellum_route {
                 Some(route) => route,
                 None => self.resolve_auto_reply_route(
@@ -1132,6 +1111,18 @@ impl MessageConsumer {
                 message.po.from_id,
                 message.po.message_type
             );
+
+            // §6 工程兜底：本轮工具创建过附件 / 产物，但模型可能在 final 正文漏写
+            // 引用（对方就拿不到）。产出清单随唤醒结果一起交过来（图上下文收集、
+            // `AwakeningResult` 移交），这里把未被正文引用的补到末尾（已引用的跳过）
+            // ——与路由判定同源、在其之后，NO_REPLY 等哨兵判定已结束，不受影响；
+            // 且在落库之前，站内正文与外部渠道的附件提取都读到补过的版本。
+            let backfilled =
+                crate::service::domain::message::resource_refs::append_missing_resource_refs(
+                    raw_output,
+                    &awaken_result.collected.resources,
+                );
+            let raw_output = backfilled.as_str();
 
             let send_result: Result<()> = match route {
                 AutoReplyRoute::Peer => match message.from_role() {
@@ -1695,8 +1686,18 @@ impl MessageConsumer {
             hard_fatigue: pressure.config().hard_fatigue,
             hard_window_depth: pressure.config().hard_window_depth,
         };
-        // 轨迹键：本 run 的第一条 trace（小脑留痕挂在它名下）。缺失时传空串
-        // —— `record_cerebellum` 对空键同样只做丢弃，不 panic。
+        // 轨迹身份：chain_reply 跑在 awaken 返回之后，写的是同一条 run 的补录留痕
+        // （场景仍是 Awaken）。缺失 trace_id 时 run_id 为空，`TraceSink` 对空
+        // run_id 只做丢弃，不 panic。
+        let scope = crate::service::domain::runtime::think_trace::TraceSink::new(
+            agent_id,
+            trace_id.unwrap_or(""),
+            common::enums::ThinkingScene::Awaken.as_str(),
+        )
+        .with_scope(
+            ctx.project_id().map(|s| s.as_str()),
+            ctx.task_id().map(|s| s.as_str()),
+        );
         let verdict = runtime_domain::chain_reply::judge_chain_reply_with_default_dao(
             ctx,
             Some(brain),
@@ -1707,7 +1708,7 @@ impl MessageConsumer {
             // 小脑必须能看到「我这条本来要发什么」，否则只看链内历史会把
             // 「待发正文里有新结论」误判成收口。
             raw_output,
-            trace_id.unwrap_or(""),
+            &scope,
         )
         .await?;
         Some(match verdict {

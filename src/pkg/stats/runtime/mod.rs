@@ -30,6 +30,8 @@
 //! let total: u64 = snap.total_counts.values().sum();
 //! ```
 
+pub mod aop;
+
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
 use std::hash::Hash;

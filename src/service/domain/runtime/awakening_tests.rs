@@ -791,7 +791,8 @@ fn parse_intent_analysis_json_balanced_braces() {
 mod vision_resource_tests {
     // 本 mod 嵌在测试文件内，super 是「测试文件顶层」而非 awakening 模块，
     // 因此要显式从 awakening 导入这两个私有 helper
-    use super::super::{collect_resource_ref_ids, image_part_admission};
+    use super::super::image_part_admission;
+    use crate::models::message::classify_resource_ref_ids;
 
     // ============================================================
     // 资源引用收集 / 图像准入（vision 携带机制的第二组用例）
@@ -800,14 +801,14 @@ mod vision_resource_tests {
     #[test]
     fn collect_refs_buckets_attachment_and_artifact() {
         let content = "看 [图](attachment:att_1) 和 [报告](artifact:art_2)，再 [图2](attachment:att_1) 与 [提及](user:u9)";
-        let (atts, arts) = collect_resource_ref_ids(content);
+        let (atts, arts) = classify_resource_ref_ids(content);
         assert_eq!(atts, vec!["att_1".to_string()]);
         assert_eq!(arts, vec!["art_2".to_string()]);
     }
 
     #[test]
     fn collect_refs_empty_for_plain_text() {
-        let (atts, arts) = collect_resource_ref_ids("纯文本无引用");
+        let (atts, arts) = classify_resource_ref_ids("纯文本无引用");
         assert!(atts.is_empty());
         assert!(arts.is_empty());
     }

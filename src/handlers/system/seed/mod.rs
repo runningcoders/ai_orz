@@ -358,6 +358,7 @@ async fn pack_skill_package(
     ctx: RequestContext,
     skill_id: &str,
 ) -> Result<crate::service::domain::system::seed::bundle::SkillPackage> {
+    use crate::pkg::skill_package;
     use crate::service::domain::{hr, system::seed::bundle};
 
     let files = hr::domain()
@@ -379,7 +380,7 @@ async fn pack_skill_package(
                     file.filename
                 ))
             })?;
-        entries.push(bundle::SkillFileEntry {
+        entries.push(skill_package::SkillFileEntry {
             path: file.filename,
             bytes,
             executable: file.executable,
@@ -388,7 +389,7 @@ async fn pack_skill_package(
 
     Ok(bundle::SkillPackage {
         name: bundle::skill_package_name(skill_id),
-        bytes: bundle::pack_skill_zip(&entries)?,
+        bytes: skill_package::pack_skill_zip(&entries)?,
     })
 }
 

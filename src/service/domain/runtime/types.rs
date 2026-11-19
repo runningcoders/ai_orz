@@ -269,6 +269,14 @@ pub struct ThinkLoopParams<'a> {
     /// `Some` 时轮级图插入 `poll_round` 节点：每轮边界检查是否到达新输入并尾插；
     /// `None` 时拓扑保持不变（intent 单轮 / settle / summary / discover 等）。
     pub inbox: Option<Arc<Mutex<crate::service::domain::runtime::inbox::InboxState>>>,
+    /// 唤醒级业务产出收集器（仅 awaken 主链传入）
+    ///
+    /// 与 [`Self::usage`] 同一范式：图上下文持有共享句柄，节点写入、跨周期累计，
+    /// 由图结束后的持有者（`AwakeningResult`）移交给消费侧。
+    ///
+    /// 内部小循环（compact / intent / settle）不传：它们的产出不作为用户的
+    /// 交付物，自建一个丢弃即可。
+    pub collected: Option<Arc<Mutex<super::RoundCollected>>>,
 }
 
 impl<'a> ThinkLoopParams<'a> {
@@ -302,7 +310,17 @@ impl<'a> ThinkLoopParams<'a> {
             force_intensity: None,
             usage: None,
             inbox: None,
+            collected: None,
         }
+    }
+
+    /// 接入唤醒级业务产出收集器（跨周期累计，随结果移交）
+    ///
+    /// 只有 awaken 主链需要：它产生的附件 / 产物是用户可见交付物。
+    /// 内部小循环传 None，避免为「没人读的收集器」付一次锁开销。
+    pub fn with_collected(mut self, collected: &Arc<Mutex<super::RoundCollected>>) -> Self {
+        self.collected = Some(Arc::clone(collected));
+        self
     }
 
     /// 接入唤醒级收件箱（启用轮级 `poll_round`）
@@ -575,178 +593,8 @@ impl ThinkingOptions {
 
 // ==================== 意图分析结果 ====================
 
-/// 结构化意图分析结果
-///
-/// 由 `RuntimeAwakening::analyze_input_intent()` 输出，供：
-/// - awaken 正式阶段 PromptBuilder 渲染【输入理解结果】区块
-/// - 外部入站适配器（飞书/WS/HTTP 回调）路由消息前的预分析
-/// - 简单问题直答：`direct_answer` 非空时图从 `intent` 直连 `consolidate`，
-///   跳过 retrieve / prepare / deliberate（省掉一次完整 LLM 调用）
-///
-/// 说明：除了 confidence 用 f32，其余均为自由文本/数组，不做强枚举约束，
-/// 避免未来新意图类型导致编译期改动；解析失败时降级为 Default::default()
-/// 空结构，保证不阻塞主流程。
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub struct IntentAnalysis {
-    /// 主意图类型（推荐取值：Question / TaskRequest / Confirm /
-    /// FollowUp / ClarificationResponse / Chat / Mixed）
-    /// Agent 自主判断，不做强枚举
-    pub intent_type: String,
-    /// 意图置信度 0.0~1.0（Agent 自己打分）
-    #[serde(default)]
-    pub confidence: f32,
-    /// 关键词/关键实体抽取（直接可复用于 search_memory 的 query）
-    #[serde(default)]
-    pub key_terms: Vec<String>,
-    /// 指代消歧结果（自由文本数组，每条 Agent 写清楚"X → Y"）
-    /// 例如：["\"上次那个方案\" → project=proj_123, task=task_456"]
-    #[serde(default)]
-    pub resolutions: Vec<String>,
-    /// 检索补充上下文摘要（search_memory/recommend_seed_nodes 结果）
-    #[serde(default)]
-    pub retrieved_context: Vec<String>,
-    /// 需要进一步追问澄清的问题（空列表 = 理解充分）
-    #[serde(default)]
-    pub need_clarification: Vec<String>,
-    /// 简单问题直答：给用户的最终答复（空串 = 必须走完整唤醒链路）
-    ///
-    /// 意图阶段判定「无需检索 / 工具 / 澄清即可作答」时填写。非空即视为直答，
-    /// 图会从 `intent` 直接进 `consolidate`；`summary` 仍只放理解结论，不混入答复。
-    #[serde(default)]
-    pub direct_answer: String,
-    /// 一句话总结：Agent 最终确认自己理解用户想要什么
-    #[serde(default)]
-    pub summary: String,
-}
-
-impl IntentAnalysis {
-    /// 是否在意图阶段就给出了最终答复（非空即直答）
-    pub fn has_direct_answer(&self) -> bool {
-        !self.direct_answer.trim().is_empty()
-    }
-
-    /// 意图识别产出的「后续阶段思考强度动态偏移」（分）
-    ///
-    /// 目标：让「这一步要花多少思考」由意图本身决定，而不是所有会话都用同一个分数。
-    ///
-    /// 规则（确定性启发式，先覆盖能明确判断的三种情形，其余保持 0）：
-    /// - **低置信（< 0.5）** → `+20`：连意图都没把握，后续更需要深度推理，
-    ///   提高预算避免「没想明白就草率作答」
-    /// - **任务 / 代码 / 计划类** → `+10`：多步执行、易出错，适度提强度
-    /// - **简单且高置信（≥ 0.8）** → `-10`：闲聊/问答/确认，降强度更快更省
-    /// - **其余** → `0`
-    ///
-    /// 结果与场景固定偏移一起构成 `strength_fallback`（由
-    /// `ThinkingIntensity::offset` 饱和钳制到 [0, 100]）：作为「场景重要度先验」
-    /// 的数值部分写进题面/state，**只在小脑无结论时**才硬兑现；判断有结论时
-    /// 完全以它为准。因此这里不需要自带边界；但总幅度刻意压在 ±20 内 ——
-    /// 动态偏移是「微调」，不该盖过用户在 Provider/Agent 上的显式配置。
-    pub fn thinking_intensity_offset(&self) -> i32 {
-        if self.confidence < 0.5 {
-            return 20;
-        }
-
-        let ty = self.intent_type.trim().to_ascii_lowercase();
-        let is_task_like = [
-            "task",
-            "task_request",
-            "code",
-            "coding",
-            "plan",
-            "planning",
-            "mixed",
-            "任务",
-            "代码",
-            "编程",
-            "计划",
-            "混合",
-        ]
-        .iter()
-        .any(|k| ty.contains(k));
-        if is_task_like {
-            return 10;
-        }
-
-        let is_simple_like = [
-            "chat",
-            "question",
-            "followup",
-            "follow_up",
-            "confirm",
-            "闲聊",
-            "聊天",
-            "问答",
-            "确认",
-            "追问",
-        ]
-        .iter()
-        .any(|k| ty.contains(k));
-        if self.confidence >= 0.8 && is_simple_like {
-            return -10;
-        }
-
-        0
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::IntentAnalysis;
-
-    fn intent(intent_type: &str, confidence: f32) -> IntentAnalysis {
-        IntentAnalysis {
-            intent_type: intent_type.to_string(),
-            confidence,
-            ..Default::default()
-        }
-    }
-
-    /// 低置信优先：连意图都没把握时一律提强度（即使类型看着像闲聊）
-    #[test]
-    fn low_confidence_raises_intensity() {
-        assert_eq!(intent("Chat", 0.3).thinking_intensity_offset(), 20);
-        assert_eq!(intent("", 0.0).thinking_intensity_offset(), 20);
-    }
-
-    /// 任务/代码/计划类：多步执行，适度提强度
-    #[test]
-    fn task_like_raises_intensity() {
-        for ty in [
-            "TaskRequest",
-            "Coding",
-            "Plan",
-            "Mixed",
-            "任务",
-            "代码",
-            "编程",
-        ] {
-            assert_eq!(
-                intent(ty, 0.9).thinking_intensity_offset(),
-                10,
-                "intent_type={ty} 应命中任务类"
-            );
-        }
-    }
-
-    /// 简单且高置信：降强度更快更省
-    #[test]
-    fn simple_high_confidence_lowers_intensity() {
-        for ty in [
-            "Chat", "Question", "FollowUp", "Confirm", "闲聊", "问答", "确认",
-        ] {
-            assert_eq!(
-                intent(ty, 0.9).thinking_intensity_offset(),
-                -10,
-                "intent_type={ty} 应命中简单类"
-            );
-        }
-    }
-
-    /// 简单类但置信不足，或不认识的类型：保持基准
-    #[test]
-    fn ambiguous_or_unknown_intent_keeps_base() {
-        assert_eq!(intent("Chat", 0.6).thinking_intensity_offset(), 0);
-        assert_eq!(intent("Unknown", 0.9).thinking_intensity_offset(), 0);
-        assert_eq!(intent("", 0.9).thinking_intensity_offset(), 0);
-    }
-}
+/// 意图分析结果已下沉 `models`：`PromptBuilder`（models）与
+/// `DefaultPromptBuilder`（dal）都要用它，留在 runtime 会形成
+/// `models → domain` / `dal → domain` 两条反向边。此处转出以保持
+/// 既有调用路径（`runtime::awakening::IntentAnalysis` 等）不变。
+pub use crate::models::intent_analysis::IntentAnalysis;

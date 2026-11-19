@@ -147,7 +147,7 @@ pub async fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
     sys_info!("Service base data initialized (idempotent defaults)");
 
     // 创建 AOP 统计收集器并注入 Hook（在 worker 启动前）
-    let aop_stats_collector = consumer::AopStatsCollector::new();
+    let aop_stats_collector = crate::pkg::stats::runtime::aop::AopStatsCollector::new();
     {
         use std::sync::Arc;
         let hook = Arc::new(consumer::AopStatsHook::new(aop_stats_collector.clone()))
@@ -155,8 +155,8 @@ pub async fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
         crate::pkg::aop::registry().set_metrics_hook(hook);
         sys_info!("AOP stats hook installed");
     }
-    // 把 collector 注入 SystemDomain（供后续查询）
-    crate::service::domain::system::set_aop_stats_collector(aop_stats_collector);
+    // 注入全局单例：handler 侧直接读它（不再经 SystemDomain 转一手）
+    crate::pkg::stats::runtime::aop::init(aop_stats_collector);
 
     // 启动 AOP 调度器（轮询生产者 + 异步消费者 worker）
     aop::init_all().await?;

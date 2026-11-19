@@ -38,6 +38,11 @@ pub struct LegacyAwakenOutcome {
     pub steps: usize,
     /// 本轮唤醒吸收的其他消息 ID（成功后由消费者批量置 `Processed`）
     pub injected_ids: Vec<String>,
+    /// run 级业务产出（附件 / 产物）：随结果移交给消费侧做 final 正文查漏补缺
+    ///
+    /// 备份在图上下文（`AwakenDeps.collected`）上收集，这里只是把它取出来；
+    /// 图已经结束，此后不再有写入者。
+    pub collected: crate::service::domain::runtime::RoundCollected,
 }
 
 /// 跑一条 legacy_awaken 路径
@@ -257,6 +262,12 @@ fn collect(deps: Arc<AwakenDeps>, run: &ThinkRun) -> LegacyAwakenOutcome {
         .lock()
         .map(|state| state.injected_ids().to_vec())
         .unwrap_or_default();
+    // 业务产出：图已结束，此后不再有写入者，取一份副本随结果交给消费侧
+    let collected = match deps.collected.lock() {
+        Ok(collected) => collected.clone(),
+        // 锁中毒时仍尽量带走已收集的部分：缺一条总比整份丢掉好
+        Err(poisoned) => poisoned.into_inner().clone(),
+    };
     LegacyAwakenOutcome {
         agent_id: deps.agent.po.id.clone(),
         trace_ids: vec![deps.trace_id.clone()],
@@ -266,5 +277,6 @@ fn collect(deps: Arc<AwakenDeps>, run: &ThinkRun) -> LegacyAwakenOutcome {
         exit: artifacts.exit,
         steps: run.trace.steps,
         injected_ids,
+        collected,
     }
 }

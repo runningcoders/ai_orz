@@ -6,10 +6,10 @@
 //!
 //! 这样新增渠道时只需在适配层翻译平台语义，过滤规则与判定链路无需重复实现。
 
+use crate::pkg::text_budget::tokens_of;
+use crate::pkg::tokens::truncate_to_tokens;
 use crate::service::domain::runtime::NoulOutcome;
 use crate::service::domain::runtime::cerebellum_context::share as context_share;
-use crate::service::domain::runtime::compaction::truncate_to_tokens;
-use crate::service::domain::runtime::text_budget::tokens_of;
 
 /// 群消息相关性的小脑概率阈值
 pub const RELEVANCE_THRESHOLD: f32 = 0.5;

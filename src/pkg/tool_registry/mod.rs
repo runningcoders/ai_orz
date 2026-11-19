@@ -20,6 +20,7 @@ pub mod lark_cli;
 pub mod mark_artifact;
 pub mod mcp;
 pub mod policy_authorization_fusion;
+pub mod readiness_cache;
 pub mod shell_env;
 pub mod shell_exec;
 pub mod shell_policy;

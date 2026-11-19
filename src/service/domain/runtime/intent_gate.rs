@@ -23,7 +23,7 @@
 //!
 //! # 观测：轨迹是唯一载体
 //!
-//! 每次进入本门都写一条 `record_cerebellum{scene: "intent_gate", decision}`，
+//! 每次进入本门都写穿一条留痕（`TraceSink::cerebellum`，scene = `intent_gate`），
 //! `decision` 四值 = `empty_input` / `skip` / `analyze` / `fallback`。
 //! 统计口径就在这一处区分（本地判空与模型判低价值不得混算），AOP 的
 //! `started/finished` status 一律不动 —— skip 是正常决策不是异常，往 status
@@ -34,8 +34,8 @@ use super::types::IntentAnalysis;
 use crate::models::brain::Brain;
 use crate::pkg::RequestContext;
 use crate::pkg::policy::{Metrics, PickOnePolicy, Policy};
-use crate::pkg::think_trace::{ThinkTraceCerebellum, record_cerebellum};
 use crate::service::dal::brain::{BrainDal, dal};
+use crate::service::domain::runtime::think_trace::ThinkTraceCerebellum;
 use std::sync::Arc;
 
 /// 场景标识（日志 / 计量口径，也是 `DecisionRequest.scene`）
@@ -152,16 +152,13 @@ pub(crate) async fn skip_if_pointless(
     dal: Arc<dyn BrainDal>,
     brain: Option<&Brain>,
     text: &str,
-    trace_id: &str,
+    scope: &crate::service::domain::runtime::think_trace::TraceSink,
 ) -> Option<IntentAnalysis> {
     // ① 零信息量：本地判 —— 不占配额、不发请求。
     //    判定面严格限 `trim()` 后为空：纯标点仍送小脑判，别让本地黑名单和
     //    小脑黑名单变成两套真相（本地只兜「形态上零信息量」那一种）。
     if text.trim().is_empty() {
-        record_cerebellum(
-            trace_id,
-            trace(DECISION_EMPTY_INPUT, None, None, true, None),
-        );
+        scope.cerebellum(trace(DECISION_EMPTY_INPUT, None, None, true, None));
         log_info!(
             ctx,
             "intent_gate",
@@ -192,10 +189,13 @@ pub(crate) async fn skip_if_pointless(
             used = brain.cerebellum_quota.used(),
             "cerebellum call budget exhausted, fall back to original logic"
         );
-        record_cerebellum(
-            trace_id,
-            trace(DECISION_FALLBACK, None, Some(DEGRADED_BUDGET), false, None),
-        );
+        scope.cerebellum(trace(
+            DECISION_FALLBACK,
+            None,
+            Some(DEGRADED_BUDGET),
+            false,
+            None,
+        ));
         return None;
     }
 
@@ -225,16 +225,13 @@ pub(crate) async fn skip_if_pointless(
             latency_ms = latency_ms,
             "intent gate degraded to original logic"
         );
-        record_cerebellum(
-            trace_id,
-            trace(
-                DECISION_FALLBACK,
-                None,
-                Some(reason.as_str()),
-                false,
-                traced_latency_ms,
-            ),
-        );
+        scope.cerebellum(trace(
+            DECISION_FALLBACK,
+            None,
+            Some(reason.as_str()),
+            false,
+            traced_latency_ms,
+        ));
         return None;
     }
 
@@ -250,16 +247,13 @@ pub(crate) async fn skip_if_pointless(
             latency_ms = latency_ms,
             "intent gate produced no usable answer"
         );
-        record_cerebellum(
-            trace_id,
-            trace(
-                DECISION_FALLBACK,
-                None,
-                Some(DEGRADED_NO_ANSWER),
-                false,
-                traced_latency_ms,
-            ),
-        );
+        scope.cerebellum(trace(
+            DECISION_FALLBACK,
+            None,
+            Some(DEGRADED_NO_ANSWER),
+            false,
+            traced_latency_ms,
+        ));
         return None;
     };
 
@@ -275,16 +269,13 @@ pub(crate) async fn skip_if_pointless(
             output_tokens = outcome.usage.output_tokens,
             "intent analysis skipped by cerebellum"
         );
-        record_cerebellum(
-            trace_id,
-            trace(
-                DECISION_SKIP,
-                Some(pick.confidence),
-                None,
-                true,
-                traced_latency_ms,
-            ),
-        );
+        scope.cerebellum(trace(
+            DECISION_SKIP,
+            Some(pick.confidence),
+            None,
+            true,
+            traced_latency_ms,
+        ));
         return Some(skipped_analysis(text));
     }
 
@@ -299,16 +290,13 @@ pub(crate) async fn skip_if_pointless(
         latency_ms = latency_ms,
         "intent gate lets original path run"
     );
-    record_cerebellum(
-        trace_id,
-        trace(
-            DECISION_ANALYZE,
-            Some(pick.confidence),
-            None,
-            false,
-            traced_latency_ms,
-        ),
-    );
+    scope.cerebellum(trace(
+        DECISION_ANALYZE,
+        Some(pick.confidence),
+        None,
+        false,
+        traced_latency_ms,
+    ));
     None
 }
 
@@ -317,9 +305,9 @@ pub(crate) async fn skip_if_pointless_with_default_dao(
     ctx: &RequestContext,
     brain: Option<&Brain>,
     text: &str,
-    trace_id: &str,
+    scope: &crate::service::domain::runtime::think_trace::TraceSink,
 ) -> Option<IntentAnalysis> {
-    skip_if_pointless(ctx, dal(), brain, text, trace_id).await
+    skip_if_pointless(ctx, dal(), brain, text, scope).await
 }
 
 #[cfg(test)]

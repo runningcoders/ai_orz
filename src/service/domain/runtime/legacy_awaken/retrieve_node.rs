@@ -33,12 +33,12 @@ use crate::pkg::think_path::{
     ContextKey, LoadDepth, NodeContract, NodeId, NodeOutcome, NodeSignal, PhaseId, ThinkBus,
     ThinkNode,
 };
+use crate::pkg::tokens::truncate_to_tokens;
 use crate::service::dal::memory::TraversalStrategy;
 use crate::service::dao::memory::{MemoryQuery, MemorySearch};
 use crate::service::dao::skill::{SkillQuery, SkillSearch};
 use crate::service::domain::runtime::RuntimeMemory;
 use crate::service::domain::runtime::cerebellum_context;
-use crate::service::domain::runtime::compaction::truncate_to_tokens;
 use crate::service::domain::runtime::types::IntentAnalysis;
 use async_trait::async_trait;
 use common::api::PaginationParams;
@@ -318,7 +318,7 @@ fn recall_line(m: &Memory, full: bool, index_snippet_tokens: Option<usize>) -> O
         m.to_prompt_summary()?
     } else {
         // 系数 0 = 不切段：整行先按全文拼出来，再统一按 token 预算截断
-        // （token / 字符两套体系不留，截断只走 `compaction::truncate_to_tokens`）。
+        // （token / 字符两套体系不留，截断只走 `pkg::tokens::truncate_to_tokens`）。
         m.to_index_prompt(MemoryIndexTier::OnePart, 0)?
     };
     let line = match (&m.po, full) {
@@ -538,9 +538,8 @@ async fn rerank_if_enabled(
     };
     // 小脑留痕：精选是增强，没出结论时也要能看见「这次是靠老路径兜的」
     if let Some(scene) = rerank_scene {
-        crate::pkg::think_trace::record_cerebellum(
-            &deps.trace_id,
-            crate::pkg::think_trace::ThinkTraceCerebellum {
+        deps.trace_sink().cerebellum(
+            crate::service::domain::runtime::think_trace::ThinkTraceCerebellum {
                 scene: scene.to_string(),
                 decision: if ranked.is_some() {
                     "select"
@@ -893,9 +892,8 @@ impl ThinkNode for RetrieveNode {
             // 小脑留痕：有没有出结论都要能看见，且降级原因必须分列 ——
             // 把「没发请求 / 配额耗尽 / 调用失败 / 答案不可用」一律折叠成
             // no_usable_answer，看板上就只能看到一片「无可用答案」。
-            crate::pkg::think_trace::record_cerebellum(
-                &deps.trace_id,
-                crate::pkg::think_trace::ThinkTraceCerebellum {
+            deps.trace_sink().cerebellum(
+                crate::service::domain::runtime::think_trace::ThinkTraceCerebellum {
                     scene: super::skill_relevance::SCENE.to_string(),
                     decision: if ranked.is_some() {
                         "select"

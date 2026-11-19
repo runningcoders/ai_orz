@@ -35,6 +35,8 @@ fn entry(run_id: &str, agent_id: &str, created_at: u64) -> ThinkTraceEntry {
         created_at,
         project_id: None,
         task_id: None,
+        kind: TraceLineKind::Legacy,
+        fact: None,
         rounds: Vec::new(),
         partial: false,
         partial_round_count: 0,
@@ -296,6 +298,7 @@ fn entry_round_trips_round_details() {
         tool_calls: vec![ThinkTraceToolCall {
             call_id: Some("call-1".to_string()),
             name: "search_memory".to_string(),
+            intent: Some("查历史记录用于比对".to_string()),
             arguments: "{\"q\":\"历史\"}".to_string(),
             result: Some("命中 2 条".to_string()),
             status: "ok".to_string(),
@@ -579,105 +582,7 @@ fn query_does_not_merge_same_run_id_across_scenes() {
     assert_eq!(page.total, 2, "不同场景不是同一个动作，不能合并");
 }
 
-// ---------- 小脑留痕缓冲：截断必须可计数（每 run 至多一次告警） ----------
-
-fn cerebellum_item(i: usize) -> ThinkTraceCerebellum {
-    ThinkTraceCerebellum {
-        scene: format!("test_scene_{i}"),
-        ..Default::default()
-    }
-}
-
-#[test]
-fn cerebellum_buffer_within_cap_drops_nothing() {
-    let mut entry = CerebellumBufferEntry::default();
-    for i in 0..CEREBELLUM_BUFFER_MAX_PER_RUN {
-        entry.push(cerebellum_item(i));
-    }
-    let (items, dropped) = entry.drain();
-    assert_eq!(items.len(), CEREBELLUM_BUFFER_MAX_PER_RUN);
-    assert_eq!(dropped, 0, "未溢出时不应出现丢弃计数");
-}
-
-#[test]
-fn cerebellum_buffer_overflow_counts_dropped_exactly_and_drains_once() {
-    // 与 buffer 真数表同口径：最坏口径 58 条 - 上限 32 = 26 条被截断
-    let overflow = 26;
-    let mut entry = CerebellumBufferEntry::default();
-    for i in 0..(CEREBELLUM_BUFFER_MAX_PER_RUN + overflow) {
-        entry.push(cerebellum_item(i));
-    }
-    let (items, dropped) = entry.drain();
-    assert_eq!(items.len(), CEREBELLUM_BUFFER_MAX_PER_RUN);
-    assert_eq!(dropped, overflow, "丢弃条数必须精确可数，不能只说「满了」");
-    // 告警挂在 drain 的 dropped>0 分支；drain 幂等清空 ⇒ 同一 run 不可能二次告警
-    let (again, dropped_again) = entry.drain();
-    assert!(again.is_empty());
-    assert_eq!(dropped_again, 0);
-}
-
-#[test]
-fn take_cerebellum_caps_items_and_clears_run_state() {
-    // record_cerebellum 在落盘基址未注入时直接返回（无副作用设计），断言前先注入
-    init(std::env::temp_dir().join("ai_orz_think_trace_buffer_test"));
-    let run_id = "test-run-cerebellum-overflow";
-    let _ = take_cerebellum(run_id); // 清场，避免跨用例串味
-    for i in 0..(CEREBELLUM_BUFFER_MAX_PER_RUN + 5) {
-        record_cerebellum(run_id, cerebellum_item(i));
-    }
-    assert_eq!(
-        take_cerebellum(run_id).len(),
-        CEREBELLUM_BUFFER_MAX_PER_RUN,
-        "取出条数必须封顶在 CEREBELLUM_BUFFER_MAX_PER_RUN"
-    );
-    // 取走后本 run 状态被整体移除 ⇒ 第二次取空（也就不会有第二次告警）
-    assert!(take_cerebellum(run_id).is_empty());
-}
-
-#[test]
-fn cerebellum_buffer_capacity_is_64_after_raise() {
-    // 锁死容量常量本身：31 处写入点 + 记账条目（放行/空输入/熔断开闸）共用
-    // 同一批槽位，最坏口径 58 条 ⇒ 32 会稳定截断，64 覆盖并留 6 条余量。
-    // 这条断言刻意写死字面量 64：它回答的是「AMan 拍板的 32→64 有没有真生效」，
-    // 跟着常量走就永远为真、失去判据意义。
-    assert_eq!(
-        CEREBELLUM_BUFFER_MAX_PER_RUN, 64,
-        "缓冲上限必须是 64（32→64 是拍板项，不得被无意改回）"
-    );
-
-    // 边界行为以 64 为界：64 条全留、第 65 条开始计丢弃
-    let mut exactly_cap = CerebellumBufferEntry::default();
-    for i in 0..64 {
-        exactly_cap.push(cerebellum_item(i));
-    }
-    let (items, dropped) = exactly_cap.drain();
-    assert_eq!(items.len(), 64, "恰满 64 条时一条都不许丢");
-    assert_eq!(dropped, 0, "恰满不算溢出");
-
-    let mut over_cap = CerebellumBufferEntry::default();
-    for i in 0..65 {
-        over_cap.push(cerebellum_item(i));
-    }
-    let (items, dropped) = over_cap.drain();
-    assert_eq!(items.len(), 64, "第 65 条必须被拒之门外");
-    assert_eq!(dropped, 1, "溢出 1 条就要能数出来 1 条");
-}
-
-#[test]
-fn cerebellum_buffer_worst_case_58_fits_within_capacity() {
-    // 回归护栏：32 时代的溢出量是 58-32=26；升到 64 后同一最坏口径必须零丢弃。
-    // 这条是「为什么改 64」的可判定表达 —— 若将来有人把容量改回 32，它会红。
-    let worst_case = 58;
-    let mut entry = CerebellumBufferEntry::default();
-    for i in 0..worst_case {
-        entry.push(cerebellum_item(i));
-    }
-    let (items, dropped) = entry.drain();
-    assert_eq!(items.len(), worst_case, "最坏口径 58 条必须全部保留");
-    assert_eq!(dropped, 0, "64 的取值依据就是让 58 条不触顶");
-}
-
-// ---------- chain_reply 补丁行：run 收尾之后再追加的二段留痕 ----------
+// ---------- 写穿观测事实：行形态是扩展契约 ----------
 
 fn cerebellum(scene: &str, decision: &str) -> ThinkTraceCerebellum {
     ThinkTraceCerebellum {
@@ -687,38 +592,103 @@ fn cerebellum(scene: &str, decision: &str) -> ThinkTraceCerebellum {
     }
 }
 
+fn scope() -> TraceSink {
+    TraceSink::new("agent-a", "run-a", "awaken").with_scope(Some("proj-1"), Some("task-1"))
+}
+
 #[test]
-fn cerebellum_patch_line_merges_into_finished_run() {
-    // 现缺陷的反事实：chain_reply 判定跑在 run 收尾之后，留痕落进一个永不
-    // take 的键 ⇒ 结构上永远查不到。修法是「补一次 take + 追加补丁行」。
-    // 本用例锁的是**查询侧那一半**：补丁行必须合并回原轨迹，且不搅乱轮次。
+fn fact_entry_carries_identity_and_flattens_payload() {
+    let entry = scope()
+        .fact_entry(
+            "cerebellum",
+            serde_json::json!({ "cerebellum": [cerebellum("chain_reply", "close")] }),
+        )
+        .expect("完整身份必须可写");
+
+    assert_eq!(entry["kind"], "fact");
+    assert_eq!(entry["fact"], "cerebellum");
+    // 身份字段全带：查询侧靠 (agent_id, run_id, scene) 归并回同一条轨迹
+    assert_eq!(entry["agent_id"], "agent-a");
+    assert_eq!(entry["run_id"], "run-a");
+    assert_eq!(entry["scene"], "awaken");
+    assert_eq!(entry["project_id"], "proj-1");
+    assert_eq!(entry["task_id"], "task-1");
+    // 载荷平铺到顶层（而不是塞进 payload），便于按字段名检索
+    assert_eq!(entry["cerebellum"].as_array().unwrap().len(), 1);
+    assert!(entry.get("payload").is_none());
+}
+
+#[test]
+fn fact_entry_ignores_reserved_keys_and_requires_identity() {
+    // 载荷试图覆盖身份字段 ⇒ 一律忽略，轨迹的归属不能被载荷改写
+    let entry = scope()
+        .fact_entry(
+            "custom",
+            serde_json::json!({
+                "run_id": "hijacked",
+                "kind": "close",
+                // 合并语义字段：若被载荷写入，前端会把半成品当已完成
+                "partial": false,
+                "rounds": [{ "round": 99 }],
+                "payload_value": 7,
+            }),
+        )
+        .expect("完整身份必须可写");
+    assert_eq!(entry["run_id"], "run-a", "身份字段不许被载荷覆盖");
+    assert_eq!(entry["kind"], "fact", "行种类不许被载荷覆盖");
+    assert!(
+        entry.get("partial").is_none(),
+        "合并语义字段不许被载荷覆盖（否则轨迹的收尾状态会被改写）"
+    );
+    assert!(entry.get("rounds").is_none(), "轮次字段不许被载荷覆盖");
+    assert_eq!(entry["payload_value"], 7, "非保留键正常平铺");
+
+    // 非对象载荷收进 payload，不破坏行结构
+    let scalar = scope()
+        .fact_entry("custom", serde_json::json!(42))
+        .expect("完整身份必须可写");
+    assert_eq!(scalar["payload"], 42);
+
+    // 空 run_id ⇒ 没有可归属的轨迹，直接丢弃（与旧 record 的「空键丢弃」同义）
+    assert!(
+        TraceSink::new("agent-a", "", "awaken")
+            .fact_entry("x", serde_json::json!({}))
+            .is_none(),
+        "空 run_id 不得产生任何行"
+    );
+}
+
+#[test]
+fn fact_line_after_close_keeps_run_finished() {
+    // 反事实：chain_reply 的判定跑在 awaken 返回之后，留痕必然落在收尾行**之后**。
+    // 写穿方案下它是独立一行（kind=fact, partial=true），合并时既不能把轮次
+    // 冲掉，也不能把已完成的轨迹重新标成「半成品」。
     let dir = tempdir().unwrap();
     let base = dir.path();
     let date = today();
 
-    // ① 收尾行：run 级留痕 1 条 + 2 轮
-    let mut final_line_entry = entry("run-chain", "agent-a", 1_000);
-    final_line_entry.cerebellum = vec![cerebellum("thinking_strength.awaken", "70")];
-    final_line_entry.rounds = vec![round(1), round(2)];
-    final_line_entry.steps = 5;
-    write_entry(base, "agent-a", &date, &final_line_entry);
+    // ① 收尾行：1 条 run 级留痕 + 2 轮
+    let mut close_line = entry("run-chain", "agent-a", 1_000);
+    close_line.kind = TraceLineKind::Close;
+    close_line.cerebellum = vec![cerebellum("thinking_strength.awaken", "70")];
+    close_line.rounds = vec![round(1), round(2)];
+    close_line.steps = 5;
+    write_entry(base, "agent-a", &date, &close_line);
 
-    // ② 补丁行：partial=false、空载荷（rounds/occurrences/routes/steps 全零），
-    //    只带 chain_reply 那一条留痕
-    let mut patch = entry("run-chain", "agent-a", 2_000);
-    patch.cerebellum = vec![cerebellum("chain_reply", "close")];
-    patch.rounds = Vec::new();
-    patch.occurrences = Vec::new();
-    patch.routes = Vec::new();
-    patch.steps = 0;
-    patch.fingerprint = String::new();
-    write_entry(base, "agent-a", &date, &patch);
+    // ② 写穿的事实行：partial=true、只带自己的载荷
+    let mut fact_line = entry("run-chain", "agent-a", 2_000);
+    fact_line.kind = TraceLineKind::Fact;
+    fact_line.partial = true;
+    fact_line.cerebellum = vec![cerebellum("chain_reply", "close")];
+    fact_line.rounds = Vec::new();
+    fact_line.occurrences = Vec::new();
+    fact_line.routes = Vec::new();
+    fact_line.steps = 0;
+    fact_line.fingerprint = String::new();
+    write_entry(base, "agent-a", &date, &fact_line);
 
     let page = query(base, ThinkTraceQuery::default());
-    assert_eq!(
-        page.total, 1,
-        "补丁行必须按 (agent_id, run_id, scene) 合并回原轨迹，不能变成第二条卡片"
-    );
+    assert_eq!(page.total, 1, "事实行必须合并回原轨迹，不能变成第二条卡片");
     let merged = &page.items[0];
     assert_eq!(
         merged
@@ -727,103 +697,178 @@ fn cerebellum_patch_line_merges_into_finished_run() {
             .map(|c| c.scene.as_str())
             .collect::<Vec<_>>(),
         vec!["thinking_strength.awaken", "chain_reply"],
-        "两段留痕都要在：去掉 merge_into 里的 cerebellum extend，这条立刻变红（chain_reply 那条丢失）"
+        "两段留痕都要在：去掉 extend 这条立刻变红"
     );
     assert_eq!(
         merged.rounds.iter().map(|r| r.round).collect::<Vec<_>>(),
         vec![1, 2],
-        "空载荷补丁行到达时不得清空（它 partial=false 会走「摘本片段增量」分支，         而 base 的 partial_round_count 已是 0 ⇒ 零摘除）也不得追加轮次"
+        "事实行不得清空或追加轮次"
     );
-    assert_eq!(merged.steps, 5, "补丁行的 steps=0 不得把收尾行的步数冲掉");
-    assert_eq!(
-        merged.created_at, 1_000,
-        "created_at 保留最早片段（run 起点语义），补丁行不得把时间推到后面"
+    assert_eq!(merged.steps, 5, "事实行的 steps=0 不得把收尾行的步数冲掉");
+    assert!(
+        !merged.partial,
+        "收尾之后再来事实行，仍然必须是「已完成」——否则前端会永远显示在跑"
     );
-    assert!(!merged.partial, "收尾后不再是半成品");
 }
 
 #[test]
-fn cerebellum_patch_line_alone_is_still_queryable() {
-    // 防御性：若收尾行因写盘失败/进程中断缺失，补丁行自身必须是可查询的完整条目
-    // —— 否则「补丁都补上了却还是看不到」会变成新的静默失败。
+fn fact_line_first_does_not_leave_path_empty() {
+    // 入口门的小脑留痕发生在第一轮之前 ⇒ 事实行可能比任何轮次行都早。
+    // 合并结果必须补上收尾行才有的图执行信息（path / steps / occurrences）。
     let dir = tempdir().unwrap();
     let base = dir.path();
     let date = today();
 
-    let mut patch = entry("run-orphan", "agent-a", 1_000);
-    patch.cerebellum = vec![cerebellum("chain_reply", "close")];
-    patch.rounds = Vec::new();
-    patch.occurrences = Vec::new();
-    patch.routes = Vec::new();
-    patch.steps = 0;
-    patch.fingerprint = String::new();
-    write_entry(base, "agent-a", &date, &patch);
+    let mut early = entry("run-early-fact", "agent-a", 1_000);
+    early.kind = TraceLineKind::Fact;
+    // 注意：这里刻意**不**设 partial —— 写穿的事实行落盘时不含该字段
+    // （`TraceSink::fact` 只写 kind/fact/载荷），反序列化得到 false
+    early.partial = false;
+    early.path = String::new();
+    early.steps = 0;
+    early.occurrences = Vec::new();
+    early.routes = Vec::new();
+    early.cerebellum = vec![cerebellum("entry_gate", "proceed")];
+    write_entry(base, "agent-a", &date, &early);
+
+    let mut close_line = entry("run-early-fact", "agent-a", 2_000);
+    close_line.kind = TraceLineKind::Close;
+    close_line.rounds = vec![round(1)];
+    close_line.steps = 3;
+    write_entry(base, "agent-a", &date, &close_line);
 
     let page = query(base, ThinkTraceQuery::default());
     assert_eq!(page.total, 1);
-    assert_eq!(page.items[0].cerebellum.len(), 1, "孤立补丁行也要能被查到");
-    assert_eq!(page.items[0].cerebellum[0].scene, "chain_reply");
-}
-
-// ---------- flush_cerebellum_patch：take + 追加补丁行 ----------
-
-#[test]
-fn flush_cerebellum_patch_is_noop_without_any_record() {
-    // 「没有留痕就不写空行」：静态命中 / 无压力 / 未装配这些零调用路径，
-    // 每次 handle_agent_message 都会走一次 flush，若它无条件落盘就会污染轨迹。
-    let count = crate::service::domain::runtime::flush_cerebellum_patch(
-        "agent-flush-none",
-        "run-flush-none",
-        "awaken",
-        None,
-        None,
+    let merged = &page.items[0];
+    assert_eq!(
+        merged.path, "think_round",
+        "首个片段是事实行时，path 必须从收尾行补上（否则面板拿不到蓝图 ID）"
     );
-    assert_eq!(count, 0, "没有留痕时必须返回 0 且不落盘");
-
-    // 空 run_id 直接短路（record_cerebellum 对空键同样只丢弃）
-    let count = crate::service::domain::runtime::flush_cerebellum_patch(
-        "agent-flush-none",
-        "",
-        "awaken",
-        None,
-        None,
-    );
-    assert_eq!(count, 0, "空 run_id 不得触发任何写入");
+    assert_eq!(merged.steps, 3, "图步数按收尾行累计");
+    assert_eq!(merged.rounds.len(), 1);
+    assert_eq!(merged.cerebellum.len(), 1);
+    assert!(!merged.partial);
 }
 
 #[test]
-fn flush_cerebellum_patch_drains_run_buffer_and_reports_count() {
-    // 与上一条分工：上一条锁「没东西时别乱写」，本条锁「有东西时真的取走并报数」。
-    // 落盘基址是全局 OnceLock（可能已被其它用例设成某个 temp 目录），这里只断言
-    // 返回值与「取走后缓冲为空」——两者都不依赖落盘成功。
-    init(std::env::temp_dir().join("ai_orz_think_trace_flush_test"));
-    let run_id = "test-run-flush-cerebellum-patch";
-    let _ = take_cerebellum(run_id); // 清场防串味
+fn fact_line_alone_is_queryable_as_in_progress() {
+    // 只有事实行（run 尚未收尾）也必须能查到：写穿的意义就是「不用等收尾」
+    let dir = tempdir().unwrap();
+    let base = dir.path();
+    let date = today();
 
-    record_cerebellum(run_id, cerebellum("chain_reply", "close"));
-    record_cerebellum(run_id, cerebellum("chain_reply", "continue"));
+    let mut fact_line = entry("run-early", "agent-a", 1_000);
+    fact_line.kind = TraceLineKind::Fact;
+    // 真实落盘形态：事实行不带 partial（反序列化默认 false），
+    // 「未收尾」必须由 merge 侧按 kind 判出来
+    fact_line.partial = false;
+    fact_line.cerebellum = vec![cerebellum("entry_gate", "proceed")];
+    fact_line.occurrences = Vec::new();
+    fact_line.routes = Vec::new();
+    fact_line.steps = 0;
+    write_entry(base, "agent-a", &date, &fact_line);
 
-    let count = crate::service::domain::runtime::flush_cerebellum_patch(
-        "agent-flush",
-        run_id,
-        "awaken",
-        None,
-        None,
-    );
-    assert_eq!(count, 2, "补写条数必须等于本 run 缓冲里的条数");
+    let page = query(base, ThinkTraceQuery::default());
+    assert_eq!(page.total, 1);
+    assert_eq!(page.items[0].cerebellum.len(), 1);
+    assert_eq!(page.items[0].cerebellum[0].scene, "entry_gate");
+    assert!(page.items[0].partial, "没有收尾行时仍是半成品");
+}
+
+#[test]
+fn finish_guard_closes_early_exit_run_without_duplicate() {
+    // 小脑 Direct / 预算耗尽 / 超时等早退路径不经过 `persist_trace`：
+    // 没有 guard 就只剩 fact 行，查询侧会永久显示「进行中」。
+    let scope = TraceSink::memory("agent-a", "run-direct", "awaken");
+    scope.cerebellum(cerebellum("entry_gate", "direct"));
+    {
+        let mut guard = TraceFinishGuard::new(scope.clone(), "finished");
+        guard.set_reason("cerebellum_direct");
+    }
+    let lines = scope.recorded();
+    assert_eq!(lines.len(), 2, "一条事实行 + 一行兜底 close");
+    assert_eq!(lines[1]["kind"], "close");
+    assert_eq!(lines[1]["close_reason"], "cerebellum_direct");
+    assert_eq!(lines[1]["partial"], false);
+
+    // 图正常跑完时 persist_trace 先 mark_closed，guard 不得再写第二行 close
+    let ok_scope = TraceSink::memory("agent-a", "run-ok", "awaken");
+    ok_scope.mark_closed();
+    drop(TraceFinishGuard::new(ok_scope.clone(), "finished"));
+    assert!(ok_scope.recorded().is_empty(), "收尾行必须只写一次");
+
+    // 端到端：真实落盘字节（fact + guard close）查询后必须是「已结束」
+    let dir = tempdir().unwrap();
+    let base = dir.path();
+    let trace_dir = paths::agent_think_trace_dir(base, "agent-a");
+    fs::create_dir_all(&trace_dir).unwrap();
+    let mut raw = lines.clone();
+    raw[0]["created_at"] = 1_000.into();
+    raw[1]["created_at"] = 2_000.into();
+    let body = raw
+        .iter()
+        .map(|line| serde_json::to_string(line).unwrap())
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(
+        trace_dir.join(format!("{}.jsonl", today())),
+        format!("{body}\n"),
+    )
+    .unwrap();
+
+    let page = query(base, ThinkTraceQuery::default());
+    assert_eq!(page.total, 1);
     assert!(
-        take_cerebellum(run_id).is_empty(),
-        "flush 必须把缓冲取走（take 语义），否则同一条留痕会被后续 flush 重复落盘"
+        !page.items[0].partial,
+        "早退路径也必须关闭半成品标记，不能永远显示进行中"
     );
-    // 幂等：再 flush 一次拿不到东西、不再落盘
-    let again = crate::service::domain::runtime::flush_cerebellum_patch(
-        "agent-flush",
-        run_id,
-        "awaken",
-        None,
-        None,
+    assert_eq!(page.items[0].cerebellum.len(), 1);
+}
+
+#[test]
+fn write_through_fact_line_has_no_partial_field() {
+    // 契约：`TraceSink` 写穿的事实行**不含** `partial` 字段。
+    // `merge_same_run` 因此必须按 `kind` 判首行的半成品状态，
+    // 不能照搬字段值（否则入口门留痕在前时 run 会显示已完成）。
+    let scope = TraceSink::memory("agent-a", "run-fact-shape", "awaken");
+    scope.cerebellum(cerebellum("wake_gate", "proceed"));
+    let lines = scope.recorded();
+    assert_eq!(lines.len(), 1, "一条留痕 = 一行");
+    assert_eq!(lines[0]["kind"], "fact");
+    assert!(
+        lines[0].get("partial").is_none(),
+        "事实行不带 partial，收尾语义只由 kind 决定"
     );
-    assert_eq!(again, 0, "同一条留痕不得被补写两次");
+
+    // 端到端：把真实落盘字节写进临时 JSONL，查询后必须是「半成品」
+    let dir = tempdir().unwrap();
+    let base = dir.path();
+    let trace_dir = paths::agent_think_trace_dir(base, "agent-a");
+    fs::create_dir_all(&trace_dir).unwrap();
+    let mut raw = lines[0].clone();
+    raw["created_at"] = 1_000.into();
+    let file = trace_dir.join(format!("{}.jsonl", today()));
+    fs::write(&file, format!("{}\n", serde_json::to_string(&raw).unwrap())).unwrap();
+
+    let page = query(base, ThinkTraceQuery::default());
+    assert_eq!(page.total, 1);
+    assert_eq!(
+        page.items[0].kind,
+        TraceLineKind::Fact,
+        "读回来的行种类必须是 fact（否则合并语义无法判定）"
+    );
+    assert!(
+        page.items[0].partial,
+        "只有事实行、收尾行未到时，合并结果必须是半成品"
+    );
+    assert_eq!(page.items[0].cerebellum.len(), 1);
+
+    // 收尾行到达 ⇒ 关闭半成品标记
+    let mut close_line = entry("run-fact-shape", "agent-a", 2_000);
+    close_line.kind = TraceLineKind::Close;
+    write_entry(base, "agent-a", &today(), &close_line);
+    let page = query(base, ThinkTraceQuery::default());
+    assert!(!page.items[0].partial, "收尾行必须关闭半成品标记");
 }
 
 // ==================== 旁车索引（sidecar index）====================

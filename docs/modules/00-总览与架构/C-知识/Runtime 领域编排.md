@@ -22,7 +22,7 @@
 - [src/handlers/hr/agent/query_memory_traces.rs](src/handlers/hr/agent/query_memory_traces.rs)
 - [src/service/domain/runtime/think_trace_query.rs](src/service/domain/runtime/think_trace_query.rs)
 - [src/service/domain/runtime/memory_trace_query.rs](src/service/domain/runtime/memory_trace_query.rs)
-- [src/pkg/think_trace.rs](src/pkg/think_trace.rs)
+- [src/service/domain/runtime/think_trace.rs](src/service/domain/runtime/think_trace.rs)
 - [src/service/dal/memory/trace.rs](src/service/dal/memory/trace.rs)
 - [src/service/dao/memory/sqlite/trace.rs](src/service/dao/memory/sqlite/trace.rs)
 - [frontend/src/components/chat/agent_trace_panel.rs](frontend/src/components/chat/agent_trace_panel.rs)
@@ -40,7 +40,7 @@
 
 **更新摘要 2026-09-19**（commit 5b52c72c → 08c3e720，本体词表注入 + Prompt 前缀缓存优化）：① awakening.rs 唤醒入口新增 ontology_lexicon 词表注入调用链——OntologyDal::try_dal() 可选依赖降级 → load_lexicon_summary 三表 Active 全量 → builder.ontology_lexicon()（本体子系统未初始化自动跳过不阻断）；② PromptBuilder.build() 区块从 8 块重排为 11 块，按稳定性递减排序，本体词表固定为第 4 块；③ build_sleep_prompt / build_summary_prompt 静态指令块前置 + 易变数据（Trace/轮次/摘要/trace_ids）统一收尾，指令用"见文末【XXX】"引用；④ Project/Task Prompt 时间字段从 relative_duration（"5 小时前"）改为 format_datetime（"2026-09-15 10:30"），消除分钟级漂移导致的前缀缓存作废；⑤ 三个 *_initial_messages 变体补缓存友好注释防回退。cite 区补两个新 RAG 卡引用（本体词表治理卡 + PromptBuilder 前缀缓存优化卡），关联文档补 ontology_knowledge_sedimentation_design.md。
 
-**更新摘要 2026-10-23（BASE dccbb402 → HEAD 481a8bbb，思考/记忆轨迹查询链路）**：① Runtime 领域新增两个只读轨迹编排入口 `query_think_traces` / `query_memory_traces` + 单条详情 `get_memory_trace`，全部走 `think_trace_query.rs` / `memory_trace_query.rs` 的统一作用域门闩 `with_context_fields` / `with_context_scope`；② 门闩规则：User 调用时 Admin/SuperAdmin 可全量，普通组织成员必须显式 `agent_id`（think 还允许 `project_id`），Agent/System 必须以上下文作用域为准且不得与入参冲突；limit 上限 think=100 / memory=100，超限直接 bad_request；③ 思考轨迹来自 `pkg/think_trace.rs` 的每日 JSONL（`agents/{agent_id}/think_trace/YYYYMMDD.jsonl`），记忆轨迹来自 `dao/memory/sqlite/trace.rs` 扫描 `agents/{agent_id}/memory/YYYYMMDD.jsonl`；④ memory DAO/DAL 目录化后轨迹查询分别落在 `dao/memory/sqlite/trace.rs` 与 `dal/memory/trace.rs`。
+**更新摘要 2026-10-23（BASE dccbb402 → HEAD 481a8bbb，思考/记忆轨迹查询链路）**：① Runtime 领域新增两个只读轨迹编排入口 `query_think_traces` / `query_memory_traces` + 单条详情 `get_memory_trace`，全部走 `think_trace_query.rs` / `memory_trace_query.rs` 的统一作用域门闩 `with_context_fields` / `with_context_scope`；② 门闩规则：User 调用时 Admin/SuperAdmin 可全量，普通组织成员必须显式 `agent_id`（think 还允许 `project_id`），Agent/System 必须以上下文作用域为准且不得与入参冲突；limit 上限 think=100 / memory=100，超限直接 bad_request；③ 思考轨迹来自 `runtime/think_trace.rs` 的每日 JSONL（`agents/{agent_id}/think_trace/YYYYMMDD.jsonl`），记忆轨迹来自 `dao/memory/sqlite/trace.rs` 扫描 `agents/{agent_id}/memory/YYYYMMDD.jsonl`；④ memory DAO/DAL 目录化后轨迹查询分别落在 `dao/memory/sqlite/trace.rs` 与 `dal/memory/trace.rs`。
 
 **本文关联三类文档**
 - 【① Design 决策快照】[thinking_task_policy_engine_design.md](docs/modules/02-Agent运行时/A-设计/thinking_task_policy_engine_design.md) — trait 聚合与接口层数据流
@@ -246,14 +246,14 @@ Summary --> End
 - **User 调用**：Admin / SuperAdmin 可以不带作用域做全量视图；普通组织成员必须显式给出 `agent_id`（think 额外允许 `project_id`，`allow_project=true`），否则 400。`project_id` 在 memory 链路上被显式忽略（`allow_project=false`）。
 - **Agent / System 调用**：必须以 RequestContext 自带作用域为准（上下文 agent/project/task），若入参声明了与上下文不同的作用域则直接拒绝（`ensure_scope_does_not_conflict`），保持 fail-closed。
 - **limit 校验**：`ensure_limit` 统一比对 `max_limit`，think / memory 均为 `MAX_*_TRACE_QUERY_LIMIT = 100`，超限 bad_request；未传则回落到各链路默认值（think 20 / memory 20）。
-- **调用链**：Handler 只做 DTO → Query 转换；Domain 只做作用域门闩；think 轨迹直接读 `pkg/think_trace.rs` 的 JSONL 扫描器，memory 轨迹经 `dal/memory/trace.rs` 透传到 `dao/memory/sqlite/trace.rs`。HTTP 路由为 `GET /agents/think-traces`、`GET /agents/memory-traces`、`GET /agents/memory-traces/{trace_id}`，静态段全部排在 `/agents/{id}` 参数路由之前。
+- **调用链**：Handler 只做 DTO → Query 转换；Domain 只做作用域门闩；think 轨迹直接读 `runtime/think_trace.rs` 的 JSONL 扫描器，memory 轨迹经 `dal/memory/trace.rs` 透传到 `dao/memory/sqlite/trace.rs`。HTTP 路由为 `GET /agents/think-traces`、`GET /agents/memory-traces`、`GET /agents/memory-traces/{trace_id}`，静态段全部排在 `/agents/{id}` 参数路由之前。
 - **前端消费**：Agent 详情「🧭 轨迹」Tab 使用 `AgentTracePanel`——左侧按 `PAGE_SIZE=20` 分页拉 `query_think_traces`，右侧上段按 `run_id`（= MemoryTrace.id）回查记忆详情，下段渲染 `ThinkRoundsTimeline`；仅 awaken / settle / compact 三类场景存在记忆条目。
 
 ```mermaid
 sequenceDiagram
 participant H as "Handler"
 participant D as "Domain trace_query"
-participant P as "pkg/think_trace.rs"
+participant P as "runtime/think_trace.rs"
 participant DAL as "dal/memory/trace.rs"
 participant DAO as "dao/memory/sqlite/trace.rs"
 H->>D : "query_think_traces(ctx, ThinkTraceQuery)"
@@ -270,7 +270,7 @@ DAO-->>D : "PagedResult<MemoryTrace>"
 图表来源
 - [think_trace_query.rs:35-159](src/service/domain/runtime/think_trace_query.rs#L35-L159)
 - [memory_trace_query.rs:15-33](src/service/domain/runtime/memory_trace_query.rs#L15-L33)
-- [think_trace.rs:203-266](src/pkg/think_trace.rs#L203-L266)
+- [think_trace.rs](src/service/domain/runtime/think_trace.rs)
 - [dal/memory/trace.rs:11-26](src/service/dal/memory/trace.rs#L11-L26)
 - [agent_trace_panel.rs:24-120](frontend/src/components/chat/agent_trace_panel.rs#L24-L120)
 

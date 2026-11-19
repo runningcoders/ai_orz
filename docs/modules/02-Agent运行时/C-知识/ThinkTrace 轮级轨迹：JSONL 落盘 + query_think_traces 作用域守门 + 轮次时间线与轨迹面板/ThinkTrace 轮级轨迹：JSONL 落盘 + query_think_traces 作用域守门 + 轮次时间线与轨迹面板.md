@@ -3,7 +3,7 @@ kind: think_trace_rounds_panel
 name: ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板
 category: Agent 运行时
 scope:
-  - 'src/pkg/think_trace.rs'
+  - 'src/service/domain/runtime/think_trace.rs'
   - 'src/pkg/jsonl/writer.rs'
   - 'src/service/domain/runtime/think_trace_query.rs'
   - 'src/service/domain/runtime/mod.rs'
@@ -13,7 +13,7 @@ scope:
   - 'frontend/src/components/chat/think_traces_tab.rs'
   - 'frontend/src/components/chat/think_rounds_timeline.rs'
 source_files:
-  - src/pkg/think_trace.rs#L41-L378
+  - src/service/domain/runtime/think_trace.rs
   - src/service/domain/runtime/think_trace_query.rs#L48-L171
   - src/handlers/hr/agent/query_think_traces.rs#L27-L108
   - common/src/api/runtime.rs#L109-L246
@@ -24,7 +24,7 @@ source_files:
 
 ## 1. 整体方案 / 使用的框架与工具
 
-思考轨迹把一次思考 run 的**轮级细节**（模型可见文本、推理摘要、工具调用与状态、每轮 token 与耗时、裁决结果）连同图执行信息（节点 occurrence 序列、选路记录 candidates/chosen/via）落成 append-only JSONL：`agents/{agent_id}/think_trace/YYYYMMDD.jsonl`，时间戳为**毫秒**。写入由 `pkg::think_trace::append` 完成，读取由 `query` / `query_at` 完成，两者都不经过关系库。
+思考轨迹把一次思考 run 的**轮级细节**（模型可见文本、推理摘要、工具调用与状态、每轮 token 与耗时、裁决结果）连同图执行信息（节点 occurrence 序列、选路记录 candidates/chosen/via）落成 append-only JSONL：`agents/{agent_id}/think_trace/YYYYMMDD.jsonl`，时间戳为**毫秒**。写入由 `runtime::think_trace::append` 完成，读取由 `query` / `query_at` 完成，两者都不经过关系库。
 
 落盘是**两段式**：每轮定型（think → dispatch → evaluate，`decision` 已写回）后由 `think_round::runner::append_partial_round` 追加一行 `partial=true`，只携带该轮 `rounds`；run 收尾的 `persist_trace` 再追加一行 `partial=false`，携带完整 `rounds` 与 occurrence / route / fingerprint。因此 **run 未结束时查询即可看到已完成轮次（半成品）**，异常中断也不会整条丢失。
 
@@ -46,7 +46,7 @@ source_files:
 
 | 文件 | 职责 |
 |---|---|
-| `src/pkg/think_trace.rs` | 轨迹基础设施：`init` 绑定基础数据目录、`append` 写入、`query` / `query_at` 读取；`MAX_THINK_TRACE_QUERY_LIMIT=100` 与默认 20；`ThinkTraceEntry` 及其 round / tool_call / occurrence / route 子结构 |
+| `src/service/domain/runtime/think_trace.rs` | 轨迹基础设施：`init` 绑定基础数据目录、`append` 写入、`query` / `query_at` 读取；`MAX_THINK_TRACE_QUERY_LIMIT=100` 与默认 20；`ThinkTraceEntry` 及其 round / tool_call / occurrence / route 子结构 |
 | `src/service/domain/runtime/think_trace_query.rs` | 作用域守门内核：`with_context_fields`（Agent/System 与上下文一致、User 普通成员必须显式作用域、limit 校验、冲突 400）+ `with_context_scope`；记忆轨迹复用同一内核 |
 | `src/service/domain/runtime/mod.rs` | Runtime Domain 入口：先守门再直接调用 pkg 查询（pkg 属基础设施，允许 Domain 直达） |
 | `src/handlers/hr/agent/query_think_traces.rs` | HTTP + 神经工具双暴露（`id=query_think_traces`，`tags=runtime,query`）；`to_list_item` 把内部结构逐字段映射为 DTO |

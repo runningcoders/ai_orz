@@ -1,6 +1,6 @@
 use super::*;
+use crate::pkg::tokens::estimate_tokens;
 use crate::service::domain::runtime::NoulOutcome;
-use crate::service::domain::runtime::compaction::estimate_tokens;
 
 /// 私聊不参与群规则：即使前缀 / 指向都不满足也放行
 #[test]

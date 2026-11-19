@@ -8,8 +8,8 @@
 //! - 4 回调同步调用 collector.record（内部 async，但 hook 是同步方法）
 //! - 使用 `tokio::spawn` 把 async record 转为后台任务，避免阻塞 AOP 主流程
 
-use crate::consumer::aop_stats_collector::AopStatsCollector;
 use crate::pkg::aop::{AopEventMeta, AopMetricsHook};
+use crate::pkg::stats::runtime::aop::AopStatsCollector;
 
 /// AOP 统计采集 Hook 业务实现
 pub struct AopStatsHook {
@@ -123,7 +123,7 @@ fn log_id_of(meta: &AopEventMeta) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::consumer::aop_stats_collector::AopStatsCollector;
+    use crate::pkg::stats::runtime::aop::AopStatsCollector;
 
     #[tokio::test]
     async fn test_hook_records_to_collector() {

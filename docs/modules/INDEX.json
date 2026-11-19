@@ -2,8 +2,8 @@
   "generated_by": "tools/wiki_index.py",
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
-  "total": 674,
-  "total_bytes": 14281430,
+  "total": 675,
+  "total_bytes": 14289930,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -123,14 +123,14 @@
           "path": "00-总览与架构/C-知识/Runtime 领域编排.md",
           "name": "Runtime 领域编排",
           "title": "Runtime 领域编排",
-          "bytes": 39527
+          "bytes": 39578
         },
         {
           "tier": "C-知识",
           "path": "00-总览与架构/C-知识/System 领域编排.md",
           "name": "System 领域编排",
           "title": "System 领域编排",
-          "bytes": 16354
+          "bytes": 16213
         },
         {
           "tier": "C-知识",
@@ -193,7 +193,7 @@
           "path": "00-总览与架构/C-知识/思维轨迹架构.md",
           "name": "思维轨迹架构",
           "title": "思维轨迹架构",
-          "bytes": 5378
+          "bytes": 5435
         },
         {
           "tier": "C-知识",
@@ -687,11 +687,11 @@
     {
       "id": "02-Agent运行时",
       "counts": {
-        "A-设计": 10,
+        "A-设计": 11,
         "B-落地方案": 16,
         "C-知识": 19
       },
-      "total": 45,
+      "total": 46,
       "docs": [
         {
           "tier": "A-设计",
@@ -764,6 +764,21 @@
           "bytes": 27455,
           "status": "已废弃",
           "scope": [],
+          "related": []
+        },
+        {
+          "tier": "A-设计",
+          "path": "02-Agent运行时/A-设计/runtime_data_bus_design.md",
+          "name": "runtime_data_bus_design",
+          "title": "运行时数据总线设计（收集、移交与写穿）",
+          "bytes": 10943,
+          "status": "现行",
+          "scope": [
+            "src/service/domain/runtime/think_trace.rs",
+            "src/service/domain/runtime/collected.rs",
+            "src/service/domain/runtime/think_round/",
+            "src/service/domain/runtime/legacy_awaken/context.rs"
+          ],
           "related": []
         },
         {
@@ -1106,7 +1121,7 @@
           "path": "02-Agent运行时/C-知识/ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板/ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板.md",
           "name": "ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板",
           "title": "ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板",
-          "bytes": 13282
+          "bytes": 13334
         },
         {
           "tier": "C-知识",
@@ -1999,7 +2014,7 @@
           "path": "05-任务与项目/C-知识/Agent 维度统计.md",
           "name": "Agent 维度统计",
           "title": "Agent 维度统计",
-          "bytes": 16601
+          "bytes": 16573
         },
         {
           "tier": "C-知识",
@@ -2020,7 +2035,7 @@
           "path": "05-任务与项目/C-知识/ModelProvider 维度统计.md",
           "name": "ModelProvider 维度统计",
           "title": "ModelProvider 维度统计",
-          "bytes": 14709
+          "bytes": 14508
         },
         {
           "tier": "C-知识",
@@ -2104,7 +2119,7 @@
           "path": "05-任务与项目/C-知识/多维统计系统.md",
           "name": "多维统计系统",
           "title": "多维统计系统",
-          "bytes": 27108
+          "bytes": 27018
         },
         {
           "tier": "C-知识",
@@ -2237,7 +2252,7 @@
           "path": "05-任务与项目/C-知识/系统健康检查.md",
           "name": "系统健康检查",
           "title": "系统健康检查",
-          "bytes": 24038
+          "bytes": 23864
         },
         {
           "tier": "C-知识",
@@ -3689,7 +3704,7 @@
           "path": "09-统计与监控/B-落地方案/统计图表第三期.md",
           "name": "统计图表第三期",
           "title": "统计图表第三期（AOP 实时内存统计 + 轮询渲染）",
-          "bytes": 24064,
+          "bytes": 23992,
           "status": "已完成",
           "scope": [],
           "related": []
@@ -3699,7 +3714,7 @@
           "path": "09-统计与监控/C-知识/DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表/DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表.md",
           "name": "DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表",
           "title": "DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表",
-          "bytes": 9583
+          "bytes": 9546
         },
         {
           "tier": "C-知识",
@@ -3734,14 +3749,14 @@
           "path": "09-统计与监控/C-知识/系统监控与健康检查.md",
           "name": "系统监控与健康检查",
           "title": "系统监控与健康检查",
-          "bytes": 15950
+          "bytes": 15891
         },
         {
           "tier": "C-知识",
           "path": "09-统计与监控/C-知识/统计与监控.md",
           "name": "统计与监控",
           "title": "统计与监控",
-          "bytes": 25531
+          "bytes": 25399
         },
         {
           "tier": "C-知识",
@@ -3893,7 +3908,7 @@
           "path": "10-异步基建(AOP)/C-知识/事件消费者.md",
           "name": "事件消费者",
           "title": "事件消费者",
-          "bytes": 19188
+          "bytes": 19146
         },
         {
           "tier": "C-知识",
@@ -3907,7 +3922,7 @@
           "path": "10-异步基建(AOP)/C-知识/事件系统核心.md",
           "name": "事件系统核心",
           "title": "事件系统核心",
-          "bytes": 19652
+          "bytes": 19511
         },
         {
           "tier": "C-知识",
@@ -3998,7 +4013,7 @@
           "path": "10-异步基建(AOP)/C-知识/核心模块/AOP 事件系统/AOP 事件系统.md",
           "name": "AOP 事件系统",
           "title": "AOP 事件系统（代码落地层）",
-          "bytes": 23032
+          "bytes": 22934
         },
         {
           "tier": "C-知识",
@@ -4054,7 +4069,7 @@
           "path": "10-异步基建(AOP)/C-知识/监控与统计集成.md",
           "name": "监控与统计集成",
           "title": "监控与统计集成",
-          "bytes": 21666
+          "bytes": 21542
         },
         {
           "tier": "C-知识",
@@ -4444,7 +4459,7 @@
           "path": "11-前端应用/C-知识/AOP 监控面板.md",
           "name": "AOP 监控面板",
           "title": "AOP 监控面板",
-          "bytes": 19675
+          "bytes": 19177
         },
         {
           "tier": "C-知识",
@@ -4696,7 +4711,7 @@
           "path": "11-前端应用/C-知识/系统健康检查.md",
           "name": "系统健康检查",
           "title": "系统健康检查",
-          "bytes": 16170
+          "bytes": 16179
         },
         {
           "tier": "C-知识",
@@ -4951,7 +4966,7 @@
           "path": "12-基础设施与部署/C-知识/AOP监控处理器.md",
           "name": "AOP监控处理器",
           "title": "AOP监控处理器",
-          "bytes": 17536
+          "bytes": 17352
         },
         {
           "tier": "C-知识",
@@ -5196,7 +5211,7 @@
           "path": "12-基础设施与部署/C-知识/工具执行日志消费者.md",
           "name": "工具执行日志消费者",
           "title": "工具执行日志消费者",
-          "bytes": 17734
+          "bytes": 17664
         },
         {
           "tier": "C-知识",
@@ -5273,7 +5288,7 @@
           "path": "12-基础设施与部署/C-知识/日志系统.md",
           "name": "日志系统",
           "title": "日志系统",
-          "bytes": 20524
+          "bytes": 20532
         },
         {
           "tier": "C-知识",
@@ -5385,7 +5400,7 @@
           "path": "12-基础设施与部署/C-知识/监控指标 API.md",
           "name": "监控指标 API",
           "title": "监控指标 API",
-          "bytes": 18506
+          "bytes": 18105
         },
         {
           "tier": "C-知识",
@@ -5828,14 +5843,14 @@
           "path": "13-数据模型/C-知识/统计数据分析对象.md",
           "name": "统计数据分析对象",
           "title": "统计数据分析对象",
-          "bytes": 15736
+          "bytes": 15545
         },
         {
           "tier": "C-知识",
           "path": "13-数据模型/C-知识/记忆和向量系统.md",
           "name": "记忆和向量系统",
           "title": "记忆和向量系统",
-          "bytes": 30207
+          "bytes": 30270
         },
         {
           "tier": "C-知识",

@@ -318,6 +318,57 @@ fn truncate_bytes(bytes: &[u8]) -> String {
     text
 }
 
+/// 事件信封探针：飞书事件族共用 `header`，但 `event` 体形状随类型差异极大。
+///
+/// 例：`im.message.reaction.created_v1` 的 event 只有 `reaction_type` 等字段，
+/// 没有 `sender` / `message`。若先按消息事件完整反序列化，会把合法的非订阅事件
+/// 误判为坏帧（报 `missing field sender`，且不回 ACK ⇒ 服务端 3s 后重推，错误刷屏）。
+/// 故先只取 header 判定类型，完整解析限定在订阅事件内。
+#[derive(Deserialize)]
+struct LarkEventProbe {
+    header: LarkEventProbeHeader,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct LarkEventProbeHeader {
+    #[serde(default)]
+    event_id: String,
+    event_type: String,
+}
+
+/// 事件载荷分类：驱动 ACK 与 publish 决策
+#[derive(Debug)]
+enum EventPayload {
+    /// 订阅的消息事件（完整解析成功，publish；Box 避免大枚举变体）
+    Message(Box<LarkMessageEvent>),
+    /// 合法但未订阅的事件（ACK 后跳过，避免服务端持续重推）
+    Ignored {
+        event_id: String,
+        event_type: String,
+    },
+}
+
+/// 先按 `header.event_type` 分流，再完整解析订阅事件。
+///
+/// - 非订阅事件：`event` 体与消息事件不同构，不尝试完整解析，直接归类 [`EventPayload::Ignored`]
+/// - 订阅事件但 body 损坏：仍返回 `Err`，保持「真坏帧不 ACK + 留痕」语义
+fn parse_event_payload(bytes: &[u8]) -> std::result::Result<EventPayload, serde_json::Error> {
+    let probe: LarkEventProbe = serde_json::from_slice(bytes)?;
+    // 空串 event_type 是畸形帧，不能当作「合法但未订阅」静默 ACK
+    if probe.header.event_type.trim().is_empty() {
+        return Err(serde::de::Error::custom("header.event_type is empty"));
+    }
+    if probe.header.event_type != EVENT_TYPE_MESSAGE {
+        return Ok(EventPayload::Ignored {
+            event_id: probe.header.event_id,
+            event_type: probe.header.event_type,
+        });
+    }
+    Ok(EventPayload::Message(Box::new(serde_json::from_slice(
+        bytes,
+    )?)))
+}
+
 /// 取连接地址 + 服务端下发的连接参数
 ///
 /// 官方 `pullConnectConfig`：`POST`，头 `locale: zh` + UA，body `{AppID, AppSecret}`，
@@ -502,8 +553,21 @@ impl LarkWsAdapter {
             }
         };
 
-        let event: LarkMessageEvent = match serde_json::from_slice(&bytes) {
-            Ok(event) => event,
+        // 先只解析 header 判事件类型：事件族 `event` 体不同构（reaction 等无 sender/message），
+        // 完整解析必须限定在订阅事件内，否则合法事件会被误报为坏帧且服务端持续重推。
+        let event = match parse_event_payload(&bytes) {
+            Ok(EventPayload::Message(event)) => event,
+            Ok(EventPayload::Ignored {
+                event_id,
+                event_type,
+            }) => {
+                log_info!(
+                    "lark ws skip non-message event: id={} type={}",
+                    event_id,
+                    event_type
+                );
+                return FrameOutcome::cont().with_reply(self.ack_reply(frame, 200, started));
+            }
             Err(e) => {
                 // 解析失败必须留痕：否则症状与「上游没数据」完全同形
                 log_error!(
@@ -525,20 +589,10 @@ impl LarkWsAdapter {
             message_id
         );
 
-        // 非订阅事件：留痕后 ACK（避免服务端对无关事件持续重推）
-        if event.header.event_type != EVENT_TYPE_MESSAGE {
-            log_info!(
-                "lark ws skip non-message event: id={} type={}",
-                event.header.event_id,
-                event.header.event_type
-            );
-            return FrameOutcome::cont().with_reply(self.ack_reply(frame, 200, started));
-        }
-
         // publish 入队即返回（读循环不做业务）
         let aop_event = LarkInboundEvent {
             app_id: self.app_id.clone(),
-            event,
+            event: *event,
         };
         let ctx = RequestContext::new_system();
         crate::pkg::aop::registry().publish(&ctx, aop_event).await;
