@@ -6,9 +6,10 @@
 //!
 //! ## 条目卡片：三行布局（对齐「思考轨迹」列表卡片的行结构）
 //!
-//! - **第一行**：执行状态徽章 + 发起 Agent 的 `IdentityChip`（`agent_id` 为 None
-//!   〔系统级调用等〕不渲染）+ 末位展开箭头；点头像弹出与聊天页同源的信息小卡片
-//!   （AvatarBubble 复用；点击经 stop_propagation 防误触发行展开）。
+//! - **第一行**：执行状态徽章（命中存活进程时展示「执行中」，见 [`display_status`]）
+//!   + 发起 Agent 的 `IdentityChip`（`agent_id` 为 None〔系统级调用等〕不渲染）
+//!   + 末位展开箭头；点头像弹出与聊天页同源的信息小卡片（AvatarBubble 复用；
+//!     点击经 stop_propagation 防误触发行展开）。
 //! - **第二行**：工具名（占满剩余宽度、truncate）+ 运行中进程 PID 徽标
 //!   （与进程列表 join 命中才有，见 [`running_pid_badge`]）。AMan 2026-11-06
 //!   实机复核后定案「第二行保持名字和 pid 足够了」：project / task 维度的链路
@@ -41,7 +42,9 @@ use crate::components::state::Loading;
 use crate::store::toast::use_toast;
 use crate::utils::format_timestamp_opt;
 use crate::utils::status::{tool_call_status_badge, tool_call_status_text};
-use common::api::{ProcessInfo, QueryToolCallEntriesRequest, ToolCallEntryDetail};
+use common::api::{
+    ProcessInfo, QueryToolCallEntriesRequest, ToolCallEntryDetail, ToolCallStatusDto,
+};
 
 /// 工具调用记录查询条数上限（JSONL 扫描开销控制）
 const ENTRY_LIMIT: usize = 30;
@@ -79,6 +82,25 @@ pub fn join_running_pids(processes: &[ProcessInfo]) -> HashMap<String, u32> {
         .filter(|p| p.alive)
         .map(|p| (p.call_id.clone(), p.pid))
         .collect()
+}
+
+/// 状态徽章文案 / class 的判据：命中存活进程时覆盖为「执行中」
+///
+/// 后台进程型工具（shell_exec background）的 `ToolCallEntry` 在工具**返回时**就落盘，
+/// 此时进程才刚启动；后端 `Started` 只在自调度工具里写，这类调用落的是 `Completed`。
+/// 若直接显示 entry 状态，用户看到的就是「已完成」而进程仍在跑——与进程管理页
+/// 的「运行中」自相矛盾。故展示层按 call_id 命中存活进程（与 [`running_pid_badge`]
+/// 同源）时，把状态统一渲染为 `Started`（执行中）；进程退出后 join 失效，自动回到
+/// entry 的真实终态。只改展示，不改落盘语义（幂等键依赖终态，不能动）。
+pub fn display_status(
+    entry_status: ToolCallStatusDto,
+    has_alive_process: bool,
+) -> ToolCallStatusDto {
+    if has_alive_process {
+        ToolCallStatusDto::Started
+    } else {
+        entry_status
+    }
 }
 
 /// 第二行右侧唯一补充信息：运行中进程的 PID 徽标
@@ -230,10 +252,12 @@ pub fn ToolCallsTab(
                     {
                         let call_id = e.call_id.clone();
                         let tool_name = e.tool_name.clone();
-                        let status = e.status;
                         let duration = format_duration_ms(e.duration_ms);
                         let started = format_timestamp_opt(Some(e.started_at as i64));
                         let pid_opt = running_pid_badge(&pid_by_call, &call_id);
+                        // 命中存活进程 → 展示「执行中」，与 PID 徽标同源；进程退出后
+                        // 自动回落 entry 真实终态（completed / failed）。
+                        let status = display_status(e.status, pid_opt.is_some());
                         let is_expanded = expanded_call_id() == Some(call_id.clone());
                         // 模型自述的调用意图（`internal_intent` 附注，随 metadata 落库）
                         let intent = e
@@ -385,6 +409,24 @@ mod tests {
             exit_code: None,
             log_path: String::new(),
         }
+    }
+
+    #[test]
+    fn display_status_running_process_overrides_completed() {
+        // 后台进程型工具落盘即 Completed，但进程还活着 → 必须显示执行中
+        assert_eq!(
+            display_status(ToolCallStatusDto::Completed, true),
+            ToolCallStatusDto::Started
+        );
+        // 进程已退出 → 回到真实终态
+        assert_eq!(
+            display_status(ToolCallStatusDto::Completed, false),
+            ToolCallStatusDto::Completed
+        );
+        assert_eq!(
+            display_status(ToolCallStatusDto::Failed, false),
+            ToolCallStatusDto::Failed
+        );
     }
 
     #[test]

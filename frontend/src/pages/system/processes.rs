@@ -1,6 +1,7 @@
 //! 后台进程管理
 //!
-//! 列出 shell_exec 启动的后台进程（后端按调用方身份过滤可见范围），
+//! 列出 shell_exec 启动的后台进程（后端按调用方身份过滤可见范围，
+//! 并按最新启动在前返回，前端直接按序展示，不做二次排序），
 //! 支持自动/手动刷新、终止进程与弹窗详情（复用 ProcessDetailContent）。
 
 use dioxus::prelude::*;
@@ -65,6 +66,7 @@ pub fn SystemProcesses() -> Element {
         }
     });
 
+    // 后端已按最新启动在前返回，这里直接按序展示
     let list = processes.read().clone();
     let running_count = list.iter().filter(|p| p.alive).count();
 

@@ -207,6 +207,9 @@ pub trait ProcessManager: Send + Sync {
     ) -> Result<crate::pkg::process::ProcessEntry>;
 
     /// 列出进程（Agent 调用方仅可见自己启动的）
+    ///
+    /// 顺序契约：最新启动在前（started_at 降序，同秒 pid 降序）。
+    /// 排序由供给侧保证，调用方直接按序展示；分页可在此切页前完成。
     fn list_processes(&self, ctx: RequestContext)
     -> Result<Vec<crate::pkg::process::ProcessEntry>>;
 

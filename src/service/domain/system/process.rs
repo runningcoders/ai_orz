@@ -44,15 +44,19 @@ impl super::ProcessManager for SystemDomainImpl {
     }
 
     fn list_processes(&self, ctx: RequestContext) -> Result<Vec<ProcessEntry>> {
-        let entries = process::registry().list();
+        let mut entries = process::registry().list();
         // Agent 调用方仅可见自己启动的进程；人类用户/管理面可见全部
-        Ok(match ctx.agent_id() {
-            Some(agent_id) => entries
-                .into_iter()
-                .filter(|e| e.agent_id.as_deref() == Some(agent_id.as_str()))
-                .collect(),
-            None => entries,
-        })
+        if let Some(agent_id) = ctx.agent_id() {
+            entries.retain(|e| e.agent_id.as_deref() == Some(agent_id.as_str()));
+        }
+        // 对外契约：最新启动在前（started_at 降序，同秒按 pid 降序保持稳定）。
+        // 排序属于数据供给侧，调用方直接按序展示；未来加分页可在切页前完成。
+        entries.sort_by(|a, b| {
+            b.started_at
+                .cmp(&a.started_at)
+                .then_with(|| b.pid.cmp(&a.pid))
+        });
+        Ok(entries)
     }
 
     fn kill_process(&self, ctx: RequestContext, pid: u32) -> Result<bool> {
