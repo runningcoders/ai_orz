@@ -268,6 +268,24 @@
 
 **未做人眼视觉复核**：以上全部是 archify 的自动几何度量，`visualReview` 仍为 `not-requested`。是否真的「好看」需人眼确认——工具只能保证「不交叉、不过弯、标签不压线、字号过底」。
 
+### 2026-11-21 视觉可读性专项（线条交叉梳理 · 第 2 张重排：tools，revision 由孤儿锚点 `ef25e173` 改为已推送 `b5eac4ee`）
+
+**起因**：用户在同专项里继续指图——「工具与技能子系统 · 三层调用与授权」同样线条挤在窄走廊里互相跨绕。本次**只动几何**，语义零变更：16 组件 / 16 连线 / 5 卡片 / 3 视图全数保留，sources 全部未改。
+
+**根因（量化）**：旧版 3 行布局，`y=80` 与 `y=240` 两行各挤 **5 个组件**、行内间隙仅 **30px**（产线口径每行 ≤4、间隙 ≥110px），`domain` / `dal` / `policy` 三个枢纽的多条出边只能挤进同一走廊折返。旧版 advisory：`resolvedCrossovers=14 / routesOverSuggestedBends=11 / maxBends=5 / minLabelRouteClearance=5px`。
+
+**改法**：改为 **4 列 × 4 行网格**（列 x=[20,366,712,1058]、行 y=[90,264,438,612]，卡片 180×64、行内间隙 166px）：授权面 `policy → fusion → gate → authdomain` 独占首行；主调用链 `think → domain → credentials → registry` 占第二行；`event → dal → load → skills` 第三行；三协议执行 `builtin → httptool → mcp → mcpserver` 尾行。每条边都落在相邻格，回边走空走廊。
+
+**一并修正的声明值（如实披露）**：`meta.repository.revision` 原为 `ef25e173…`——实测该 commit **既不在 origin/main 也不在任何远端分支**（`git branch -r --contains` 零命中），属孤儿锚点；本次改为当前分支已推送 HEAD `b5eac4ee07688998ec9eabf198a3e85ec560e9fd`。组件 `sources` 路径逐条 `os.path.exists` 全部存在（`MISSING_PATHS: []`）。
+
+**门禁（串行单进程，`--out-dir` 每轮换新）**：`finalize architecture … --repo-root . --quality showcase --json` → **exit 0**，四道全 pass（validate / deliver / check / browser-check，`browserCheck.ran=true`），`diagnostics` 0。composition 指标：**`properCrossings=0` / `resolvedCrossovers=0` / `ambiguousCorridors=0` / `arrowheadCollisions=0` / `maxBends=2` / `routesOverSuggestedBends=0` / `maxStretch=1` / `routesOverSuggestedStretch=0` / `labelRouteClearanceIssues=0`（最小余量 13.2px）/ `desktopReadabilityIssues=0`（投影字号 7.5px）**。产物 **862,813 B**，sha256 前 16 位 `f13d94d813f529e3`；画布 `1299×744 → 1278×744`。`docs/diagrams/*.json` 实测 **0**（回执未入仓）。
+
+**前后对比（同一把尺子）**：`resolvedCrossovers` **14 → 0**；`routesOverSuggestedBends` **11 → 0**；`maxBends` **5 → 2**；`minLabelRouteClearance` **5px → 13.2px**。
+
+**入口三处核对**：`docs/index.html` 与 `docs/ARCHITECTURE.md` 里 tools 的 desc 讲的是「三层调用 / 策略与授权 / 注册与装配」，**组件数 / 视图数 / 卡片数均未变**，故两处无需改动；「二、清单」那一行同样不含会漂移的数字，未动。本段是本次唯一新增的文档内容。
+
+**未做人眼视觉复核**：以上全部是 archify 的自动几何度量，`visualReview` 仍为 `not-requested`。工具只能保证「不交叉、不过弯、标签不压线、字号过底」，是否真的好看需人眼确认。
+
 ## 五、维护约定
 
 1. 新增图前先判断抽象层级；同层级才允许并列。
