@@ -342,6 +342,41 @@
 
 **未做人眼视觉复核**：以上全部是 archify 的自动几何度量，`visualReview` 仍为 `not-requested`。0 交叉 0 超限只说明「几何不违规」，是否真的好看需人眼确认。
 
+### 2026-11-21 视觉可读性专项（线条交叉梳理 · 第 5 张重排：ontology，revision 由 `ef25e173` 改为已推送 `b5eac4ee`）
+
+**起因**：用户继续指图——「本体子系统 · 组件级」同样线条交叉、近距离打弯。本次**只动几何**，语义零变更：13 组件 / 14 连线 / 4 卡片 / 3 视图全数保留，`sources` 全部未改、组件尺寸全部未变（中文标签与卡片文案集合差集：`new_only=[]` / `old_only=[]` / `common=66`；连线 `(from,to,label,variant)` 逐条相同；组件 id / type 集合相同）。
+
+**根因（第四类成因：多点共用窄走廊）**：旧版行内间隙并不违规（每行 3~4 个、间隙 40~80px），也不是单条长回边——真因是**左侧一个短距离内两条边反向折返 + 右侧四条边挤在同一条竖直窄带**：
+- `lexicon`(260,490) 的 `load_lexicon` 从右侧进、`词表注入` 又从同一侧上折到 `prompt`(40,110)，两条边在卡片右侧同一短距离内反向并行；
+- `drift`(920,490)→`dal` 与 `effect`(920,680)→`dal` 两条「聚合查询」回边、`writegate`→`dao` 与 `dao`→`sqlite` 主链边，全部在 x≈860~1010 的竖直带里上下叠放，标签「聚合查询」出现两次且互相贴近。
+
+旧版实测（`verify-final` 回执）：`resolvedCrossovers=3 / routesOverSuggestedBends=2 / maxBends=4 / maxStretch=1.39 / routesOverSuggestedStretch=1 / minLabelRouteClearance=4px / minSegmentPx=20 / minProjectedNodeTextPx=6.51`。
+
+**改法（约束搜索 + 门禁真值判据）**：把 13 个节点落进 4×4 网格，以「每条边在切比雪夫距离上只跨一格」为硬约束，再以「禁止同一 2×2 方块出现两条对角边（对角交叉的充要条件）」与「最大化正交相邻边数」为目标做退火搜索，最后用 archify 门禁做真值判定：
+
+| 行 y | 列 0 | 列 1 | 列 2 | 列 3 |
+|---|---|---|---|---|
+| 70 | `panel` | · | · | `tools` |
+| 236 | `contract` | `handlers` | `domain` | `writegate` |
+| 402 | `prompt` | `lexicon` | `dal` | `dao` |
+| 568 | · | `effect` | `drift` | `sqlite` |
+
+- 读侧主链 `panel → handlers → domain → dal → dao → sqlite` 变成一条**蛇形折线**，相邻边只走一格；
+- 原「同侧反向折返」的 `lexicon → prompt` 改为上行**对角一格**，`load_lexicon` 从 `dal` 左侧进入；
+- 两条「聚合查询」（`drift` / `effect` → `dal`）分别从 `dal` 的**正下**与**左下对角**进入，不再共用同一竖直带；
+- `contract` 的两条虚线（→`handlers` / →`panel`）都是正交一格；
+- 14 条边**全部**满足相邻格约束（11 条正交 + 3 条对角），且**未指定任何显式端口**，全部交自动布线。
+
+**一并修正的声明值（如实披露）**：`meta.repository.revision` 原为 `ef25e17372b66079d7465a6f4e2889924dd14d39`——实测 `git cat-file -t` 是 commit，但**不在 `origin/main`、不在本分支，`git branch -r --contains` 零命中**，属对读者无意义的孤儿锚点；本次改为本分支已推送 HEAD `b5eac4ee07688998ec9eabf198a3e85ec560e9fd`（已验 `merge-base --is-ancestor … HEAD` = YES），与前四张同一锚点。
+
+**门禁（`--out-dir` 每轮换新）**：`finalize architecture … --repo-root . --quality showcase --json --browser-check` → **exit 0**，四道全 pass（validate / deliver / check / browser-check，`browserCheck.ran=true`），`diagnostics` 0。composition 指标：**`properCrossings=0` / `resolvedCrossovers=0` / `ambiguousCorridors=0` / `arrowheadCollisions=0` / `maxBends=2` / `routesOverSuggestedBends=0` / `maxStretch=1` / `routesOverSuggestedStretch=0` / `labelRouteClearanceIssues=0`（最小余量 20px）/ `desktopReadabilityIssues=0`（投影字号 7.5px）/ `minSegmentPx=83` / `microSegmentCount=0`**，且 `visualReviewRecommendation` **整段缺席**（＝ archify 认为连 advisory 都不必给）。产物 **856,291 B**（原 856,941），sha256 `1ac09489998bed8f8d825ea8e6541d3057ed77e1d60a198047805d9e0809d1d2`；画布 `1143×812 → 1278×700`（宽度 +135px 仍 ≤1280，高度反降 112px）。`docs/diagrams/*.json` 实测 **0**（回执未入仓）。
+
+**前后对比（同一把尺子）**：`resolvedCrossovers` **3 → 0**；`routesOverSuggestedBends` **2 → 0**；`maxBends` **4 → 2**；`maxStretch` **1.39 → 1.00**；`routesOverSuggestedStretch` **1 → 0**；`minLabelRouteClearance` **4px → 20px**；`minSegmentPx` **20 → 83**；投影字号 **6.51 → 7.5px**。
+
+**入口三处核对**：`docs/index.html`（L105 卡区 desc「读侧链路 · 写入门闩 · 治理面」、L248 模块表「本体」链接）与 `docs/ARCHITECTURE.md`（L18 导航行、L255 起专题章节）描述的都是**视图名与口径数字**，而组件数 / 连线数 / 卡片数 / 视图数均未变，两处无需改动。本段是本次唯一新增的文档内容。
+
+**未做人眼视觉复核**：以上全部是 archify 的自动几何度量，`visualReview` 仍为 `not-requested`。0 交叉 0 超限只说明「几何不违规」，是否真的好看需人眼确认。
+
 ## 五、维护约定
 
 1. 新增图前先判断抽象层级；同层级才允许并列。
