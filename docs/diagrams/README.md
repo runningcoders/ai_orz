@@ -225,6 +225,30 @@
 
 **未做人眼视觉复核**，仅通过 archify 四道门禁。
 
+### 2026-11-20 增量同步（1 张重渲染：think-path，revision → `251c8462`）
+
+**判定口径**：17 张图逐一取 `archify-source-evidence-data` 的 `nodes{}` 引用路径清单 × **PR #15 全量 diff 路径**（`git diff --name-status --no-renames origin/main...HEAD`，11 条，含 rename 两侧）求交。
+
+**结果：17 张全部 touched = 0**。PR #15（feishu-md-tag-outbound）只动了 `common/src/markdown_render/`、`src/service/dao/lark/{http,mod,outbound_render}.rs`、`src/service/domain/message/resource_resolver.rs` 与 3 条 docs 索引文件——**没有任何一张图的 evidence 路径指向这些文件**，轨迹图 / 消息图 / 总图描述的结构与链路一条都没变。
+
+**为什么仍然重渲染 think-path 这一张**：touched 计数只回答「路径有没有被改」，回答不了「图里写的那句话还对不对」。本图第 12 张卡（收尾守卫与跨周期收集）第 5 条写的是「工具调用附注 `_intent`」——而 PR #14（`188f0c0c`，已合入 main）已把该 wire 键改名为 `internal_intent`，`common/src/llm_schema.rs` 的 `CALL_INTENT_KEY` 只认新名。**这是内容层腐坏，不是路径层腐坏**：图引用路径全在、门禁全过、图照常渲染，但图上写的键名在现网已不存在。
+
+**本张改动（只改这一处 + 血缘）**：
+
+- `meta.repository.revision`：`715ee557…` → **`251c846200b64e66f0702f274078c3c6ab02683c`**（PR #15 head，父提交 `188f0c0c` = `origin/main`；合并后将成为该 PR 合并提交的祖先）。
+- 第 12 张卡第 5 条：`_intent` → **`internal_intent`（2026-11-20 由 `_intent` 改名）**，并补一句改因——模型会把 `_` 前缀泛化成「业务字段也该加下划线」（`query` → `_query`），被 `additionalProperties: false` 拒绝。这条改因不是背景故事：它正是「为什么这个键名会变」的唯一解释，删掉它下次还会有人写回 `_intent`。
+- **组件 / 连线 / 卡片 / 视图数全不变（16 / 16 / 12 / 4）**；组件副标里的行数声明当场复测，全部**未变**（`think_trace.rs` 926 / `think_loop.rs` 889 / `think_round/` 2,357 / `pkg/think_path/` 2,499 / `think_trace_query.rs` 321 / `inbox.rs` 368 / `dao/cerebellum` 519 / `dao/cortex` 3,795）——PR #15 没碰这些文件，与「未变」的预期一致。
+
+**入口三处核对结果（本次只有 README 一处需要落记录）**：
+
+- `docs/index.html`：think-path 的 desc 是「一轮思考 · 两阶段唤醒 · 轨迹链路（收尾守卫 + 跨周期收集）· 认知分层」——**不含键名**，无需改。
+- `docs/ARCHITECTURE.md`：think-path 的图清单行讲的是「两阶段唤醒 → 快判断 → 输入注入 → 轮次 → 相位 → 两段式落盘 → 查询 → 前端」，**同样不含键名**，无需改。
+- `docs/diagrams/README.md`：本节即本次唯一新增内容；「二、清单」里 think-path 那一行也不含键名，未动。
+
+**门禁（串行单进程）**：`validate` exit 0（9 项 artifact 检查，composition showcase 0 error / 0 warning）→ `finalize --browser-check` exit 0（gates 四道全 pass、diagnostics 0、`browserCheck.ran=true`）→ `check` exit 0（diagnostics 0）。产物 **874,718 B**，sha256 前 16 位 `bb6585d34cf0479a`。`docs/diagrams/*.json` 实测 **0**（回执未入仓）。
+
+**未做人眼视觉复核**，仅通过 archify 四道门禁；`visualReviewRecommendation` 仍为 advisory（resolvedCrossovers 3 / routesOverSuggestedBends 5 / routesOverSuggestedStretch 2），与上一版一致——本次没有动任何坐标。
+
 ## 五、维护约定
 
 1. 新增图前先判断抽象层级；同层级才允许并列。
