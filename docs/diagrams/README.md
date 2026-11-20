@@ -249,6 +249,25 @@
 
 **未做人眼视觉复核**，仅通过 archify 四道门禁；`visualReviewRecommendation` 仍为 advisory（resolvedCrossovers 3 / routesOverSuggestedBends 5 / routesOverSuggestedStretch 2），与上一版一致——本次没有动任何坐标。
 
+### 2026-11-21 视觉可读性专项（线条交叉梳理 · 1 张重排：think-path，revision 不变 `251c8462`）
+
+**起因**：用户审图时指出「线有点交叉」「有的线离得很近却要打弯」，要求以「整体通畅、消除打结」为目标重排。本次**只动几何与一处标签长度，不动任何语义**：16 组件 / 16 连线 / 12 卡片 / 4 视图全数保留，sources 与 revision 全部未改。
+
+**根因（量化，不是观感）**：旧版 4 行布局里 `y=300` 一行挤了 6 个组件、行内间隙仅 30px（产线口径每行 ≤4、间隙 ≥110px），`think_loop` 一个节点同时挂 5 条出边，多条边只能钻进同一条 30px 窄走廊再折返——archify 自动 advisory 报 **3 处交叉 + 5 条 3 弯道**（`resolvedCrossovers=3 / routesOverSuggestedBends=5 / routesOverSuggestedStretch=2`）。
+
+**改法（分区重排，正是用户提的「拆上下两段、中间连通」）**：改为 **5 列 × 5 行蛇形主干**——上段①`cerebellum` / ②`trigger → awakening → cerebellum_router → cortex`；中段③`inbox → think_loop → think_round → think_path`；下段④`consumer → trace → tools → frontend`；尾段⑤`jsonl → query → handlers`。每条主干边都落在相邻格（同排向右、同列向下），回边与分支走空列/空行，因此不再有交叉。
+
+**可达性代价与取舍（如实披露）**：
+- 画布由 1320×812 变 **1480×852**；`composition/desktop-readability` 走 `recognized-declared-wide`（1440 视口下投影 6.28px ≥ 硬底 6px，`hardFloorMet=true`）。**仍未达 requestedTarget 7.5px**，与旧版同属「投影够读但不宽裕」，未靠缩小字号换交叉。
+- 一处连线标签由 `索引过滤 + seek 命中行` 缩为 **`索引过滤 + seek`**：该边两端是相邻格、水平间隙 110px，标签需 132px 才不压线。语义未变（`jsonl → query` 仍是「先按索引过滤、再按字节偏移 seek」）。README「二、清单」里那句链路描述讲的是行为而非标签原文，未改。
+- 其余标签、卡片文案、视图 note 一字未动。
+
+**门禁（串行单进程，`--out-dir` 逐轮换新）**：`finalize architecture … --repo-root . --quality showcase --json` → **exit 0**，四道全 pass（validate / deliver / check / browser-check，`browserCheck.ran=true`），`diagnostics` 0。composition 指标：**`properCrossings=0` / `resolvedCrossovers=0` / `ambiguousCorridors=0` / `arrowheadCollisions=0` / `maxBends=2`（建议上限 2）/ `routesOverSuggestedBends=0` / `maxStretch=1`（上限 1.35）/ `routesOverSuggestedStretch=0` / `labelRouteClearanceIssues=0`（最小余量 21.1px）**。产物 **872,619 B**，sha256 前 16 位 `367987dceebfa082`。`docs/diagrams/*.json` 实测 **0**（回执未入仓）。
+
+**前后对比（同一把尺子，均为 archify 自动度量）**：`resolvedCrossovers` **3 → 0**；`routesOverSuggestedBends` **5 → 0**；`routesOverSuggestedStretch` **2 → 0**。
+
+**未做人眼视觉复核**：以上全部是 archify 的自动几何度量，`visualReview` 仍为 `not-requested`。是否真的「好看」需人眼确认——工具只能保证「不交叉、不过弯、标签不压线、字号过底」。
+
 ## 五、维护约定
 
 1. 新增图前先判断抽象层级；同层级才允许并列。
