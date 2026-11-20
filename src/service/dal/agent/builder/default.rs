@@ -981,12 +981,18 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         s.push_str("§5. 禁止无意义工具调用（假忙）：\n");
         s.push_str("   - 自问：如果没有任何工具，我能不能直接回答？\n");
         s.push_str("   - 若能 → 直接用 Final 文本回复，不要「为了调用工具而调用工具」\n");
-        // 调用附注：每个工具的参数都带 `_intent`（schema 已声明，选填）。
+        // 调用附注：每个工具的参数都带 `internal_intent`（schema 已声明，选填）。
         // 它不参与业务，只进工具调用记录与思考轨迹，用于把「调了什么」表达成
         // 「想干什么」。写空话等于没写，故给正反例。
-        s.push_str("   - 每次调用工具都带 `_intent`：一句话写清这一步要达成什么，它会显示在工具调用面板与思考轨迹里\n");
-        s.push_str("       ✅ `_intent`: \"查 2026Q2 华东退货率，用于对比上月异常\"\n");
-        s.push_str("       ❌ `_intent`: \"搜索\" / \"调用工具\" / 复述工具名 —— 等于没说\n\n");
+        s.push_str("   - 每次调用工具都带 `internal_intent`：一句话写清这一步要达成什么，它会显示在工具调用面板与思考轨迹里\n");
+        s.push_str("       ✅ `internal_intent`: \"查 2026Q2 华东退货率，用于对比上月异常\"\n");
+        s.push_str(
+            "       ❌ `internal_intent`: \"搜索\" / \"调用工具\" / 复述工具名 —— 等于没说\n",
+        );
+        // 反泛化护栏（2026-11-20）：模型曾把 `_intent` 的下划线当成「特殊字段前缀」，
+        // 给业务字段也加下划线（`query`→`_query`），被 additionalProperties:false 拒绝。
+        // 改成 internal_ 后仍补一句显式约束，双保险。
+        s.push_str("   - 除 `internal_intent` 外，参数名必须与工具 schema 完全一致：写 `query` 不要写 `_query`，不要自造下划线或任何前缀\n\n");
 
         s.push_str(
             "§6. 资源引用（附件 / 产物）的处理（Final 与 send_message 通用，不分收件方）：\n",

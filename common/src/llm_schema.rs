@@ -83,7 +83,7 @@ pub fn to_llm_schema(mut schema: Value) -> Value {
     schema
 }
 
-// ==================== 调用附注 `_intent` ====================
+// ==================== 调用附注 `internal_intent` ====================
 //
 // 模型在拼参数时顺手写一句「这次调用想达成什么」，一路记到工具调用记录与
 // 思考轨迹里，前端据此把 `execute_sql` 显示成人话。
@@ -95,9 +95,14 @@ pub fn to_llm_schema(mut schema: Value) -> Value {
 
 /// 通用调用附注的键名
 ///
-/// 顶层 `_` 前缀是约定：**工具的业务参数不得以 `_` 开头**，该命名空间
-/// 留给调用元数据（护栏测试 `tool_params_avoid_reserved_prefix`）。
-pub const CALL_INTENT_KEY: &str = "_intent";
+/// `internal_` 前缀是约定：**工具的业务参数不得以 `internal_` 开头**，该命名空间
+/// 留给框架内部自转的调用元数据（护栏测试 `tool_params_avoid_reserved_prefix`）。
+///
+/// ⚠️ 用字母前缀而非 `_`：模型看到 schema 里唯一的 `_intent`，会把下划线抽象成
+/// 「特殊字段要加的前缀」并套到业务字段上（`query` → `_query`），
+/// `additionalProperties: false` 随即拒绝、调用失败。`internal_` 是普通字段名，
+/// 没有可套用的「装饰符号」语义，从源头消除这种泛化。
+pub const CALL_INTENT_KEY: &str = "internal_intent";
 
 /// 附注长度上限（字符）
 ///

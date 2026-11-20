@@ -3,7 +3,7 @@
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
   "total": 675,
-  "total_bytes": 14289930,
+  "total_bytes": 14290170,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -5113,7 +5113,7 @@
           "path": "12-基础设施与部署/C-知识/后台进程管理系统.md",
           "name": "后台进程管理系统",
           "title": "后台进程管理系统",
-          "bytes": 24551
+          "bytes": 24791
         },
         {
           "tier": "C-知识",

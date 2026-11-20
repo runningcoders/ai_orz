@@ -11,7 +11,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "shell_list",
     name = "List Shell Processes",
-    description = "List background processes started via the shell_exec tool, oldest first, each with pid, command, working directory, start time, alive flag (refreshed), exit code, and output log path. Takes no parameters. Agent callers only see their own processes; human callers see all. Use shell_status for one process's log tail or shell_kill to stop one.",
+    description = "List background processes started via the shell_exec tool, newest first, each with pid, command, working directory, start time, alive flag (refreshed), exit code, and output log path. Takes no parameters. Agent callers only see their own processes; human callers see all. Use shell_status for one process's log tail or shell_kill to stop one.",
     params = "common::api::ListProcessesRequest",
     tags = "shell"
 )]
@@ -139,5 +139,24 @@ mod tests {
 
         process::registry().remove(92003);
         process::registry().remove(92004);
+    }
+
+    #[tokio::test]
+    async fn shell_list_returns_newest_first() {
+        init_test_singletons();
+        process::registry().register(make_entry(92005, Some("agent-order")));
+        process::registry().register(make_entry(92006, Some("agent-order")));
+
+        let resp = shell_list(agent_ctx("agent-order"), ListProcessesRequest {})
+            .await
+            .expect("handler should list own processes");
+        assert_eq!(
+            resp.processes.iter().map(|p| p.pid).collect::<Vec<_>>(),
+            vec![92006, 92005],
+            "HTTP/LLM 工具出口应保持最新在前"
+        );
+
+        process::registry().remove(92005);
+        process::registry().remove(92006);
     }
 }

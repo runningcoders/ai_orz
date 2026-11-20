@@ -176,7 +176,7 @@ async fn test_execute_dedup_allows_retry_after_failed() {
     }
 }
 
-/// 出站 schema 必须显式声明 `_intent`：12 个内置工具带 `additionalProperties: false`，
+/// 出站 schema 必须显式声明 `internal_intent`：12 个内置工具带 `additionalProperties: false`，
 /// 未声明的字段模型不敢填（填了也会被校验器拒），只靠提示词无法稳定生效。
 #[test]
 fn test_descriptor_declares_call_intent_property() {

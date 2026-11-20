@@ -112,6 +112,34 @@ async fn test_list_processes_agent_filtered() {
     process::registry().remove(91005);
 }
 
+#[tokio::test]
+async fn test_list_processes_newest_first() {
+    let domain = test_domain();
+    let mut older = make_entry(91006, Some("agent-order"));
+    older.started_at = 1000;
+    let mut newer = make_entry(91007, Some("agent-order"));
+    newer.started_at = 2000;
+    let mut same_second = make_entry(91008, Some("agent-order"));
+    same_second.started_at = 2000;
+    for entry in [older, newer, same_second] {
+        process::registry().register(entry);
+    }
+
+    let list = domain
+        .process_manager()
+        .list_processes(agent_ctx("agent-order"))
+        .unwrap();
+    assert_eq!(
+        list.iter().map(|e| e.pid).collect::<Vec<_>>(),
+        vec![91008, 91007, 91006],
+        "最新启动在前；同秒按 pid 降序保持稳定"
+    );
+
+    for pid in [91006, 91007, 91008] {
+        process::registry().remove(pid);
+    }
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn test_kill_process_real() {

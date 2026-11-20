@@ -251,7 +251,7 @@ fn 自引用_schema_不死循环_保留_defs_兜底() {
     assert!(out["$defs"]["Node"].is_object());
 }
 
-// ==================== 调用附注 `_intent` ====================
+// ==================== 调用附注 `internal_intent` ====================
 
 #[test]
 fn inject_call_intent_adds_property_idempotently() {
