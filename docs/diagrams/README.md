@@ -286,6 +286,28 @@
 
 **未做人眼视觉复核**：以上全部是 archify 的自动几何度量，`visualReview` 仍为 `not-requested`。工具只能保证「不交叉、不过弯、标签不压线、字号过底」，是否真的好看需人眼确认。
 
+### 2026-11-21 视觉可读性专项（线条交叉梳理 · 第 3 张重排：aop，revision 由 `25cced8f` 改为已推送 `b5eac4ee`）
+
+**起因**：用户继续指图——「异步基建 · AOP 生产消费事件中心」同样线条交叉、近距离打弯。本次**只动几何**，语义零变更：14 组件 / 14 连线 / 5 卡片 / 3 视图全数保留，sources 全部未改（中文标签集合差集验证：`new_only=[]` / `old_only=[]` / `common=69`）。
+
+**根因（与第 1、2 张不同，值得单独记一笔）**：旧版并**不是**「一行挤太多」——它的行内间隙合规（每行最多 4 个组件、间隙 110~120px）。真因是**摆位与连边不匹配**：`carrier` / `boot` 放在 y=400 最左，却要连到 y=80 的 `registry`（跨 3 行 + 横跨 2 格）；`cron` / `channel` 在 y=400 右侧、`a2a` 在 y=560 最左，却都要绕回 y=80 的 `publish`。这类「跨半张画布的长回边」只能在密集区域找缝隙穿过，于是出现折返与近距离打弯。旧版 advisory：`resolvedCrossovers=13 / routesOverSuggestedBends=7 / maxBends=4 / maxStretch=1.39 / minLabelRouteClearance=4.8px`。
+
+**改法**：保持 4 列 × 4 行网格（列 x=[20,340,660,960]、行 y=[70,230,390,550]），把节点按**连边邻接关系**重排，使**每一条边最多只跨一个格距**（14 条边全部满足：8 条同格距正投影、6 条对角相邻）：
+- 主链横排在 y=230 一行：`channel → publish → registry → queue`，`queue` 竖直下到 y=390 的 `scheduler`，再左回 `consumer`，下到 y=550 的 `domain`；
+- 生产者在 `publish` 的正上 / 左上：`cron`（正上）、`a2a`（左上对角）、`channel`（正左）——三条 tick 边都只走一格；
+- `events` / `boot` / `meta` / `carrier` / `stats` 各自贴住自己的目标：`events` 正上 `registry`、`boot` 对角邻 `registry`、`meta` 对角邻 `consumer`、`carrier` 横邻 `consumer` 且对角邻 `registry`、`stats` 正下 `consumer`。
+- 唯一显式端口：`consumer → domain` 指定 `fromSide=bottom / toSide=top`（不加这一条时该边走 3 弯道 1.178 倍伸展；加上后降到 2 弯道、1.0 倍）。其余 13 条全部交自动布线。
+
+**一并修正的声明值（如实披露）**：`meta.repository.revision` 原为 `25cced8f…`——实测它**不在 origin/main、也不在本分支**（只在 `origin/feat/aman-local-changes-20261114` 上，PR #9 的历史分支），属于对读者无意义的锚点；本次改为本分支已推送 HEAD `b5eac4ee07688998ec9eabf198a3e85ec560e9fd`，与「第 2 张」采用同一锚点。
+
+**门禁（`--out-dir` 每轮换新）**：`finalize architecture … --repo-root . --quality showcase --json --browser-check` → **exit 0**，四道全 pass（validate / deliver / check / browser-check，`browserCheck.ran=true`），`diagnostics` 0。composition 指标：**`properCrossings=0` / `resolvedCrossovers=0` / `ambiguousCorridors=0` / `arrowheadCollisions=0` / `maxBends=2` / `routesOverSuggestedBends=0` / `maxStretch=1` / `routesOverSuggestedStretch=0` / `labelRouteClearanceIssues=0`（最小余量 17px）/ `desktopReadabilityIssues=0`（投影字号 7.5px）/ `microSegmentCount=0`**，且 `routeReview.crossings` 与 `routeReview.detours` **双双为空**。产物 **857,603 B**，sha256 `3c72432263b56437b8583e7d1f6e67643a5086805cd5a64d3e7c2487cbfc366e`；画布 `1148×692 → 1190×682`（高度反而少 10px）。`docs/diagrams/*.json` 实测 **0**（回执未入仓）。
+
+**前后对比（同一把尺子）**：`resolvedCrossovers` **13 → 0**；`routesOverSuggestedBends` **7 → 0**；`maxBends` **4 → 2**；`maxStretch` **1.39 → 1.00**；`minLabelRouteClearance` **4.8px → 17px**。
+
+**入口三处核对**：`docs/index.html` 与 `docs/ARCHITECTURE.md` 里 aop 的描述讲的是「框架零业务 / 六 Trait / Registry」与视图名（一次事件流转 / 启动顺序 / 生产者与兜底），**组件数 / 视图数 / 卡片数均未变**，两处无需改动；「二、清单」那一行也不含会漂移的数字，未动。本段是本次唯一新增的文档内容。
+
+**未做人眼视觉复核**：以上全部是 archify 的自动几何度量，`visualReview` 仍为 `not-requested`。0 交叉 0 超限只说明「几何不违规」，是否真的好看需人眼确认。
+
 ## 五、维护约定
 
 1. 新增图前先判断抽象层级；同层级才允许并列。
