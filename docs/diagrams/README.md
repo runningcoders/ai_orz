@@ -377,6 +377,33 @@
 
 **未做人眼视觉复核**：以上全部是 archify 的自动几何度量，`visualReview` 仍为 `not-requested`。0 交叉 0 超限只说明「几何不违规」，是否真的好看需人眼确认。
 
+### 2026-11-21 视觉可读性专项（线条交叉梳理 · 第 6 张重排：task-project，revision 由孤儿锚点 `25cced8f` 改为已推送 `b5eac4ee`）
+
+**改了什么（只有几何，语义零变更）**：22 个组件的**摆位**重排到 4 列 × 6 行网格（列 `x=[30,330,630,930]`、行 `y=[80,250,420,590,760,930]`，卡片尺寸一个未动）；两条对角落差最大、两个拐角格都被占的边（`taskdomain → patch`、`consumer → agent`）显式指定端口 `right→left` / `left→right`，其余 26 条仍交自动布线。
+
+**终态布局**：
+
+| 行 y | 列 0 | 列 1 | 列 2 | 列 3 |
+|---|---|---|---|---|
+| 80 | `confirm` | `reject` | `patch` | `gate` |
+| 250 | `reviewguard` | `taskdomain` | `dag` | `consumer` |
+| 420 | · | · | `agent` | `dispatchc` |
+| 590 | `api` | `po` | `artifact` | `notify` |
+| 760 | `transfer` | `projectdomain` | `completionc` | `reviewc` |
+| 930 | `scope` | `cron` | `stats` | `board` |
+
+**前后对比（同一把尺子）**：`resolvedCrossovers` **43 → 0**；`routesOverSuggestedBends` **19 → 0**；`maxBends` **6 → 2**；`maxStretch` **1.668 → 1.00**；`routesOverSuggestedStretch` **1 → 0**；`minLabelRouteClearance` **4px → 6.8px**；`ambiguousCorridors` / `arrowheadCollisions` / `desktopReadabilityIssues` / `labelRouteClearanceIssues` 全为 **0**；`minSegmentPx` 24 不变；投影字号 `6.28 → 6.41px`。画布 `1184×1086 → 1160×1062`（宽高同时缩小）。
+
+**根因（第五类，与前 5 张都不同）**：这张图的**行内间隙本来就合规**（每行 4 个组件、间隙 110px），真因是**摆位与连边严重不匹配**——两个枢纽 `taskdomain`（出/入边 9 条）与 `projectdomain`（7 条）的邻居散落在 6 行里的 5 行，于是出现 `api → projectdomain` 横跨 5 行、`artifact → po` 跨 5 行 3 列这类超长边；28 条边里有 19 条被迫走 3 弯以上，在中央走廊叠成线束。
+
+**方法（这张图不用手调，用约束搜索）**：`render + check` 单轮仅 **0.89 秒**，足以把**真实门禁指标当适应度**。先用几何代理模型（邻接奖励 + 跨格罚 + 同 2×2 方块双对角冲突重罚 + 语义行带弱罚）做 40 种子退火产出 top30 唯一解，再用真门禁筛前 12 个；从最优候选出发做 **260 步真门禁爬山**（允许移入空位），最终穷举两条残余 3 弯道边的端口组合 **30 组**收尾到 0。整条链路共约 320 次真实渲染，总计约 5 分钟。
+
+**为什么不能靠加高画布绕开**：旧版 `1184×1086` 投影字号已只有 **6.28px**（下限 6.0）。这张图行数一旦增加，按 desktop-readability 的等比缩放投影字号会立刻跌破 6 —— 所以必须在**同样的 6 行内**把摆位调对，而不是扩容。
+
+**入口三处核对**：`docs/index.html`（L121 卡区 desc「任务状态机（六态 · 含待验收）· DAG 与唤醒 · 项目聚合」、L253 模块表「任务 · DAG · 验收」）与 `docs/ARCHITECTURE.md`（L25 导航行、L348 专题表）描述的都是**视图名**，而组件数 / 连线数 / 卡片数 / 视图数（22 / 28 / 8 / 3）均未变，两处无需改动。本段是本次唯一新增的文档内容。
+
+**未做人眼视觉复核**：以上全部是 archify 的自动几何度量，`visualReview` 仍为 `not-requested`。0 交叉 0 超限只说明「几何不违规」，是否真的好看需人眼确认。
+
 ## 五、维护约定
 
 1. 新增图前先判断抽象层级；同层级才允许并列。
