@@ -308,6 +308,40 @@
 
 **未做人眼视觉复核**：以上全部是 archify 的自动几何度量，`visualReview` 仍为 `not-requested`。0 交叉 0 超限只说明「几何不违规」，是否真的好看需人眼确认。
 
+### 2026-11-21 视觉可读性专项（线条交叉梳理 · 第 4 张重排：memory，revision 由 `1664ec22` 改为已推送 `b5eac4ee`）
+
+**起因**：用户继续指图——「记忆子系统 · 四层记忆与溯源」同样线条交叉、近距离打弯。本次**只动几何**，语义零变更：13 组件 / 16 连线 / 5 卡片 / 3 视图全数保留，sources 全部未改、组件尺寸全部未变（中文标签与卡片文案集合差集：`new_only=[]` / `old_only=[]` / `common=103`；连线集合 `(from,to)` 逐一相同；组件 id 集合相同）。
+
+**根因（第三类成因，与前 3 张都不同）**：旧版既不是「一行挤太多」（每行最多 4 个、间隙 220~260px 合规），也不是单点长回边，而是**存在两条互为对角、且共用同一个 2×2 方块的对角边**：`search → prompt`（检索包，从 x=820 一路拉回 x=40，横跨 3 列，被 `agent` 与 `tools` 两张卡挡住主走廊）与 `settle → longterm`、`ontology → longterm`、`ontology → tools` 三条上行边在 x≈780~800 的同一窄带里叠放。旧版 advisory：`resolvedCrossovers=8 / routesOverSuggestedBends=3 / maxBends=4 / maxStretch=1.129 / minLabelRouteClearance=8.5px`，其中 5 处交叉全部由 `search → prompt` 这条长边引发。
+
+**改法（约束搜索，不是手调）**：把问题写成「13 个节点落进 4×4 网格、16 条边每一条都只跨一格」的约束满足问题，先穷举出全部可行摆位（600 个），再按三条视觉偏好排序，最后用 archify 门禁做真值判据：
+- **禁止「同一 2×2 方块内出现两条对角边」**——这是对角交叉的充要条件，比事后看交叉坐标更早一步；
+- **禁止轴对齐边的中间格被占**（遮挡会强制绕行）；
+- **四层（core / working / shortterm / longterm）按阅读顺序**，且 `vector` / `fts` 两个存储叶子落在右下方。
+
+最终布局（列 `x=[20,366,712,1058]`、行 `y=[70,236,402,568]`，卡片沿用母本 180×64 / 200×64）：
+
+| 行 y | 节点（列 0→3） |
+|---|---|
+| 70 | · · `core`(列1) · `working`(列2) · · |
+| 236 | `fts` · `prompt` · `shortterm` · `agent` |
+| 402 | `search` · `settle` · `tools` · `jsonl` |
+| 568 | `vector` · `longterm` · `ontology` · · |
+
+- 主链 `agent → tools → shortterm → settle → longterm` 近乎一条折线；`prompt` 贴在 `core` / `working` 正下方（两条「我是谁 / 当前会话」边只走一格）；`search → prompt` 这条原凶改由 `search`(列0,行2) 上行到 `prompt`(列1,行1) 的对角一格，不再横穿整张图；
+- `tools` 的四条出边（`agent` / `shortterm` / `longterm` / `jsonl`）全部落在相邻格；`ontology` 的两条（`longterm` / `tools`）也都在相邻格；
+- 16 条边**全部**满足相邻格约束（无一条跨 2 格），且**未指定任何显式端口**，全部交自动布线。
+
+**一并修正的声明值（如实披露）**：`meta.repository.revision` 原为 `1664ec22c728fa8ba003938b92ed7ad7ff475906`——实测它**不在 origin/main、也不在本分支**（只在 `origin/feat/jsonl-sidecar-index-20261117` 上，PR #11 的历史分支），属对读者无意义的锚点；本次改为本分支已推送 HEAD `b5eac4ee07688998ec9eabf198a3e85ec560e9fd`，与前两张同一锚点。
+
+**门禁（`--out-dir` 每轮换新）**：`finalize architecture … --repo-root . --quality showcase --json --browser-check` → **exit 0**，四道全 pass（validate / deliver / check / browser-check，`browserCheck.ran=true`），`diagnostics` 0。composition 指标：**`properCrossings=0` / `resolvedCrossovers=0` / `ambiguousCorridors=0` / `arrowheadCollisions=0` / `maxBends=2` / `routesOverSuggestedBends=0` / `maxStretch=1` / `routesOverSuggestedStretch=0` / `labelRouteClearanceIssues=0`（最小余量 24px）/ `desktopReadabilityIssues=0`（投影字号 7.5px）/ `minSegmentPx=73` / `microSegmentCount=0`**，且 `visualReviewRecommendation` **整段缺席**（＝ archify 认为连 advisory 都不必给）。产物 **859,485 B**，sha256 `bfc7258f0449794fa402fbd8b0cdd2383f6511b18c595fee97dae8eaa18f826f`；画布 `1320×652 → 1298×700`（宽度反而少 22px）。`docs/diagrams/*.json` 实测 **0**（回执未入仓）。
+
+**前后对比（同一把尺子）**：`resolvedCrossovers` **8 → 0**；`routesOverSuggestedBends` **3 → 0**；`maxBends` **4 → 2**；`maxStretch` **1.129 → 1.00**；`minLabelRouteClearance` **8.5px → 24px**；`minSegmentPx` **24 → 73**。
+
+**入口三处核对**：`docs/index.html`（卡区 desc「四层记忆 · 存储面 · 检索与沉淀」与模块表「记忆」链接）与 `docs/ARCHITECTURE.md`（第 20 行导航、第 343 行专题子图表）描述的都是**视图名**，而组件数 / 连线数 / 卡片数 / 视图数均未变，两处无需改动。本段是本次唯一新增的文档内容。
+
+**未做人眼视觉复核**：以上全部是 archify 的自动几何度量，`visualReview` 仍为 `not-requested`。0 交叉 0 超限只说明「几何不违规」，是否真的好看需人眼确认。
+
 ## 五、维护约定
 
 1. 新增图前先判断抽象层级；同层级才允许并列。
