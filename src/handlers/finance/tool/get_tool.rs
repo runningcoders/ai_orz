@@ -7,7 +7,7 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{GetToolRequest, GetToolResponse};
 use common::error::Result;
 
-use super::response::{attach_credential_source, to_detail};
+use super::response::{attach_browser_env_probe, attach_credential_source, to_detail};
 
 /// Get detailed information about a specific tool including configuration
 #[register_handler_tool(
@@ -36,5 +36,6 @@ pub async fn get_tool(ctx: RequestContext, params: GetToolRequest) -> Result<Get
 
     let mut detail = to_detail(&tool);
     attach_credential_source(&ctx, &tool, &mut detail).await;
+    attach_browser_env_probe(&tool, &mut detail).await;
     Ok(detail)
 }

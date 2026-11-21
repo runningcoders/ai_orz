@@ -99,6 +99,9 @@ pub async fn update_tool(
 
     let mut detail = to_detail(&tool);
     attach_credential_source(&ctx, &tool, &mut detail).await;
+    // 不在这里挂 browser_env_probe：前端保存成功后会重新 get_tool（tool_detail.rs
+    // 的 save 分支），探测在详情接口做即可；此处重复探测会在改 command 后让保存
+    // 响应多等一次 CLI 子进程（2~3s），而结果又会被随后的 get_tool 覆盖。
     Ok(detail)
 }
 

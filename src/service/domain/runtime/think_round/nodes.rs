@@ -301,12 +301,18 @@ async fn run_think(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
     ) = {
         let mut state = lock(&d.state)?;
         if d.think_runtime.as_ref().is_some_and(|tr| tr.is_cancelled()) {
-            let round = d.start_round + state.rounds_started;
+            // 与主循环同口径：先取本周期局部 0 基编号，再统一走 wake_* 换算，
+            // 不手写 `start_round + local`（手写曾在主循环造成二次叠加）。
+            // 取消发生在轮首、本轮还没跑：`total_rounds` 是「已消耗轮次数」，
+            // 取 0 基绝对 wake_round_index；日志里的「before round」是即将开始的
+            // 1 基轮次，取 wake_rounds —— 两者差 1 是刻意区分，不是笔误。
+            let local_round = state.rounds_started;
+            let round = d.wake_round_index(local_round);
             log_info!(
                 &ctx,
                 "think_loop",
                 "cancel flag detected before round={}, exiting loop",
-                round
+                d.wake_rounds(local_round)
             );
             let messages = std::mem::take(&mut state.messages);
             state.result = Some(ThinkLoopResult::Cancelled {
@@ -315,7 +321,13 @@ async fn run_think(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
             });
             return Ok(NodeSignal::Yield(SIGNAL_CANCELLED.to_string()).into());
         }
-        let round = d.start_round + state.rounds_started;
+        // `rounds_started` 是**本周期内**的 0 基编号：下游 `wake_rounds` /
+        // `wake_round_index` 会统一叠加 `start_round` 换成唤醒级绝对编号，
+        // `state.last_round` 的契约也是局部 0 基。
+        // ⚠️ 绝不能在这里预先加 `start_round`：第二周期 start_round=76 时
+        // 会算成 76+76=152，下游再加一次得到 153，轨迹从 153 起跳（真实
+        // 只跑了 77..90），`sync_usage` 也把预算记账虚增一倍。
+        let round = state.rounds_started;
         state.rounds_started += 1;
         // 取出可变状态：节点内异步调用期间不能持有 std 锁
         (

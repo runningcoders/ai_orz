@@ -43,7 +43,7 @@ pub use presets::{
 pub use ssrf::{
     DEFAULT_RESPONSE_MAX_BYTES, HARD_RESPONSE_MAX_BYTES, domain_matches, is_local_network_host,
     is_local_network_ip, is_sensitive_header, normalize_domain, read_limited_response_body,
-    sanitize_response_headers, validate_target_url,
+    sanitize_response_headers, validate_browser_open_url, validate_target_url,
 };
 
 /// 本机回环地址的 no-proxy 例外清单（测试环境统一口径）

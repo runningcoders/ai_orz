@@ -169,10 +169,14 @@ pub fn summarize_rounds(rounds: &[ThinkTraceRoundDto]) -> RoundStats {
     stats
 }
 
-/// 轮次进度文案：`已 3 轮` / `3 轮`
+/// 轮次进度文案：`3 轮`；跨压缩时追加紧凑的累计编号 `· #N`（如 `2 轮 · #8`）。
 ///
-/// `finished=false`（进行中）时数字还会继续涨，故加「已」字；轮次编号跨压缩累计，
-/// 与本片段轮数不一致时两个都给，否则会让人以为丢了轮次。
+/// ⚠️ 不因 `finished=false` 加「已」字：进行中/已完成同文案，状态交给下方那行
+/// （「图信息待收尾」/「X 步 · advisor Y」）表达，避免两处重复、也更短。
+/// 轮次编号跨压缩累计，与本片段轮数不一致时两个都给，否则会让人以为丢了轮次。
+/// ⚠️ 这里刻意用 `· #N` 记号而不是「（累计第 N 轮）」：一是后者太长，会把同行右侧
+/// 的 token / 强度挤走；二是 `#` 表示「编号」而非「分母/预算」，避免重引「第 N/M
+/// 轮」的误读。完整语义放到悬停提示里。
 pub fn round_progress_label(rounds: &[ThinkTraceRoundDto], finished: bool) -> String {
     let stats = summarize_rounds(rounds);
     if stats.recorded == 0 {
@@ -182,14 +186,10 @@ pub fn round_progress_label(rounds: &[ThinkTraceRoundDto], finished: bool) -> St
             "尚未开始".to_string()
         };
     }
-    let prefix = if finished { "" } else { "已 " };
     if stats.last_round == stats.recorded {
-        format!("{prefix}{} 轮", stats.recorded)
+        format!("{} 轮", stats.recorded)
     } else {
-        format!(
-            "{prefix}{} 轮（累计第 {} 轮）",
-            stats.recorded, stats.last_round
-        )
+        format!("{} 轮 · #{}", stats.recorded, stats.last_round)
     }
 }
 
@@ -446,13 +446,22 @@ pub fn RoundStatsLine(
 ) -> Element {
     let stats = summarize_rounds(&rounds);
     let progress = round_progress_label(&rounds, finished);
+    // 紧凑文案的完整口径放悬停里：#N 是累计编号（跨压缩续接），不是预算分母
+    let progress_title = if stats.last_round == stats.recorded {
+        "已记录轮数；进行中会继续增长".to_string()
+    } else {
+        format!(
+            "本片段记录 {} 轮；跨压缩累计到第 {} 轮（# 后为累计编号，不是预算分母；进行中会继续增长）",
+            stats.recorded, stats.last_round
+        )
+    };
     rsx! {
         div { class: "mt-1.5 flex flex-wrap items-start gap-2",
             // 左栏：对应时间线的「第 N 轮 + 裁决」竖排
             div { class: "flex flex-col items-start justify-center gap-1 shrink-0 self-stretch",
                 span {
                     class: "text-sm font-semibold whitespace-nowrap leading-none",
-                    title: "已记录轮数（进行中会继续增长）",
+                    title: "{progress_title}",
                     "{progress}"
                 }
                 if finished {
@@ -558,19 +567,18 @@ mod tests {
             round_with(2, 0, 0, 0, 0, 0, None),
         ];
         assert_eq!(round_progress_label(&rounds, true), "2 轮");
-        // 进行中：数字还会涨
-        assert_eq!(round_progress_label(&rounds, false), "已 2 轮");
+        // 进行中/已完成同文案：状态由下方行表达，不再加「已」字
+        assert_eq!(round_progress_label(&rounds, false), "2 轮");
         assert_eq!(round_progress_label(&[], false), "尚未开始");
         assert_eq!(round_progress_label(&[], true), "0 轮");
-        // 跨压缩：本片段 2 轮，但累计编号已到第 8 轮 —— 两个都要给
+        // 跨压缩：本片段 2 轮，但累计编号已到第 8 轮 —— 两个都要给，
+        // 且用紧凑记号（# 表示编号而非分母），避免长串把同行右侧挤走
         let cumulative = vec![
             round_with(7, 0, 0, 0, 0, 0, None),
             round_with(8, 0, 0, 0, 0, 0, None),
         ];
-        assert_eq!(
-            round_progress_label(&cumulative, false),
-            "已 2 轮（累计第 8 轮）"
-        );
+        assert_eq!(round_progress_label(&cumulative, false), "2 轮 · #8");
+        assert_eq!(round_progress_label(&cumulative, true), "2 轮 · #8");
     }
 
     #[test]

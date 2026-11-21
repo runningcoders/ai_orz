@@ -21,6 +21,8 @@ fn generic_builtin_tools_carry_expected_tags() {
         ("tavily_search", vec!["search", "network"]),
         ("doubao_search", vec!["search", "network"]),
         ("browser", vec!["browser", "network"]),
+        // desktop 与 browser 同组（首 tag=browser），次 tag 保留语义区分
+        ("desktop", vec!["browser", "desktop"]),
         ("mark_artifact", vec!["artifact"]),
     ];
     for (id, tags) in expected {
@@ -494,7 +496,7 @@ fn every_cli_factory_implements_lifecycle_methods() {
 
     // 四个 CLI 型工厂都必须覆盖 probe_readiness，且**不得**落回「默认 Ready」
     // 掩盖问题；配置不可寻址时必须是 cli_not_installed（否则修复器闸门不放行）
-    for id in ["lark_cli", "gh_cli", "skillhub_cli", "browser"] {
+    for id in ["lark_cli", "gh_cli", "skillhub_cli", "browser", "desktop"] {
         let factory = factory_of(id);
         let mut po = factory.create_po();
         // 刻意写一个必然不可解析的命令
@@ -515,7 +517,7 @@ fn every_cli_factory_implements_lifecycle_methods() {
 #[test]
 fn self_heal_proposal_is_always_single_command_field_or_none() {
     // 红线守卫：任何工厂的自愈提议都只能含 command 一个字段
-    for id in ["lark_cli", "gh_cli", "skillhub_cli", "browser"] {
+    for id in ["lark_cli", "gh_cli", "skillhub_cli", "browser", "desktop"] {
         let factory = factory_of(id);
         let mut po = factory.create_po();
         po.config = serde_json::json!({ "command": "/no/such/dir/no-such-cli-xyz" });
@@ -549,7 +551,7 @@ fn unaddressable_config_is_never_masked_by_path_fallback() {
 
     // 探针语义 = 配置健康度：配置不可寻址 → **必须** NotReady，
     // 哪怕该工具的 bin 名能在 PATH / 补全目录里找到（兜底只属于 propose_self_heal）
-    for id in ["lark_cli", "gh_cli", "skillhub_cli", "browser"] {
+    for id in ["lark_cli", "gh_cli", "skillhub_cli", "browser", "desktop"] {
         let factory = factory_of(id);
         let mut po = factory.create_po();
         // 含分隔符 + 必然不存在：任何环境都不会命中该路径
@@ -589,6 +591,7 @@ fn probe_and_propose_stay_consistent_on_config_health() {
         ("gh_cli", "gh"),
         ("skillhub_cli", "skillhub"),
         ("browser", "agent-browser"),
+        ("desktop", "agent-desktop"),
     ];
     for (id, bin) in cases {
         let factory = factory_of(id);

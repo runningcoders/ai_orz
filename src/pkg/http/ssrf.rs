@@ -173,6 +173,58 @@ async fn validate_resolved_addresses(
     Ok(addresses)
 }
 
+/// 云元数据端点：任何情况下都不允许 Agent 浏览器访问
+///
+/// 这些地址没有合法的浏览器测试用途，是 SSRF 的头号目标。即使管理员
+/// 开启了 `allow_local_network`（为测试本机 dev server），它们仍被拒绝。
+const CLOUD_METADATA_HOSTS: &[&str] = &[
+    "169.254.169.254", // AWS / GCP / Azure IMDS
+    "169.254.170.2",   // AWS ECS / Fargate 凭证端点
+    "100.100.100.200", // 阿里云 ECS 元数据
+    "metadata.google.internal",
+    "metadata.goog",
+    "fd00:ec2::254", // AWS IMDS IPv6
+];
+
+/// Agent 浏览器 `open` URL 的**字面**检查（SSRF 纵深防御，非完整边界）
+///
+/// 只做无网络 I/O 的静态检查，明确不解析 DNS——浏览器随后会自行解析与
+/// 跟随重定向，入口解析给出的"安全"结论对后续请求无效（DNS rebinding、
+/// 302、JS fetch、点击跳转都绕过这里）。完整边界依赖 agent-browser 的
+/// `--allowed-domains`（浏览器级 containment）与部署层 egress 隔离。
+///
+/// 拦截规则：
+/// 1. scheme 仅 http / https。本地文件 `file://` 由 browser 工具层改用 fs 作用域
+///    校验函数（`tool_security::fs::resolve_and_validate_path`）单独处理，不走这里
+/// 2. 云元数据端点无条件拒绝，不受 `allow_local_network` 影响
+/// 3. localhost / 字面内网地址：仅当 `allow_local_network == false` 时拒绝
+///    （开启后供本机/内网页面测试使用；此为管理员工具级开关，Agent 不可覆盖）
+pub fn validate_browser_open_url(raw: &str, allow_local_network: bool) -> Result<()> {
+    let url = reqwest::Url::parse(raw)
+        .map_err(|e| anyhow!("URL 格式无效：{e}（请使用 http:// 或 https:// 开头的绝对地址）"))?;
+    let scheme = url.scheme();
+    if scheme != "http" && scheme != "https" {
+        return Err(anyhow!("不允许的 URL 协议「{scheme}」：仅支持 http / https / file").into());
+    }
+    let host = normalize_domain(url.host_str().ok_or_else(|| anyhow!("URL 缺少 host"))?);
+    if host.is_empty() {
+        return Err(anyhow!("URL 缺少 host").into());
+    }
+    if CLOUD_METADATA_HOSTS.contains(&host.as_str()) {
+        return Err(anyhow!(
+            "禁止访问云元数据端点「{host}」：该地址是 SSRF 高风险目标，任何配置下都不允许"
+        )
+        .into());
+    }
+    if !allow_local_network && is_local_network_host(&host) {
+        return Err(anyhow!(
+            "禁止访问本地/内网地址「{host}」：如需用浏览器测试本机或内网页面，请在工具配置页开启 allow_local_network"
+        )
+        .into());
+    }
+    Ok(())
+}
+
 /// 检查 header 名称是否敏感
 ///
 /// 委托 common 单点实现（`is_sensitive_credential_name`），与前端表单预检同源零漂移
@@ -227,4 +279,60 @@ pub async fn read_limited_response_body(
     }
 
     Ok(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn browser_open_allows_public_http() {
+        assert!(validate_browser_open_url("https://example.com/path?q=1", false).is_ok());
+        assert!(validate_browser_open_url("http://example.com:8080/", false).is_ok());
+    }
+
+    #[test]
+    fn browser_open_rejects_non_http_scheme() {
+        for url in [
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "data:text/html,x",
+        ] {
+            assert!(
+                validate_browser_open_url(url, true).is_err(),
+                "must reject non-http scheme: {url}"
+            );
+        }
+    }
+
+    #[test]
+    fn browser_open_rejects_cloud_metadata_even_when_local_allowed() {
+        for host in [
+            "169.254.169.254",
+            "169.254.170.2",
+            "100.100.100.200",
+            "metadata.google.internal",
+        ] {
+            assert!(
+                validate_browser_open_url(&format!("http://{host}/latest/meta-data/"), true)
+                    .is_err(),
+                "metadata endpoint must always be blocked: {host}"
+            );
+        }
+    }
+
+    #[test]
+    fn browser_open_local_network_respects_switch() {
+        for host in ["localhost", "127.0.0.1", "192.168.1.10", "10.0.0.5"] {
+            let url = format!("http://{host}:3000/");
+            assert!(
+                validate_browser_open_url(&url, false).is_err(),
+                "local target must be blocked by default: {url}"
+            );
+            assert!(
+                validate_browser_open_url(&url, true).is_ok(),
+                "local target must pass when explicitly allowed: {url}"
+            );
+        }
+    }
 }
