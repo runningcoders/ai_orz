@@ -430,6 +430,37 @@
 
 **未做人眼视觉复核**：以上全部是 archify 的自动几何度量，`visualReview` 仍为 `not-requested`。0 交叉 0 超限只说明「几何不违规」，是否真的好看需人眼确认。
 
+### 第 8 张重排：infra（2026-11-21）
+
+**起因**：架构图视觉可读性优化专项第 8 张。旧版 advisory：`resolvedCrossovers=4` / `routesOverSuggestedBends=6` / `maxBends=4` / `maxStretch=1.138` / `minLabelRouteClearance=4px`。
+
+**改了什么（纯几何，语义零变更）**：16 个组件的**摆位**重排到 4 列 × 5 行网格（列 `x=[30,390,750,1110]`、行 `y=[70,220,370,520,670]`，列距 360、行距 150），卡片宽度统一 **200 → 190**（高度 64 未动）。**14 条连线全部清空 `fromSide`/`toSide`/`route`/`via`**，一律交自动布线（旧版同样 0 条显式端口）。
+
+**终态布局**（读序：启动装配 → 运行期资源 → 构建发布）：
+
+| 行 y | 列 0 | 列 1 | 列 2 | 列 3 |
+|---|---|---|---|---|
+| 70 | `lance` | `bg` | `proc` | `distserve` |
+| 220 | `mig` | · | `jsonl` | · |
+| 370 | `cfg` | `boot` | · | `pool` |
+| 520 | `paths` | · | `log` | `cron` |
+| 670 | `ci` | `make` | `pkg` | `rel` |
+
+**根因（第七类，与前 7 张都不同）**：这张图是**单枢纽星形**——`boot`（启动装配）一条组件挂 **11 条出入边**，其余 15 个组件度数都 ≤2。旧版把 `boot` 放在 `(330,80)` 的**左上角**，11 个邻居却散落在 4 行里的三行，导致 4 处交叉**全部** `sharedNode = boot`，6 条超限弯道里 5 条也是 boot 的出边。几何上的硬约束是：`boot` 的 3×3 邻域只有 8 格，装不下 11 个邻居，**必然有 3 条边要跨 2 格**——所以不能指望「每条边只跨一格」，只能让跨格边的**中间格为空**并让方向分散。
+
+**方法（三步，全部用真门禁判定）**：
+1. **代理退火筛候选**：目标函数 = 跨格罚（跨 2 格按中间格是否被占分档，2 分/6 分；跨 ≥3 格 14 分）+ 同 2×2 方块双对角罚 8 + **boot 出边方向桶拥堵罚**（同一方向 >2 条即罚）。11 个 anchor 位 × 220 次随机重启，取 top10。
+2. **真门禁筛前 5**：`render + check` 单轮约 0.5s，直接读 `composition.metrics` 排序。这一步筛掉了代理分并列但真门禁有 2~3 处交叉的方案（代理只能筛候选，不能定胜负）。
+3. **参数反解**：对保留下来的零交叉布局，扫「列距 × 行距 × 卡宽」共 24 组，发现**列距 300 必然把标签净空压到 4.4px**（正是「线离得很近」的那种别扭），**列距 360 + 行距 150 + 卡宽 190** 同时满足零交叉、零超限弯道、净空 20px、投影字号 7.5px。
+
+**前后对比（同一把尺子）**：`resolvedCrossovers` **4 → 0**；`routesOverSuggestedBends` **6 → 0**；`maxBends` **4 → 2**；`maxStretch` **1.138 → 1.00**；`minLabelRouteClearance` **4px → 20px**；`minSegmentPx` **24 → 24**；投影字号 **7.5 → 7.5px**；`properCrossings` / `ambiguousCorridors` / `arrowheadCollisions` / `desktopReadabilityIssues` / `labelRouteClearanceIssues` / `microSegmentCount` / `viewportHeightIssues` 全为 **0**；`routeReview.crossings` 与 `routeReview.detours` **双双为空**；`visualReviewRecommendation` **整段缺席**。画布 `1170×695 → 1340×802`（宽 +170、高 +107 —— 用画布换间隙，这是本轮唯一「变大」的一处，投影字号仍在 7.5px 未触地板）。
+
+**一并修正的声明值**：`meta.repository.revision` 原为 `1664ec22c728fa8ba003938b92ed7ad7ff475906`——实测不在 `origin/main`、不在本分支，`git branch -r --contains` 只命中 `origin/feat/jsonl-sidecar-index-20261117`（PR #11 的历史分支）⇒ 属孤儿锚点，改为本分支已推送 HEAD `b5eac4ee07688998ec9eabf198a3e85ec560e9fd`。组件 `sources` 逐条 `os.path.exists` → `MISSING_PATHS: []`。
+
+**入口三处核对**：`docs/index.html`（L163 卡区 desc「启动与配置 · 运行期资源 · 构建与发布」、L260 模块表「基础设施」）与 `docs/ARCHITECTURE.md`（L31 导航行、L354 专题表）描述的都是**视图名**，而组件数 / 连线数 / 卡片数 / 视图数（16 / 14 / 5 / 3）均未变，两处无需改动。本段是本次唯一新增的文档内容。
+
+**未做人眼视觉复核**：以上全部是 archify 的自动几何度量，`visualReview` 仍为 `not-requested`。0 交叉 0 超限只说明「几何不违规」，是否真的好看需人眼确认。
+
 ## 五、维护约定
 
 1. 新增图前先判断抽象层级；同层级才允许并列。
