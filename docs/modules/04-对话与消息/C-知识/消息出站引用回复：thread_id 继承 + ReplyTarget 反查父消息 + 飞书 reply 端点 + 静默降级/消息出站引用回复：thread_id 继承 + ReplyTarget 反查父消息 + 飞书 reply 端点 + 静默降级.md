@@ -78,6 +78,6 @@ Agent 回复用户消息时，若该用户绑定飞书渠道，出站投递走**
 4. **静默降级是硬约定**：无目标 / 前缀非 `lark:` / 键为空（`lark:`）/ 父消息无 `external_key` → `resolve_lark_reply` 返回 `None` → 走普通发送端点，绝不允许因此报错或中断投递。
 5. **`resolve_lark_reply` 必须是纯函数且拒绝空 id**：校验 `strip_prefix("lark:")` 后非空才产出 `LarkReply`（避免空路径参数），纯函数以便单测（`message_channel.rs` 内联 5 用例）。
 6. **仅 Lark 渠道实现引用回复**：微信 / Slack / Email / Webhook / A2A 分支必须忽略 `reply_target`（不引用），保持现状；新增渠道分支同样不得擅自使用回复语义。
-7. **仅文本消息**：媒体 / 卡片 / 富文本的引用回复不在范围，`reply_text_message` 只发 `msg_type="text"`。
+7. **媒体 / 卡片不在引用回复范围**：文本与富文本（`text` / `post` + `md` 标签）走同一 `reply_message` 端点，msg_type 由出站渲染统一判定；媒体 / 交互卡片的引用回复不在范围。
 8. **DAO `push` 新增第 5 参不得破坏旧行为**：`reply=None` 时按 `chat_id`（群）→ `open_id`（私聊）选择发送目标；调用点必须显式传参（编译期保证），测试调用点补 `None`。
 9. **群会话直发只认父消息 `chat_id`**：仅 `messages.chat_id` 非空（群聊入站才有）时使用 `receive_id_type=chat_id`；私聊 `chat_id=NULL`，必须回退 `open_id`，禁止把私聊 chat_id（飞书 p2p 也有 chat_id）误当群键落库。

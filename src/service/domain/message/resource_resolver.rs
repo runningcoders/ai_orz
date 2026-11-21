@@ -29,7 +29,8 @@ use common::markdown_protocol::{
     ArtifactComponent, AttachmentComponent, ProtocolRegistry, ResolvedPayload, TransformOptions,
     extract_refs, transform,
 };
-use pulldown_cmark::{Event, Parser, TagEnd};
+use common::markdown_render::{blocks_to_plain_text, parse_events};
+use pulldown_cmark::{Event, Parser};
 
 use crate::models::outbound_media::{OutboundAttachment, OutboundMediaKind};
 use crate::pkg::RequestContext;
@@ -103,38 +104,12 @@ fn artifact_summary(file_type: FileType, description: &str) -> Option<String> {
     }
 }
 
-/// 事件流 → 纯文本（出站降级形态）
-///
-/// Text/Code 保留、软硬换行还原为换行、段落 / 标题 / 列表项 / 表格行等结构边界补
-/// 换行；结构标记本身（#、-、表格线）不还原——外部渠道为纯文本阅读场景，降级形态
-/// 可读即可（方案 R5：不追求完美还原，不做裁剪）。
-fn events_to_plain_text(events: Vec<Event<'_>>) -> String {
-    let mut out = String::new();
-    for ev in events {
-        match ev {
-            Event::Text(t) | Event::Code(t) => out.push_str(&t),
-            Event::SoftBreak | Event::HardBreak => out.push('\n'),
-            Event::End(
-                TagEnd::Paragraph
-                | TagEnd::Heading(_)
-                | TagEnd::Item
-                | TagEnd::BlockQuote(_)
-                | TagEnd::Table
-                | TagEnd::TableRow,
-            ) => out.push('\n'),
-            Event::End(TagEnd::TableCell) => out.push(' '),
-            _ => {}
-        }
-    }
-    out.trim().to_string()
-}
-
 /// 出站降级：协议引用 → `[附件：名]` / `[产物：名]`（未命中快照兜底防悬空）
 ///
 /// - 无已注册协议引用：原文**零改动**返回（幂等；存量无协议消息零影响）；
 /// - 有引用：transform 管线（后端口径 `demote_raw_html=false`）+ 组件
 ///   `render_text` 统一出口（已解析实名 / 未解析快照兜底由组件内决策）+
-///   事件流纯文本还原。
+///   `common::markdown_render` 的事件流→IR→纯文本降级（前后端口径统一）。
 pub fn degrade_content_for_external(content: &str, registry: &ProtocolRegistry) -> String {
     let has_registered_refs = extract_refs(content)
         .iter()
@@ -154,7 +129,8 @@ pub fn degrade_content_for_external(content: &str, registry: &ProtocolRegistry) 
         };
         Some(Event::Text(text.into()))
     });
-    events_to_plain_text(events)
+    // 事件流 → 渠道无关 IR → 纯文本（降级逻辑统一在 common，前后端口径一致）
+    blocks_to_plain_text(&parse_events(events))
 }
 
 // ==================== IO 薄壳层（DAL 查询，async） ====================
