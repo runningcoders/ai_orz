@@ -183,4 +183,36 @@ mod tests {
         assert_eq!(last_round, 10);
         assert!(last_round >= max_rounds, "最后一轮必须够到策略判定的上限");
     }
+
+    /// `wake_round_number` 的入参必须是**本周期局部 0 基**，不能是已含
+    /// `start_round` 的绝对编号
+    ///
+    /// ⚠️ 盯的是又一个真实发生过的缺陷：`run_think` 曾把 `round` 写成
+    /// `start_round + rounds_started`（绝对），再喂给 `wake_rounds(round)` /
+    /// `wake_round_index(round)`，于是第二周期把 `start_round` 加了两次。
+    /// 实跑 76 轮后，第二周期轨迹从 153 起跳（应为 77），中间 77..152
+    /// 整段不存在；`sync_usage` 也把预算记账从 90 虚增到 166。
+    /// 这里用「局部编号」的口径把连续性和上限一起钉死。
+    #[test]
+    fn wake_round_number_takes_local_not_absolute_round() {
+        // 第一周期：start_round = 0，跑满 76 轮（局部 0..75）
+        let first_cycle_last = wake_round_number(0, 75);
+        assert_eq!(first_cycle_last, 76);
+
+        // 第二周期从 76 接上：局部第 0 轮必须是绝对 77，且与上一周期连续
+        let start_round = first_cycle_last;
+        let second_cycle_first = wake_round_number(start_round, 0);
+        assert_eq!(second_cycle_first, 77);
+        assert_eq!(
+            second_cycle_first,
+            first_cycle_last + 1,
+            "跨周期轮次必须连续，不能跳号"
+        );
+
+        // 再跑 13 轮，绝对编号应到 90（真实落盘 76+14=90 轮）
+        assert_eq!(wake_round_number(start_round, 13), 90);
+
+        // 反例：若把绝对编号 76 当局部再传，会得到虚高的 153
+        assert_eq!(wake_round_number(start_round, first_cycle_last), 153);
+    }
 }

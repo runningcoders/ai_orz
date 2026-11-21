@@ -315,7 +315,13 @@ async fn run_think(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
             });
             return Ok(NodeSignal::Yield(SIGNAL_CANCELLED.to_string()).into());
         }
-        let round = d.start_round + state.rounds_started;
+        // `rounds_started` 是**本周期内**的 0 基编号：下游 `wake_rounds` /
+        // `wake_round_index` 会统一叠加 `start_round` 换成唤醒级绝对编号，
+        // `state.last_round` 的契约也是局部 0 基。
+        // ⚠️ 绝不能在这里预先加 `start_round`：第二周期 start_round=76 时
+        // 会算成 76+76=152，下游再加一次得到 153，轨迹从 153 起跳（真实
+        // 只跑了 77..90），`sync_usage` 也把预算记账虚增一倍。
+        let round = state.rounds_started;
         state.rounds_started += 1;
         // 取出可变状态：节点内异步调用期间不能持有 std 锁
         (
