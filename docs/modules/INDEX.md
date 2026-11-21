@@ -7,7 +7,7 @@
 > 覆盖三个层：`A-设计`（为什么）· `B-落地方案`（要去哪）· `C-知识`（是什么）。
 > 机器可读版见 `INDEX.json`；Agent 实现需求请从 `docs/AGENT_GUIDE.md` 进入。
 
-**合计 675 篇 / 14,318,310 B**，分布于 15 个模块。
+**合计 675 篇 / 14,318,407 B**，分布于 15 个模块。
 
 ## 模块概览
 
@@ -17,7 +17,7 @@
 | [01-组织与权限](#01-组织与权限) | 4 | 7 | 36 | 47 | 906,320 |
 | [02-Agent运行时](#02-agent运行时) | 11 | 16 | 19 | 46 | 1,272,888 |
 | [03-记忆系统](#03-记忆系统) | 1 | 4 | 13 | 18 | 385,247 |
-| [04-对话与消息](#04-对话与消息) | 8 | 9 | 21 | 38 | 912,229 |
+| [04-对话与消息](#04-对话与消息) | 8 | 9 | 21 | 38 | 912,326 |
 | [05-任务与项目](#05-任务与项目) | 6 | 6 | 53 | 65 | 1,199,549 |
 | [06-工具与技能](#06-工具与技能) | 11 | 14 | 52 | 77 | 1,824,062 |
 | [07-外部Agent(A2A)](#07-外部agenta2a) | 3 | 3 | 20 | 26 | 515,641 |
@@ -287,7 +287,7 @@
 | 10 | [微信 iLink 专属渠道](<04-对话与消息/C-知识/微信 iLink 专属渠道.md>) | 38,871 |
 | 11 | [微信 iLink 专属渠道闭环（wechat_dal + ilink_dao + inbound_state + 授权流程）](<04-对话与消息/C-知识/微信 iLink 专属渠道闭环：wechat_dal + ilink_dao + inbound_state + 授权流程/微信 iLink 专属渠道闭环：wechat_dal + ilink_dao + inbound_state + 授权流程.md>) | 23,805 |
 | 12 | [消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类](<04-对话与消息/C-知识/消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类/消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类.md>) | 44,147 |
-| 13 | [消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级](<04-对话与消息/C-知识/消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级/消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级.md>) | 9,381 |
+| 13 | [消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级](<04-对话与消息/C-知识/消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级/消息出站引用回复：thread_id 继承 + ReplyTarget 反查父消息 + 飞书 reply 端点 + 静默降级.md>) | 9,478 |
 | 14 | [消息处理核心](<04-对话与消息/C-知识/消息处理核心.md>) | 21,767 |
 | 15 | [消息渠道入站适配中台（MessageInboundAdapter + Registry + 生命周期）](<04-对话与消息/C-知识/消息渠道入站适配中台：MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all stop_all 生命周期/消息渠道入站适配中台：MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all stop_all 生命周期.md>) | 46,227 |
 | 16 | [消息渠道管理（业务功能层）](<04-对话与消息/C-知识/消息渠道管理.md>) | 32,206 |

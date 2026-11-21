@@ -165,22 +165,20 @@ impl LarkDaoHttpImpl {
         fetch_token_with_caches(&self.http, &self.token_caches, app_id, app_secret).await
     }
 
-    /// 发送文本消息到指定接收方
+    /// 按给定 msg_type 发送飞书消息（content 为已序列化的 JSON 字符串）
     ///
     /// `receive_id_type` 为飞书接收方类型：`open_id`（私聊用户）或 `chat_id`（群会话）。
     /// 返回飞书 message_id；服务端未给 ID（含字段缺失被 `#[serde(default)]`
     /// 吞成空串）时返回 `None`——空串当成功会产生脏键 `"lark:"`，与微信侧
     /// `None` = 无 ID 的语义对齐。
-    pub async fn send_text_message(
+    async fn send_message(
         &self,
         token: &str,
         receive_id: &str,
         receive_id_type: &str,
-        text: &str,
+        msg_type: &'static str,
+        content: String,
     ) -> Result<Option<String>> {
-        // 飞书文本消息 content：{"text":"消息内容"}
-        let content = serde_json::json!({ "text": text }).to_string();
-
         #[derive(Serialize)]
         struct SendMessageReq<'a> {
             receive_id: &'a str,
@@ -204,7 +202,7 @@ impl LarkDaoHttpImpl {
             .bearer_auth(token)
             .json(&SendMessageReq {
                 receive_id,
-                msg_type: "text",
+                msg_type,
                 content,
             })
             .send()
@@ -227,20 +225,19 @@ impl LarkDaoHttpImpl {
         Ok(Some(data.message_id))
     }
 
-    /// 以「引用回复」形式发送文本消息到指定飞书消息
+    /// 以「引用回复」形式按给定 msg_type 发送飞书消息
     ///
     /// 端点：`POST /open-apis/im/v1/messages/:message_id/reply`。
     /// `reply_in_thread = true` 时以话题形式回复（父消息属于话题时使用）。
-    /// 返回值语义与 [`Self::send_text_message`] 一致（无 message_id 时返回 `None`）。
-    pub async fn reply_text_message(
+    /// 返回值语义与 [`Self::send_message`] 一致（无 message_id 时返回 `None`）。
+    async fn reply_message(
         &self,
         token: &str,
         reply_to_message_id: &str,
-        text: &str,
+        msg_type: &'static str,
+        content: String,
         reply_in_thread: bool,
     ) -> Result<Option<String>> {
-        let content = serde_json::json!({ "text": text }).to_string();
-
         #[derive(Serialize)]
         struct ReplyMessageReq {
             content: String,
@@ -265,7 +262,7 @@ impl LarkDaoHttpImpl {
             .bearer_auth(token)
             .json(&ReplyMessageReq {
                 content,
-                msg_type: "text",
+                msg_type,
                 reply_in_thread,
             })
             .send()
@@ -862,14 +859,17 @@ impl LarkDao for LarkDaoHttpImpl {
         } else {
             None
         };
+        // 统一渲染：markdown 原文走 post + md 标签，空/超限回落 text；
+        // content 为已序列化的飞书原生 JSON 串（见 outbound_render）。
+        let (msg_type, rendered) = super::outbound_render::render_outbound(content);
         let message_id = match reply {
             Some(r) => {
-                self.reply_text_message(&token, &r.message_id, content, r.in_thread)
+                self.reply_message(&token, &r.message_id, msg_type, rendered, r.in_thread)
                     .await?
             }
             None => {
                 let (receive_id, receive_id_type) = receive.expect("reply=None 时已解析");
-                self.send_text_message(&token, receive_id, receive_id_type, content)
+                self.send_message(&token, receive_id, receive_id_type, msg_type, rendered)
                     .await?
             }
         };

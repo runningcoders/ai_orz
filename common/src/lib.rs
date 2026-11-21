@@ -16,6 +16,7 @@ pub mod error;
 pub mod id;
 pub mod llm_schema;
 pub mod markdown_protocol;
+pub mod markdown_render;
 pub mod mention;
 pub mod mime;
 pub mod models;
