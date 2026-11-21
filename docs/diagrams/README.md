@@ -461,6 +461,50 @@
 
 **未做人眼视觉复核**：以上全部是 archify 的自动几何度量，`visualReview` 仍为 `not-requested`。0 交叉 0 超限只说明「几何不违规」，是否真的好看需人眼确认。
 
+### 第 9~16 张重排：收尾批 8 张（2026-11-21）
+
+**起因**：视觉可读性专项收尾批。前 8 张（think-path / tools / aop / memory / ontology / task-project / messaging / infra）已逐张重排入库；本批一次性处理剩余 7 张待修图 + data-model ERD 微调，**改完统一一笔提交**（此前是逐张 commit）。旧基线来源 `work/audit-17`（对入库 HTML 的 `archify check` 实测），终态来源 `work/audit-final2`（对本批落盘 HTML 的同口径复测）——两端同尺，可比。
+
+**前后对比（全部由 `archify check` 量出）**
+
+| 图 | 交叉 | 超限弯道 | maxBends | maxStretch | 标签净空 | 最短线段 | 投影字号 | 画布 |
+|---|---|---|---|---|---|---|---|---|
+| a2a | **4 → 0** | **5 → 0** | 4 → 2 | 1.73 → 1.00 | 15 → 26.8 | 24 → 24 | 7.5 → 7.5 | 1173×692 → 1310×842 |
+| testing | **1 → 0** | **4 → 0** | 4 → 2 | 1.805 → 1.00 | 11 → 20 | 24 → 24 | 7.5 → 7.5 | 1170×692 → 1310×682 |
+| frontend | 0 → 0 | **1 → 0** | 4 → 2 | 1.14 → 1.00 | 6.6 → 20 | 24 → 75 | 7.5 → 7.5 | 1170×692 → 1310×842 |
+| stats | **3 → 0** | **3 → 0** | 4 → 1 | 1.138 → 1.00 | 5 → 68 | 21 → 96 | 7.5 → 7.5 | 1170×692 → 1310×842 |
+| search | 0 → 0 | **4 → 0** | 4 → 2 | 1.318 → 1.00 | 6.6 → 4 | 24 → 24 | 7.5 → 7.5 | 1170×692 → 1426×698 |
+| org-federation | 0 → 0 | **4 → 0** | 4 → 2 | 1.103 → 1.00 | 5 → 20 | 24 → 78 | 7.5 → 7.5 | 1110×692 → 1210×756 |
+| tool-context | 0 → 0 | **1 → 0** | 3 → 2 | 1.194 → 1.00 | 6 → 63 | 24 → 55 | 7.5 → 7.5 | 1230×792 → 1232×790 |
+| data-model | 0 → 0 | 1 → 1 | 3 → 3 | 1.00 → 1.00 | 30 → 30 | 24 → 24 | 8.35 → 8.35 | 1002×1578 不变 |
+
+8 张的 `properCrossings` / `ambiguousCorridors` / `arrowheadCollisions` / `desktopReadabilityIssues` / `labelRouteClearanceIssues` / `microSegmentCount` 全部为 **0**。
+
+**逐张（布局与关键变化）**
+
+- **a2a**：5 列 × 4 行（列距 350、行距 160），16 组件 / 15 连线。旧版 `maxStretch=1.73` 是 8 张里最差的一处——指标本身说明存在被迫绕远路的长回边，重排后 1.00。
+- **testing**：4 列 × 5 行（350 / 160）。旧 `maxStretch=1.805`（全批最差）→ 1.00。
+- **frontend**：4 列 × 5 行（350 / 160）。净空 6.6 → 20，最短线段 24 → 75。
+- **stats**：4 列 × 5 行（350 / 160）。交叉 3 → 0，`maxBends` 4 → **1**（本批唯一降到 1 的图），净空 5 → 68。
+- **search**：手工解——`dao` 居中、8 个邻居成环、`vec` 带三个子节点，5 列 × 4 行（列距 294、行距 170、`x0=10` `y0=56`）。**这是本批唯一一处指标退让**：标签净空 6.6 → **4px**，换取超限弯道 4 → 0。已扫 60 余组参数（列距 / 行距 / 画布偏移），该图「弯道归零」与「净空 ≥6」不可兼得，取前者；`labelRouteClearanceIssues=0`，未触门禁。
+- **org-federation**：4 列 × 5 行（列距 330、行距 142、`y0=56`）。净空 5 → 20，最短线段 24 → 78。
+- **tool-context**：母本缺失、从入库 HTML 逆向重建（见下）。
+- **data-model**：ER 图，仅刷新 `meta.repository.revision`，实体 / 关系 / 布局零变更。**唯一残留**：1 条 3 弯道（`maxBends=3`），扫 `gapX` / `gapY` / `entityW` 20 余组仍无法消除，属 ER 布线固有形态，如实保留、不硬凑。
+
+**tool-context 的重建（本批唯一非「挪坐标」的一张）**
+
+该图的候选稿母本在工作区里不存在（`archify-r17` 无此图），只能从入库 HTML 逆向：16 个节点的 `kind` / `label` / `sublabel` / `tag` / `context` / `rect`、11 条唯一连线（HTML 内 23 条边记录去重后 11 条）、10 个 frame、4 张卡片。三个逆向陷阱记录备查：①节点 `tag` 三段（「声明」「非凭据」「出厂默认」）首版漏掉，必须补回；②原图**没有视图**，它的「①声明层 … ⑤合并与使用」是 5 个 `boundaries`（region 框），不是 `meta.views`——错当视图会凭空多出 5 个不存在的视图；③region 框在 `x0=10` 时左溢出 12px 报 `layout/boundary-out-of-bounds`，整体右移到 `x0=40` 通过；同时 `py=160` 时投影字号 6.03px 触发 `composition/desktop-readability`，`py=142` 才把投影拉回 7.5px。结构等价性已核：原图 vs 新图 **nodes 16 SAME / edges 11 SAME / frames 10 SAME / cards 4 SAME**。
+
+**语义零变更的证明**：6 张有母本可对比的图（a2a / testing / search / frontend / org-federation / stats）逐项比对组件 `label` / `sublabel` / `type` / `size` / `sources`、连线 `(from, to, label, variant)`、`cards`、`views`、`title`、`subtitle`，结果全部 **ZERO_CHANGE**；`meta` 变化键只有 `['repository']` 一项。tool-context 走结构等价性核对；data-model 仅 revision。**本批没有一处文案改动**（前 8 张里 messaging 那次 sublabel 缩短的情形，本批未出现）。
+
+**一并修正的声明值**：8 张的 `meta.repository.revision` 原为孤儿锚点或历史锚点（`a45dd32d` / `715ee557` / tool-context 的 `5ff082fd`），统一改为本分支已推送 HEAD `b5eac4ee07688998ec9eabf198a3e85ec560e9fd`。
+
+**产物自查**：8 张 HTML 体积全部变小（−449 ~ −1760 B）；无本机绝对路径、无外部协议前缀；`docs/diagrams/` 下无 `.json` 收据残留。
+
+**入口三处核对**：`docs/index.html`（卡区 8 处 desc 与模块表 8 行）与 `docs/ARCHITECTURE.md`（导航 8 行与专题表 8 行）描述的都是**视图名**，而 8 张图的组件数 / 连线数 / 卡片数 / 视图数全部未变（tool-context 视图数 0，与原图一致），两处无需改动。本段是本次唯一新增的文档内容。
+
+**未做人眼视觉复核**：以上全部是 archify 的自动几何度量，`visualReview` 仍为 `not-requested`。0 交叉 0 超限只说明「几何不违规」，是否真的好看需人眼确认。
+
 ## 五、维护约定
 
 1. 新增图前先判断抽象层级；同层级才允许并列。
