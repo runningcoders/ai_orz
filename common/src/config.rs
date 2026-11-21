@@ -997,6 +997,68 @@ pub struct BrowserConfig {
     pub max_output_bytes: Option<u64>,
     /// 未安装时的安装引导文案（None → 内置缺省兜底）
     pub install_hint: Option<String>,
+    /// 显式注入 agent-browser 子进程的启动环境变量（key → value，管理员在配置页填写）
+    ///
+    /// 键须为 `AGENT_BROWSER_` 前缀——这是唯一硬约束：本字段经 `exec` 叠加注入子进程，
+    /// 放开非前缀键等于允许覆盖 `PATH` / `LD_PRELOAD` 等系统变量劫持进程。前缀内的
+    /// 具体变量（headed / CDP / 云浏览器 / 密钥等）一律开放，仅在配置页标注风险说明，
+    /// 由管理员自行取舍——与 agent-browser CLI 天然具备的能力对齐。
+    /// `None` = 不额外注入（仅继承服务进程环境，兼容存量 config）。
+    ///
+    /// 注意区分：`command` 是 CLI 本体（agent-browser）路径；本字段中的
+    /// `AGENT_BROWSER_EXECUTABLE_PATH` 是浏览器内核（Chrome / Edge）路径。
+    pub env: Option<HashMap<String, String>>,
+    /// 是否允许 Agent 用 `open` 访问 localhost / 字面内网地址（默认允许）
+    ///
+    /// 默认（None）放行，开箱即可用 Agent 测试本机 dev server / 内网页面——前期效率优先，
+    /// 不为 CLI 本就支持的能力设置默认障碍。仅在配置页显式填 `false` 才收紧为仅公网。
+    /// Agent 调用参数无法覆盖。云元数据端点（169.254.169.254 等）不受此开关影响，
+    /// 任何情况下都拒绝。仅做字面检查，完整边界另见 A-设计红线 17。
+    pub allow_local_network: Option<bool>,
+    /// 禁止执行的 agent-browser 子命令黑名单（None / 空 = 不屏蔽，CLI 全部开放）
+    ///
+    /// 与「默认全开放」定位一致：CLI 天然具备的能力一律可用，管理员只把**明确有风险**的
+    /// 命令列进来屏蔽（如 eval），不必枚举其余全部命令；CLI 升级新增命令默认可用。
+    /// 这是管理员级可选配置，Agent 调用参数无法覆盖。
+    pub disabled_commands: Option<Vec<String>>,
+    /// 是否允许 browser `open` 使用 `file://` 打开本地 HTML（默认放行，可选收紧）
+    ///
+    /// 与 `fs_read`/`fs_write` 的默认作用域对齐：数据根（`base_data_path`）内的本地文件
+    /// 默认可被 Agent 打开渲染。真正的边界是**目录限定**——`file://` 路径必须经
+    /// canonicalize 后落在数据根或 `allowed_file_dirs` 内，数据根外（/etc/passwd、
+    /// 其他用户目录、私钥等）一律拒，这才是防本地数据外带的关键机制，不靠总开关。
+    /// 仅当部署环境需要完全禁用 `file://` 时，管理员才显式填 `false`（Agent 不可覆盖）。
+    pub allow_file_url: Option<bool>,
+    /// `file://` 允许访问的目录白名单（绝对路径或相对 `base_data_path` 的路径）
+    ///
+    /// 仅在 `allow_file_url=true` 时生效。为空时只允许 `base_data_path` 内的文件；
+    /// 配置后叠加允许所列目录。路径经 canonicalize 后按 `starts_with` 校验，符号链接
+    /// 逃逸与 `../` 穿越均被拒。与 fs_read/shell 的 `additional_allowed_paths` 语义一致。
+    pub allowed_file_dirs: Option<Vec<String>>,
+}
+
+/// `desktop` 内置工具配置（存于 `ToolPo.config`）。
+///
+/// 包装 agent-desktop CLI 的配置管理层：只管运行条件（命令路径 / 超时 / 输出上限 /
+/// 安装引导）与可选策略（子命令黑名单），不替用户决定「CLI 哪些功能不许用」。
+/// 与 [`BrowserConfig`] 同族但**各自独立**（工具之间不共享 config 字段）：desktop
+/// 无 URL 入口、无 file:// 场景，故不含 env / allow_local_network / allow_file_url 等字段。
+/// 下沉 common 作为前后端共享 SSOT；键名与 `ToolPo::cli_command` 等通用访问器一致。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[serde(default)]
+pub struct DesktopConfig {
+    /// agent-desktop 二进制名或绝对路径（None → 内置缺省命令兜底）
+    pub command: Option<String>,
+    /// 单次超时（毫秒，None → 内置缺省兜底）
+    pub timeout_ms: Option<u64>,
+    /// 输出截断上限（字节，None → 内置缺省兜底）
+    pub max_output_bytes: Option<u64>,
+    /// 未安装时的安装引导文案（None → 内置缺省兜底）
+    pub install_hint: Option<String>,
+    /// 禁止执行的子命令黑名单（None / 空 = 不屏蔽，CLI 全部开放）
+    ///
+    /// 与 browser 一致：默认全开放，管理员只拉黑明确有风险的命令。Agent 参数无法覆盖。
+    pub disabled_commands: Option<Vec<String>>,
 }
 
 /// 网络搜索工具（`tavily_search` / `doubao_search`）配置（存于 `ToolPo.config`）。

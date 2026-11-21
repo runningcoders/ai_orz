@@ -3,6 +3,7 @@
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::tool_registry::ToolRegistry;
 use crate::pkg::tool_registry::browser::BrowserToolFactory;
+use crate::pkg::tool_registry::desktop::DesktopToolFactory;
 use crate::pkg::tool_registry::doubao_search::DoubaoSearchToolFactory;
 use crate::pkg::tool_registry::fs_read::FsReadToolFactory;
 use crate::pkg::tool_registry::fs_write::FsWriteToolFactory;
@@ -104,6 +105,7 @@ pub static GENERIC_BUILTIN_TOOLS: Lazy<Vec<(String, Box<dyn BuiltinToolFactory>)
                 Box::new(DoubaoSearchToolFactory),
             ),
             ("browser".to_string(), Box::new(BrowserToolFactory)),
+            ("desktop".to_string(), Box::new(DesktopToolFactory)),
             (
                 "mark_artifact".to_string(),
                 Box::new(MarkArtifactToolFactory),
