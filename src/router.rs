@@ -1297,6 +1297,11 @@ fn system_routes() -> Router {
             "/workspace/metrics",
             get(handlers::system::workspace_metrics::get_workspace_metrics_handler),
         )
+        // Scene projection route - 工作台现场语义投影（v1 轮询，v2 换事件流）
+        .route(
+            "/scene/projection",
+            get(handlers::system::scene_projection::get_scene_projection_handler),
+        )
         // Cache admin routes - 进程内 TTL 缓存概览 / 清空 / 清扫
         .route("/cache", get(handlers::system::cache::get_caches_handler))
         .route(

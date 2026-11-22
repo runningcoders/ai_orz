@@ -8,6 +8,7 @@ pub mod cron_trigger;
 pub mod health_metrics;
 pub mod logs;
 pub mod process;
+pub mod scene_projection;
 pub mod seed;
 pub mod storage;
 pub mod task_cleanup;

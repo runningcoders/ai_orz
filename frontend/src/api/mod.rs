@@ -16,6 +16,7 @@ pub mod log_stats;
 pub mod message;
 pub mod organization;
 pub mod project;
+pub mod scene;
 pub mod seed;
 pub mod system;
 pub mod wechat_integration;

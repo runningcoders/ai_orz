@@ -137,6 +137,7 @@ pub mod project;
 #[cfg(test)]
 mod project_test;
 pub mod runtime;
+pub mod scene;
 pub mod seed;
 pub mod skill;
 #[cfg(test)]
@@ -182,6 +183,7 @@ pub use organization::*;
 pub use organization_link::*;
 pub use project::*;
 pub use runtime::*;
+pub use scene::*;
 pub use seed::*;
 pub use skill::*;
 pub use system::*;
