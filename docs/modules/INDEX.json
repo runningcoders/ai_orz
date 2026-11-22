@@ -3,7 +3,7 @@
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
   "total": 675,
-  "total_bytes": 14318595,
+  "total_bytes": 14319486,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -1121,7 +1121,7 @@
           "path": "02-Agent运行时/C-知识/ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板/ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板.md",
           "name": "ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板",
           "title": "ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板",
-          "bytes": 13522
+          "bytes": 13626
         },
         {
           "tier": "C-知识",
@@ -4494,7 +4494,7 @@
           "path": "11-前端应用/C-知识/HTTP工具创建界面.md",
           "name": "HTTP工具创建界面",
           "title": "HTTP工具创建界面",
-          "bytes": 17852
+          "bytes": 17876
         },
         {
           "tier": "C-知识",
@@ -4634,7 +4634,7 @@
           "path": "11-前端应用/C-知识/工具调用标签页.md",
           "name": "工具调用标签页",
           "title": "工具调用标签页",
-          "bytes": 19528
+          "bytes": 19750
         },
         {
           "tier": "C-知识",
@@ -4683,7 +4683,7 @@
           "path": "11-前端应用/C-知识/消息与工作区页面.md",
           "name": "消息与工作区页面",
           "title": "消息与工作区页面",
-          "bytes": 28986
+          "bytes": 29198
         },
         {
           "tier": "C-知识",
@@ -5211,7 +5211,7 @@
           "path": "12-基础设施与部署/C-知识/工具执行日志消费者.md",
           "name": "工具执行日志消费者",
           "title": "工具执行日志消费者",
-          "bytes": 17664
+          "bytes": 17993
         },
         {
           "tier": "C-知识",

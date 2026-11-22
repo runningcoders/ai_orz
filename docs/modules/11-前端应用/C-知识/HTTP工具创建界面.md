@@ -181,8 +181,8 @@ participant TCT as "ToolCallsTab"
 participant API as "工具调用查询"
 participant SYS as "进程列表"
 participant MOD as "Modal(进程详情)"
-SP->>TCT : 传入 project_id/agent_id/refresh_tick
-TCT->>API : 查询最近工具调用(limit=30)
+SP->>TCT : 传入 project_id/agent_id/without_project/refresh_tick
+TCT->>API : 分页查询工具调用(limit=20, offset)
 TCT->>SYS : 获取进程列表
 SYS-->>TCT : processes
 TCT->>TCT : 按 call_id join 运行中PID
