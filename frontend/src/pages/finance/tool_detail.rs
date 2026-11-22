@@ -91,6 +91,9 @@ fn generate_default_value(prop_schema: &serde_json::Value) -> serde_json::Value 
 enum BuiltinConfigForm {
     /// browser：command / timeout_ms / max_output_bytes / install_hint 四字段
     Browser,
+    /// desktop：command / timeout_ms / max_output_bytes / install_hint / disabled_commands
+    /// （`common::config::DesktopConfig`，与 browser 同族但无 env / URL / file 字段）
+    Desktop,
     /// gh_cli：command + 默认超时 / 默认输出上限（`common::config::CliToolConfig`）
     GhCli,
     /// lark_cli：同 `GhCli`（共用 `CliToolConfig`）
@@ -110,6 +113,7 @@ fn builtin_config_form(id: &str) -> Option<BuiltinConfigForm> {
     // 人类可读名，详情页必须用 t.id（"gh_cli" 等）匹配才能命中结构化表单分支。
     match id {
         "browser" => Some(BuiltinConfigForm::Browser),
+        "desktop" => Some(BuiltinConfigForm::Desktop),
         "gh_cli" => Some(BuiltinConfigForm::GhCli),
         "lark_cli" => Some(BuiltinConfigForm::LarkCli),
         "tavily_search" | "doubao_search" => Some(BuiltinConfigForm::SearchTool),
@@ -143,7 +147,146 @@ struct BuiltinConfigFormState {
     toolchain_envs: String,
     /// shell_exec：HOME 策略（isolated / inherit，留空 = 用后端默认）
     home_mode: String,
+    /// browser：启动环境变量行（键从 common 目录下拉选，值按条目形态输入）
+    /// 存 (key, value) 列表；键空行提交时丢弃；与 `common::config::BrowserConfig.env` 对齐
+    browser_env_rows: Vec<(String, String)>,
+    /// browser：是否允许 open 访问 localhost / 内网（两态："true" = 允许；"false" = 拒绝）
+    /// 与 `common::config::BrowserConfig.allow_local_network` 对齐；默认放行，回填时未配置归一为 "true"
+    allow_local_network: String,
+    /// browser：禁止的子命令黑名单（逗号分隔，留空 = 不屏蔽，开放 CLI 全部能力）
+    /// 与 `common::config::BrowserConfig.disabled_commands` 对齐；管理员级可选配置
+    disabled_commands: String,
+    /// browser：是否允许 open 用 file:// 打开本地 HTML（默认放行，仅 false 完全禁用）
+    /// 与 `common::config::BrowserConfig.allow_file_url` 对齐
+    allow_file_url: String,
+    /// browser：file:// 额外允许的目录（逗号分隔，绝对路径或相对 base_data_path），对齐 fs 的 additional_allowed_paths
+    /// 与 `common::config::BrowserConfig.allowed_file_dirs` 对齐
+    allowed_file_dirs: String,
 }
+
+/// browser 环境变量表单的「值输入形态」：与详情接口 DTO 对齐（choices 空 = 文本框）
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum BrowserEnvFormKind {
+    Text,
+    /// 可选项列表（value, 展示文案）；value 空串 = 不设置
+    Choice(Vec<(String, String)>),
+}
+
+/// browser 环境变量目录条目（前端视图模型；来自动态探测 DTO 或 common 静态兜底）
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BrowserEnvFormSpec {
+    key: String,
+    label: String,
+    desc: String,
+    hint: String,
+    kind: BrowserEnvFormKind,
+    advanced: bool,
+    /// 本机探测到的推荐值（value, 展示文案），点击即填入
+    recommended: Vec<(String, String)>,
+    /// 是否来自 CLI 动态文档
+    from_cli: bool,
+    /// 是否允许写入（禁用项只展示）
+    configurable: bool,
+}
+
+/// 从 common 静态兜底目录构建视图列表（CLI 未安装 / 探测失败 / 旧后端时使用）
+fn browser_env_catalog() -> Vec<BrowserEnvFormSpec> {
+    common::models::tool::BROWSER_ENV_CATALOG
+        .iter()
+        .map(|spec| BrowserEnvFormSpec {
+            key: spec.key.to_string(),
+            label: spec.label.to_string(),
+            desc: spec.desc.to_string(),
+            hint: spec.hint.to_string(),
+            kind: match spec.kind {
+                common::models::tool::BrowserEnvKind::Text => BrowserEnvFormKind::Text,
+                common::models::tool::BrowserEnvKind::Choice(options) => {
+                    BrowserEnvFormKind::Choice(
+                        options
+                            .iter()
+                            .map(|(value, label)| ((*value).to_string(), (*label).to_string()))
+                            .collect(),
+                    )
+                }
+            },
+            advanced: spec.advanced,
+            recommended: Vec::new(),
+            from_cli: false,
+            configurable: true,
+        })
+        .collect()
+}
+
+/// 从详情接口带回的探测 DTO 构建视图列表（有 DTO 时优先于静态兜底）
+fn browser_env_catalog_from_probe(
+    probe: &common::api::BrowserEnvProbeDTO,
+) -> Vec<BrowserEnvFormSpec> {
+    probe
+        .entries
+        .iter()
+        .map(|entry| BrowserEnvFormSpec {
+            key: entry.key.clone(),
+            label: entry.label.clone(),
+            desc: entry.desc.clone(),
+            hint: entry.hint.clone(),
+            kind: if entry.choices.is_empty() {
+                BrowserEnvFormKind::Text
+            } else {
+                BrowserEnvFormKind::Choice(
+                    entry
+                        .choices
+                        .iter()
+                        .map(|option| (option.value.clone(), option.label.clone()))
+                        .collect(),
+                )
+            },
+            advanced: entry.advanced,
+            recommended: entry
+                .recommended
+                .iter()
+                .map(|item| (item.value.clone(), item.label.clone()))
+                .collect(),
+            from_cli: entry.from_cli,
+            configurable: entry.configurable,
+        })
+        .collect()
+}
+
+/// 按 key 查当前值形态（用于渲染该行的值输入框 / 下拉）
+fn browser_env_kind(catalog: &[BrowserEnvFormSpec], key: &str) -> BrowserEnvFormKind {
+    catalog
+        .iter()
+        .find(|spec| spec.key == key)
+        .map(|spec| spec.kind.clone())
+        .unwrap_or(BrowserEnvFormKind::Text)
+}
+
+/// 推荐值一键填入：已存在同名行则覆盖，否则新增
+fn upsert_browser_env(mut form: Signal<BuiltinConfigFormState>, key: String, value: String) {
+    let mut state = form.write();
+    if let Some(row) = state.browser_env_rows.iter_mut().find(|(k, _)| k == &key) {
+        row.1 = value;
+    } else {
+        state.browser_env_rows.push((key, value));
+    }
+}
+
+/// 快捷预设：一键填入一组常用环境变量（覆盖式写入同名键，保留其它行）
+/// 浏览器可执行路径不放这里——由后端本机探测出的推荐值在表单顶部一键选择，
+/// 避免在前端写死 macOS 路径（Linux / CI 上会误导）。
+const BROWSER_ENV_PRESETS: &[(&str, &[(&str, &str)])] = &[
+    (
+        "走 HTTP 代理",
+        &[
+            ("AGENT_BROWSER_PROXY", "http://127.0.0.1:7890"),
+            ("AGENT_BROWSER_PROXY_BYPASS", "localhost,127.0.0.1"),
+        ],
+    ),
+    (
+        "CI / 无沙箱",
+        &[("AGENT_BROWSER_ARGS", "--no-sandbox,--disable-dev-shm-usage")],
+    ),
+];
 
 /// 从 detail config 初始化表单（config 非对象 / 字段缺失 → 空串，由占位符提示缺省值）
 fn builtin_form_from_config(config: Option<&serde_json::Value>) -> BuiltinConfigFormState {
@@ -208,6 +351,49 @@ fn builtin_form_from_config(config: Option<&serde_json::Value>) -> BuiltinConfig
         additional_allowed_paths,
         toolchain_envs,
         home_mode: text("home_mode"),
+        allow_local_network: object
+            .get("allow_local_network")
+            .and_then(|v| v.as_bool())
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "true".to_string()),
+        disabled_commands: object
+            .get("disabled_commands")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_default(),
+        allow_file_url: object
+            .get("allow_file_url")
+            .and_then(|v| v.as_bool())
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "true".to_string()),
+        allowed_file_dirs: object
+            .get("allowed_file_dirs")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_default(),
+        // browser：env 对象 → 有序行（按 key 排序，保证回填顺序稳定）
+        browser_env_rows: object
+            .get("env")
+            .and_then(|v| v.as_object())
+            .map(|env| {
+                let mut rows: Vec<(String, String)> = env
+                    .iter()
+                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                    .collect();
+                rows.sort_by(|a, b| a.0.cmp(&b.0));
+                rows
+            })
+            .unwrap_or_default(),
     }
 }
 
@@ -239,6 +425,22 @@ fn merge_builtin_config(
                 "install_hint".to_string(),
                 serde_json::Value::String(form.install_hint.trim().to_string()),
             );
+            insert_browser_env(&mut map, &form.browser_env_rows)?;
+            insert_bool_field(&mut map, "allow_local_network", &form.allow_local_network)?;
+            insert_comma_list(&mut map, "disabled_commands", &form.disabled_commands);
+            insert_bool_field(&mut map, "allow_file_url", &form.allow_file_url)?;
+            insert_comma_list(&mut map, "allowed_file_dirs", &form.allowed_file_dirs);
+        }
+        BuiltinConfigForm::Desktop => {
+            // 与 browser 同族的基础运行参数，但无 env / URL / file 字段
+            insert_command(&mut map, &form.command);
+            insert_positive_number(&mut map, "timeout_ms", &form.timeout_ms);
+            insert_positive_number(&mut map, "max_output_bytes", &form.max_output_bytes);
+            map.insert(
+                "install_hint".to_string(),
+                serde_json::Value::String(form.install_hint.trim().to_string()),
+            );
+            insert_comma_list(&mut map, "disabled_commands", &form.disabled_commands);
         }
         BuiltinConfigForm::GhCli | BuiltinConfigForm::LarkCli => {
             insert_command(&mut map, &form.command);
@@ -383,6 +585,256 @@ fn insert_home_mode(
     Ok(())
 }
 
+/// 布尔字段覆盖：留空不覆盖（保留基底 / 后端默认）；"true"/"false" 写布尔，其余报错
+fn insert_bool_field(
+    map: &mut serde_json::Map<String, serde_json::Value>,
+    key: &str,
+    text: &str,
+) -> Result<(), String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    let value = match trimmed {
+        "true" => true,
+        "false" => false,
+        _ => return Err(format!("config.{key} 只能是 true / false")),
+    };
+    map.insert(key.to_string(), serde_json::Value::Bool(value));
+    Ok(())
+}
+
+/// 逗号分隔字符串 → 字符串数组：留空则删除该键（回退「不限制」默认），去重保序
+fn insert_comma_list(map: &mut serde_json::Map<String, serde_json::Value>, key: &str, text: &str) {
+    let mut seen = std::collections::BTreeSet::new();
+    let items: Vec<serde_json::Value> = text
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty() && seen.insert(s.to_string()))
+        .map(|s| serde_json::Value::String(s.to_string()))
+        .collect();
+    if items.is_empty() {
+        map.remove(key);
+    } else {
+        map.insert(key.to_string(), serde_json::Value::Array(items));
+    }
+}
+
+/// browser env 覆盖：按行写入 env 对象；键空行丢弃，全部为空时删除该键（回退默认）。
+/// 合法性（仅 `AGENT_BROWSER_` 前缀 + 字符串值）统一由 common 的
+/// `validate_builtin_tool_config` → `validate_browser_env` 判定，前端不重复规则（SSOT）。
+/// 风险项（headed / CDP / 凭据等）照常写入——它们在页面附风险说明，由管理员自行取舍。
+fn insert_browser_env(
+    map: &mut serde_json::Map<String, serde_json::Value>,
+    rows: &[(String, String)],
+) -> Result<(), String> {
+    let mut env = serde_json::Map::new();
+    for (key, value) in rows {
+        let key = key.trim();
+        if key.is_empty() {
+            continue;
+        }
+        env.insert(
+            key.to_string(),
+            serde_json::Value::String(value.trim().to_string()),
+        );
+    }
+    if env.is_empty() {
+        map.remove("env");
+    } else {
+        map.insert("env".to_string(), serde_json::Value::Object(env));
+    }
+    Ok(())
+}
+
+/// browser 环境变量单行编辑器（抽出组件以便在正常函数体里做 let 计算，
+/// 避免 RSX 子节点内不能写裸 let 的限制）
+#[component]
+fn BrowserEnvRow(
+    /// 行索引（用于对 config_form 的对应行做原地修改）
+    idx: usize,
+    /// 当前键
+    env_key: String,
+    /// 当前值
+    env_value: String,
+    /// 目录（下拉选项 / 说明来源）
+    catalog: Vec<BrowserEnvFormSpec>,
+    /// 配置表单信号（写入键 / 值 / 删除行）
+    config_form: Signal<BuiltinConfigFormState>,
+) -> Element {
+    let spec = catalog.iter().find(|s| s.key == env_key).cloned();
+    // 风险项（advanced，如 headed / CDP / 凭据）照常可填，仅在说明里标 warning；
+    // 不再有只读禁用——CLI 天然支持这些能力，硬禁只会逼人走 shell_exec 绕过。
+    let kind = browser_env_kind(&catalog, &env_key);
+    let recommendations = spec
+        .as_ref()
+        .map(|entry| entry.recommended.clone())
+        .unwrap_or_default();
+    rsx! {
+        div { class: "mb-3 p-3 rounded-lg border border-base-300/60 bg-base-200/30",
+            div { class: "flex items-start gap-2",
+                div { class: "flex-1 min-w-0 grid grid-cols-1 md:grid-cols-2 gap-2",
+                    // 变量下拉：选项用原生 selected 表达选中态（见 agent_detail.rs 同款处理）
+                    select {
+                        class: "select select-bordered hud-input w-full text-sm",
+                        value: "{env_key}",
+                        onchange: move |e| {
+                            let new_key = e.value();
+                            let mut form = config_form.write();
+                            if let Some(row) = form.browser_env_rows.get_mut(idx) {
+                                // 切换变量时清空旧值，避免留着不匹配的枚举值
+                                row.0 = new_key;
+                                row.1.clear();
+                            }
+                        },
+                        option { value: "", selected: env_key.is_empty(), "— 选择环境变量 —" }
+                        for entry in &catalog {
+                            option {
+                                value: "{entry.key}",
+                                selected: entry.key == env_key,
+                                if entry.advanced {
+                                    "{entry.label} · 高级 / 有风险"
+                                } else {
+                                    "{entry.label}"
+                                }
+                            }
+                        }
+                    }
+                    // 值输入：枚举项下拉 / 其余文本框
+                    match kind {
+                        BrowserEnvFormKind::Choice(options) => rsx! {
+                            select {
+                                class: "select select-bordered hud-input w-full text-sm",
+                                value: "{env_value}",
+                                onchange: move |e| {
+                                    if let Some(row) = config_form.write().browser_env_rows.get_mut(idx) {
+                                        row.1 = e.value();
+                                    }
+                                },
+                                for (value, label) in &options {
+                                    option {
+                                        value: "{value}",
+                                        selected: value == &env_value,
+                                        "{label}"
+                                    }
+                                }
+                            }
+                        },
+                        BrowserEnvFormKind::Text => rsx! {
+                            input {
+                                class: "input input-bordered hud-input w-full font-mono text-sm",
+                                value: "{env_value}",
+                                oninput: move |e| {
+                                    if let Some(row) = config_form.write().browser_env_rows.get_mut(idx) {
+                                        row.1 = e.value();
+                                    }
+                                },
+                                placeholder: spec.as_ref().map(|s| s.hint.as_str()).unwrap_or("值"),
+                            }
+                        },
+                    }
+                }
+                button {
+                    r#type: "button",
+                    class: "btn btn-ghost btn-xs hud-btn mt-1",
+                    title: "移除此变量",
+                    onclick: move |_| {
+                        let mut form = config_form.write();
+                        if idx < form.browser_env_rows.len() {
+                            form.browser_env_rows.remove(idx);
+                        }
+                    },
+                    "✕"
+                }
+            }
+            // 本机探测推荐值：点击直接填入，不用手敲路径
+            if !recommendations.is_empty() {
+                div { class: "mt-2 flex flex-wrap items-center gap-2",
+                    span { class: "text-xs opacity-60", "推荐值：" }
+                    for (value, label) in recommendations {
+                        button {
+                            r#type: "button",
+                            class: "btn btn-xs btn-outline hud-btn",
+                            title: "{value}",
+                            onclick: move |_| {
+                                let mut form = config_form.write();
+                                if let Some(row) = form.browser_env_rows.get_mut(idx) {
+                                    row.1 = value.clone();
+                                }
+                            },
+                            "{label}"
+                        }
+                    }
+                }
+            }
+            // 选中变量后展示含义 + 可填值引导
+            if let Some(entry) = spec {
+                div { class: "mt-2",
+                    HudCallout {
+                        tone: Some(if entry.advanced {
+                            "warning".to_string()
+                        } else {
+                            "info".to_string()
+                        }),
+                        extra_class: Some("py-2 text-xs leading-relaxed".to_string()),
+                        p { class: "font-medium mb-0.5",
+                            "{entry.key}"
+                            if entry.from_cli {
+                                span { class: "badge badge-xs badge-info ml-2", "CLI 提供" }
+                            }
+                            if entry.advanced {
+                                span { class: "badge badge-xs badge-warning ml-1", "有风险，请确认" }
+                            }
+                        }
+                        p { class: "mb-0.5", "{entry.desc}" }
+                        p { class: "opacity-70 mb-0", "{entry.hint}" }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// 探测推荐值总览：把所有变量的本机推荐值提到表单顶部，一键写入对应变量
+#[component]
+fn BrowserDetectedOptions(
+    catalog: Vec<BrowserEnvFormSpec>,
+    config_form: Signal<BuiltinConfigFormState>,
+) -> Element {
+    let detected: Vec<(String, String, String)> = catalog
+        .iter()
+        .flat_map(|entry| {
+            let key = entry.key.clone();
+            entry
+                .recommended
+                .iter()
+                .map(move |(value, label)| (key.clone(), value.clone(), label.clone()))
+        })
+        .collect();
+    if detected.is_empty() {
+        return rsx! {};
+    }
+    rsx! {
+        div { class: "mb-4 p-3 rounded-lg border border-info/30 bg-info/5",
+            p { class: "text-xs font-medium mb-1", "本机探测到的可用选项" }
+            p { class: "text-xs opacity-60 mb-2",
+                "来自 agent-browser 运行环境的实时探测，点击即填入对应变量（可再手改）。"
+            }
+            div { class: "flex flex-wrap gap-2",
+                for (key, value, label) in detected {
+                    button {
+                        r#type: "button",
+                        class: "btn btn-sm btn-outline hud-btn",
+                        title: "{key} = {value}",
+                        onclick: move |_| upsert_browser_env(config_form, key.clone(), value.clone()),
+                        "{label}"
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// 数字字段覆盖：留空不覆盖（保留基底 / 缺省兜底）；非数字原样放置交由 common 校验判定
 fn insert_positive_number(
     map: &mut serde_json::Map<String, serde_json::Value>,
@@ -433,6 +885,38 @@ pub fn FinanceToolDetail(id: String) -> Element {
 
     // 工具配置编辑状态（Builtin 结构化字段；文本输入，提交时统一解析）
     let mut config_form = use_signal(BuiltinConfigFormState::default);
+    // browser env 目录：详情接口的动态探测优先，探测失败 / 旧后端回落 common 静态兜底
+    let env_catalog = tool_res
+        .read()
+        .as_ref()
+        .and_then(|result| result.as_ref().ok())
+        .and_then(|tool| tool.browser_env_probe.as_ref())
+        .map(browser_env_catalog_from_probe)
+        .unwrap_or_else(browser_env_catalog);
+    // 探测来源版本（仅用于表单标注；None = 静态兜底）
+    let browser_probe_version = tool_res
+        .read()
+        .as_ref()
+        .and_then(|result| result.as_ref().ok())
+        .and_then(|tool| tool.browser_env_probe.as_ref())
+        .and_then(|probe| probe.cli_version.clone());
+    let env_catalog_hint = match &browser_probe_version {
+        Some(version) => {
+            // CLI 自带文档只有一张 16 项的环境变量表，内置精选里其余项并非 CLI 实时
+            // 上报——如实标注两个来源，避免让用户误以为整张表都来自当前版本。
+            let cli_count = env_catalog.iter().filter(|entry| entry.from_cli).count();
+            let builtin_count = env_catalog.len().saturating_sub(cli_count);
+            format!(
+                "agent-browser {version} 实时探测 {} 项（标「CLI 提供」）+ 内置精选 {} 项；标「只读」的是 CLI 有但安全策略禁用的项。点击推荐值或预设即可填入，无需手敲。",
+                cli_count, builtin_count
+            )
+        }
+        None => {
+            "目录来自内置兜底（未探测到 agent-browser）；变量名从下方选择，无需手敲。".to_string()
+        }
+    };
+    // 当前 env 行快照（signal 读取建立响应式依赖；clone 避免遍历时持有 borrow 与写入冲突）
+    let browser_env_rows = config_form.read().browser_env_rows.clone();
     let mut config_saving = use_signal(|| false);
     // 用户自建工具（HTTP / Shell）配置编辑状态：直接复用创建页的协议子表单
     // （`HttpToolSubForm` / `ShellToolSubForm`），避免详情页另写一套字段与校验
@@ -625,49 +1109,263 @@ pub fn FinanceToolDetail(id: String) -> Element {
                             if let Some(layout) = builtin_config_form(&t.id) {
                                 // —— Builtin 结构化表单（D28：CLI 命令与行为参数）——
                                 if layout == BuiltinConfigForm::Browser {
-                                    div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
+                                    div { class: "flex flex-col gap-5",
+                                        // —— 基础运行参数 ——
+                                        div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
+                                            div {
+                                                label { class: "label",
+                                                    span { class: "label-text font-medium", "命令 (command)" }
+                                                    span { class: "label-text-alt text-base-content/60", "CLI 本体路径" }
+                                                }
+                                                input {
+                                                    class: "input input-bordered hud-input w-full font-mono text-sm",
+                                                    value: "{config_form.read().command}",
+                                                    oninput: move |e| config_form.write().command = e.value(),
+                                                    placeholder: "agent-browser",
+                                                }
+                                            }
+                                            div {
+                                                label { class: "label",
+                                                    span { class: "label-text font-medium", "安装引导 (install_hint)" }
+                                                }
+                                                input {
+                                                    class: "input input-bordered hud-input w-full text-sm",
+                                                    value: "{config_form.read().install_hint}",
+                                                    oninput: move |e| config_form.write().install_hint = e.value(),
+                                                    placeholder: "brew install agent-browser 或 cargo install agent-browser",
+                                                }
+                                            }
+                                            div {
+                                                label { class: "label",
+                                                    span { class: "label-text font-medium", "超时毫秒 (timeout_ms)" }
+                                                    span { class: "label-text-alt text-base-content/60", "外层进程" }
+                                                }
+                                                input {
+                                                    class: "input input-bordered hud-input w-full text-sm",
+                                                    value: "{config_form.read().timeout_ms}",
+                                                    oninput: move |e| config_form.write().timeout_ms = e.value(),
+                                                    placeholder: "60000",
+                                                }
+                                            }
+                                            div {
+                                                label { class: "label",
+                                                    span { class: "label-text font-medium", "输出上限字节 (max_output_bytes)" }
+                                                }
+                                                input {
+                                                    class: "input input-bordered hud-input w-full text-sm",
+                                                    value: "{config_form.read().max_output_bytes}",
+                                                    oninput: move |e| config_form.write().max_output_bytes = e.value(),
+                                                    placeholder: "262144",
+                                                }
+                                            }
+                                        }
+
+                                        // —— 启动环境变量：探测推荐 + 快捷预设 ——
                                         div {
+                                            p { class: "text-sm font-medium mb-1", "启动环境变量" }
+                                            p { class: "text-xs opacity-60 mb-2", "{env_catalog_hint}" }
+                                            BrowserDetectedOptions {
+                                                catalog: env_catalog.clone(),
+                                                config_form,
+                                            }
+                                            div { class: "flex flex-wrap gap-2",
+                                                for (preset_name, preset_pairs) in BROWSER_ENV_PRESETS {
+                                                    button {
+                                                        r#type: "button",
+                                                        class: "btn btn-sm btn-outline hud-btn",
+                                                        onclick: {
+                                                            let pairs = *preset_pairs;
+                                                            move |_| {
+                                                                let mut form = config_form.write();
+                                                                for (key, value) in pairs {
+                                                                    if let Some(row) = form.browser_env_rows.iter_mut().find(|(k, _)| k == key) {
+                                                                        row.1 = value.to_string();
+                                                                    } else {
+                                                                        form.browser_env_rows.push((key.to_string(), value.to_string()));
+                                                                    }
+                                                                }
+                                                            }
+                                                        },
+                                                        "{preset_name}"
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // —— 启动环境变量：动态行 ——
+                                        div {
+                                            for (idx, (env_key, env_value)) in browser_env_rows.iter().enumerate() {
+                                                BrowserEnvRow {
+                                                    idx,
+                                                    env_key: env_key.clone(),
+                                                    env_value: env_value.clone(),
+                                                    catalog: env_catalog.clone(),
+                                                    config_form,
+                                                }
+                                            }
+                                            button {
+                                                r#type: "button",
+                                                class: "btn btn-sm btn-ghost hud-btn mt-1",
+                                                onclick: move |_| {
+                                                    config_form.write().browser_env_rows.push((String::new(), String::new()));
+                                                },
+                                                "+ 添加环境变量"
+                                            }
+                                        }
+
+                                        // —— 可选配置：禁用的子命令黑名单（留空 = 不屏蔽） ——
+                                        div { class: "border-t border-base-300/60 pt-4",
                                             label { class: "label",
-                                                span { class: "label-text font-medium", "命令 (command)" }
+                                                span { class: "label-text font-medium", "禁用的子命令 (disabled_commands)" }
+                                                span { class: "label-text-alt text-base-content/60", "留空 = 开放全部" }
                                             }
                                             input {
                                                 class: "input input-bordered hud-input w-full font-mono text-sm",
-                                                value: "{config_form.read().command}",
-                                                oninput: move |e| config_form.write().command = e.value(),
-                                                placeholder: "agent-browser",
+                                                value: "{config_form.read().disabled_commands}",
+                                                oninput: move |e| config_form.write().disabled_commands = e.value(),
+                                                placeholder: "留空不屏蔽；如需拉黑填 eval, cookies, ...",
+                                            }
+                                            p { class: "text-xs opacity-60 mt-1",
+                                                "默认开放 agent-browser 的全部命令（含 eval / batch / tab / cookies 等）。只有明确有风险的命令才填进这个逗号分隔的黑名单——不必枚举其余命令，CLI 升级新增命令也默认可用。用 browser 工具而非 shell 的价值在于自动 session 隔离、URL 入口检查与截图产物归档——不是靠禁命令。"
                                             }
                                         }
-                                        div {
+
+                                        // —— 内网访问开关（默认放行，管理员可收紧） ——
+                                        div { class: "border-t border-base-300/60 pt-4",
                                             label { class: "label",
-                                                span { class: "label-text font-medium", "安装引导 (install_hint)" }
+                                                span { class: "label-text font-medium", "本地 / 内网页面访问 (allow_local_network)" }
                                             }
-                                            input {
-                                                class: "input input-bordered hud-input w-full text-sm",
-                                                value: "{config_form.read().install_hint}",
-                                                oninput: move |e| config_form.write().install_hint = e.value(),
-                                                placeholder: "brew install agent-browser 或 cargo install agent-browser",
+                                            select {
+                                                class: "select select-bordered hud-input w-full text-sm",
+                                                value: "{config_form.read().allow_local_network}",
+                                                onchange: move |e| config_form.write().allow_local_network = e.value(),
+                                                option { value: "true", selected: config_form.read().allow_local_network != "false", "允许本地 / 内网（测试场景开箱可用）" }
+                                                option { value: "false", selected: config_form.read().allow_local_network == "false", "明确拒绝本地 / 内网" }
+                                            }
+                                            p { class: "text-xs opacity-60 mt-1",
+                                                "默认允许 Agent 用 open 打开 localhost / 内网地址，方便测试本机 dev server。仅当部署环境需要收紧时选第二项。云元数据端点（169.254.169.254 等）在任何选项下都会被拒绝。此开关只能在此配置，Agent 无法自行打开。"
                                             }
                                         }
-                                        div {
+
+                                        // —— 本地 HTML 文件访问（允许/不允许两种；允许时可配额外目录白名单） ——
+                                        div { class: "border-t border-base-300/60 pt-4",
                                             label { class: "label",
-                                                span { class: "label-text font-medium", "超时毫秒 (timeout_ms)" }
+                                                span { class: "label-text font-medium", "本地 HTML 文件访问 (file://)" }
+                                            }
+                                            select {
+                                                class: "select select-bordered hud-input w-full text-sm",
+                                                value: "{config_form.read().allow_file_url}",
+                                                onchange: move |e| config_form.write().allow_file_url = e.value(),
+                                                option { value: "true", selected: config_form.read().allow_file_url != "false", "允许" }
+                                                option { value: "false", selected: config_form.read().allow_file_url == "false", "完全禁用 file://" }
+                                            }
+                                            label { class: "label mt-2",
+                                                span { class: "label-text font-medium", "额外允许的目录 (allowed_file_dirs)" }
+                                                span { class: "label-text-alt text-base-content/60", "绝对路径或相对数据目录" }
                                             }
                                             input {
-                                                class: "input input-bordered hud-input w-full text-sm",
-                                                value: "{config_form.read().timeout_ms}",
-                                                oninput: move |e| config_form.write().timeout_ms = e.value(),
-                                                placeholder: "60000",
+                                                class: "input input-bordered hud-input w-full font-mono text-sm",
+                                                value: "{config_form.read().allowed_file_dirs}",
+                                                oninput: move |e| config_form.write().allowed_file_dirs = e.value(),
+                                                placeholder: "如 /data/html, /tmp/preview；留空 = 仅数据目录内",
+                                            }
+                                            p { class: "text-xs opacity-60 mt-1",
+                                                "选择允许时，Agent 可用 file:// 打开本地 HTML：数据目录内的文件直接打开；上方白名单里的目录也视为可信、直接打开。其他目录不会硬拒，而是让 Agent 停下来向你请求确认（require_confirmation），你同意后可把目录加进白名单再让它重试。路径校验会拦截符号链接逃逸、../ 穿越和敏感文件。选择完全禁用则 file:// 一律不可用。此开关 Agent 无法自行打开。"
                                             }
                                         }
-                                        div {
+
+                                        // —— 边界说明 ——
+                                        HudCallout {
+                                            tone: Some("info".to_string()),
+                                            extra_class: Some("py-2 text-xs leading-relaxed".to_string()),
+                                            p { class: "font-medium mb-0.5", "边界说明" }
+                                            p { class: "mb-0.5",
+                                                "URL 检查只对 open 入口做字面过滤（协议 / 云元数据），本地内网默认放行；不做 DNS 解析，302 跳转、页面内 fetch、点击跳转不受此检查约束。完整边界靠浏览器级域名白名单（AGENT_BROWSER_ALLOWED_DOMAINS）与部署层网络隔离。"
+                                            }
+                                            p { class: "mb-0.5",
+                                                "仅允许 AGENT_BROWSER_* 前缀变量——这是防 PATH / LD_PRELOAD 劫持子进程的必要边界。前缀内变量全部可配（目录是引导不是白名单）；headed / session / CDP / 云浏览器 / 加密密钥等标为「有风险」，由你自行判断是否启用。"
+                                            }
+                                            p { class: "opacity-70 mb-0",
+                                                "标记为「CLI 提供」的项是 agent-browser 运行时自报的能力，无需我们维护清单；带凭据的代理推荐不会回显。变量值仅作用于本机启动的 browser 会话。"
+                                            }
+                                        }
+                                    }
+                                } else if layout == BuiltinConfigForm::Desktop {
+                                    // desktop：与 browser 同族的基础运行参数 + 子命令黑名单，
+                                    // 无 env / URL / file 字段（agent-desktop 无这些入口）
+                                    div { class: "flex flex-col gap-5",
+                                        div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
+                                            div {
+                                                label { class: "label",
+                                                    span { class: "label-text font-medium", "命令 (command)" }
+                                                    span { class: "label-text-alt text-base-content/60", "CLI 本体路径" }
+                                                }
+                                                input {
+                                                    class: "input input-bordered hud-input w-full font-mono text-sm",
+                                                    value: "{config_form.read().command}",
+                                                    oninput: move |e| config_form.write().command = e.value(),
+                                                    placeholder: "agent-desktop",
+                                                }
+                                            }
+                                            div {
+                                                label { class: "label",
+                                                    span { class: "label-text font-medium", "安装引导 (install_hint)" }
+                                                }
+                                                input {
+                                                    class: "input input-bordered hud-input w-full text-sm",
+                                                    value: "{config_form.read().install_hint}",
+                                                    oninput: move |e| config_form.write().install_hint = e.value(),
+                                                    placeholder: "npm install -g agent-desktop（macOS 需授予辅助功能 / 屏幕录制权限）",
+                                                }
+                                            }
+                                            div {
+                                                label { class: "label",
+                                                    span { class: "label-text font-medium", "超时毫秒 (timeout_ms)" }
+                                                    span { class: "label-text-alt text-base-content/60", "外层进程" }
+                                                }
+                                                input {
+                                                    class: "input input-bordered hud-input w-full text-sm",
+                                                    value: "{config_form.read().timeout_ms}",
+                                                    oninput: move |e| config_form.write().timeout_ms = e.value(),
+                                                    placeholder: "60000",
+                                                }
+                                            }
+                                            div {
+                                                label { class: "label",
+                                                    span { class: "label-text font-medium", "输出上限字节 (max_output_bytes)" }
+                                                }
+                                                input {
+                                                    class: "input input-bordered hud-input w-full text-sm",
+                                                    value: "{config_form.read().max_output_bytes}",
+                                                    oninput: move |e| config_form.write().max_output_bytes = e.value(),
+                                                    placeholder: "262144",
+                                                }
+                                            }
+                                        }
+                                        div { class: "border-t border-base-300/60 pt-4",
                                             label { class: "label",
-                                                span { class: "label-text font-medium", "输出上限字节 (max_output_bytes)" }
+                                                span { class: "label-text font-medium", "禁用的子命令 (disabled_commands)" }
+                                                span { class: "label-text-alt text-base-content/60", "留空 = 开放全部" }
                                             }
                                             input {
-                                                class: "input input-bordered hud-input w-full text-sm",
-                                                value: "{config_form.read().max_output_bytes}",
-                                                oninput: move |e| config_form.write().max_output_bytes = e.value(),
-                                                placeholder: "262144",
+                                                class: "input input-bordered hud-input w-full font-mono text-sm",
+                                                value: "{config_form.read().disabled_commands}",
+                                                oninput: move |e| config_form.write().disabled_commands = e.value(),
+                                                placeholder: "留空不屏蔽；如需拉黑填 sandbox, ...",
+                                            }
+                                            p { class: "text-xs opacity-60 mt-1",
+                                                "默认开放 agent-desktop 的全部命令。只有明确有风险的命令才填进这个逗号分隔的黑名单，CLI 升级新增命令也默认可用。用 desktop 工具而非 shell 的价值在于自动 session 隔离与截图产物归档——不是靠禁命令。"
+                                            }
+                                        }
+                                        HudCallout {
+                                            tone: Some("info".to_string()),
+                                            extra_class: Some("py-2 text-xs leading-relaxed".to_string()),
+                                            p { class: "font-medium mb-0.5", "边界说明" }
+                                            p { class: "mb-0.5",
+                                                "agent-desktop 走 OS 无障碍树（macOS AX / Windows UIA / Linux AT-SPI）读界面，默认 headless 不抢光标/焦点；需物理输入时由 Agent 自行加 --headed。截图需 macOS「屏幕录制」权限。"
+                                            }
+                                            p { class: "opacity-70 mb-0",
+                                                "与 browser 工具同属 agent-browser.dev 家族、在工具页归入同一分组。命令引导用 skills get desktop / skills get platform 从 CLI 自带文档实时获取。"
                                             }
                                         }
                                     }
@@ -1265,6 +1963,99 @@ mod tests {
     use super::*;
 
     #[test]
+    fn browser_env_catalog_prefers_probe_and_falls_back_to_static() {
+        let fallback = browser_env_catalog();
+        assert!(fallback.len() >= 18);
+        assert!(
+            fallback
+                .iter()
+                .all(|entry| !entry.from_cli && entry.recommended.is_empty())
+        );
+
+        let probe = common::api::BrowserEnvProbeDTO {
+            cli_version: Some("0.43.0".to_string()),
+            entries: vec![common::api::BrowserEnvEntryDTO {
+                key: "AGENT_BROWSER_EXECUTABLE_PATH".to_string(),
+                label: "浏览器可执行路径".to_string(),
+                desc: "动态说明".to_string(),
+                hint: "动态提示".to_string(),
+                choices: vec![],
+                recommended: vec![common::api::BrowserEnvOptionDTO {
+                    value: "/bin/edge".to_string(),
+                    label: "Edge".to_string(),
+                }],
+                advanced: false,
+                from_cli: true,
+                configurable: true,
+            }],
+        };
+        let dynamic = browser_env_catalog_from_probe(&probe);
+        assert_eq!(dynamic.len(), 1);
+        assert_eq!(dynamic[0].desc, "动态说明");
+        assert_eq!(dynamic[0].recommended[0].1, "Edge");
+        assert!(dynamic[0].from_cli);
+        assert!(matches!(
+            browser_env_kind(&dynamic, "AGENT_BROWSER_EXECUTABLE_PATH"),
+            BrowserEnvFormKind::Text
+        ));
+
+        let with_choice = common::api::BrowserEnvProbeDTO {
+            entries: vec![common::api::BrowserEnvEntryDTO {
+                key: "AGENT_BROWSER_COLOR_SCHEME".to_string(),
+                choices: vec![common::api::BrowserEnvOptionDTO {
+                    value: "dark".to_string(),
+                    label: "深色".to_string(),
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert!(matches!(
+            browser_env_kind(
+                &browser_env_catalog_from_probe(&with_choice),
+                "AGENT_BROWSER_COLOR_SCHEME"
+            ),
+            BrowserEnvFormKind::Choice(_)
+        ));
+    }
+
+    #[test]
+    fn browser_env_keeps_risk_rows_drops_only_empty_key() {
+        // 风险项（HEADED / STREAM_PORT 等 CLI 原生能力）照常可配，不能丢弃——
+        // 硬禁只会逼人走 shell 绕过。只有空键行（用户开了没填）才跳过。
+        let mut map = serde_json::Map::new();
+        insert_browser_env(
+            &mut map,
+            &[
+                (
+                    "AGENT_BROWSER_EXECUTABLE_PATH".to_string(),
+                    "/bin/edge".to_string(),
+                ),
+                ("AGENT_BROWSER_HEADED".to_string(), "1".to_string()),
+                ("AGENT_BROWSER_STREAM_PORT".to_string(), "9223".to_string()),
+                ("  ".to_string(), "x".to_string()),
+            ],
+        )
+        .unwrap();
+        let env = map.get("env").unwrap().clone();
+        let object = env.as_object().unwrap();
+        assert_eq!(object.len(), 3, "空键丢弃，其余前缀内项全保留");
+        assert_eq!(
+            object.get("AGENT_BROWSER_HEADED").and_then(|v| v.as_str()),
+            Some("1")
+        );
+        assert_eq!(
+            object
+                .get("AGENT_BROWSER_STREAM_PORT")
+                .and_then(|v| v.as_str()),
+            Some("9223")
+        );
+        // 风险项写入后整体 config 仍合法（前缀约束满足）
+        let config = serde_json::json!({ "env": env });
+        assert!(common::models::validate_builtin_tool_config(&config).is_ok());
+    }
+
+    #[test]
     fn merge_builtin_config_never_writes_back_redacted_requirements() {
         // 详情 config 的 credential_requirements 是 redact 占位串；
         // 「保存配置」必须剔除该键（真实声明走顶层字段单独提交）。
@@ -1288,12 +2079,46 @@ mod tests {
     }
 
     #[test]
+    fn merge_desktop_config_writes_only_its_own_fields() {
+        // desktop 配置只写 5 个自有字段，不写入 browser 专属的 env / URL / file 字段
+        let form = BuiltinConfigFormState {
+            command: "agent-desktop".to_string(),
+            timeout_ms: "30000".to_string(),
+            max_output_bytes: "65536".to_string(),
+            install_hint: "npm i -g agent-desktop".to_string(),
+            disabled_commands: "sandbox".to_string(),
+            ..Default::default()
+        };
+        let merged = merge_builtin_config(None, &form, BuiltinConfigForm::Desktop)
+            .expect("合法 config 应通过校验");
+        assert_eq!(merged["command"], "agent-desktop");
+        assert_eq!(merged["timeout_ms"], 30_000);
+        assert_eq!(merged["max_output_bytes"], 65_536);
+        assert_eq!(merged["disabled_commands"], serde_json::json!(["sandbox"]));
+        for browser_only in [
+            "env",
+            "allow_local_network",
+            "allow_file_url",
+            "allowed_file_dirs",
+        ] {
+            assert!(
+                merged.get(browser_only).is_none(),
+                "desktop config 不应写入 browser 专属字段 {browser_only}"
+            );
+        }
+    }
+
+    #[test]
     fn builtin_config_form_matches_factory_ids_not_display_names() {
         // 按工具 id 匹配（非显示名）：详情页据此渲染结构化配置表单，
         // 调用方必须传 t.id（"gh_cli" 等），不能用 t.name（"GitHub CLI" 等）。
         assert_eq!(
             builtin_config_form("browser"),
             Some(BuiltinConfigForm::Browser)
+        );
+        assert_eq!(
+            builtin_config_form("desktop"),
+            Some(BuiltinConfigForm::Desktop)
         );
         assert_eq!(
             builtin_config_form("gh_cli"),
@@ -1432,7 +2257,8 @@ mod tests {
         assert_eq!(form.command, "/usr/local/bin/gh");
         assert_eq!(form.timeout_ms, "30000");
         assert_eq!(form.max_output_bytes, "");
-        // config 缺失 / Null（存量 DB 零迁移兼容）→ 全空表单
+        // config 缺失 / Null（存量 DB 零迁移兼容）→ 全空表单；
+        // 两个布尔开关空串在下拉里由 `!= "false"` 选中「允许」，提交时留空不写入 = 走后端默认 true
         assert_eq!(
             builtin_form_from_config(None),
             BuiltinConfigFormState::default()
@@ -1566,6 +2392,17 @@ mod tests {
                 timeout_ms: "60000".to_string(),
                 max_output_bytes: "262144".to_string(),
                 install_hint: "brew install agent-browser".to_string(),
+                browser_env_rows: vec![
+                    (
+                        "AGENT_BROWSER_EXECUTABLE_PATH".to_string(),
+                        "/usr/bin/chromium".to_string(),
+                    ),
+                    ("AGENT_BROWSER_COLOR_SCHEME".to_string(), "dark".to_string()),
+                ],
+                allow_local_network: "true".to_string(),
+                disabled_commands: "eval, cookies".to_string(),
+                allow_file_url: "true".to_string(),
+                allowed_file_dirs: "/data/html, /tmp/preview".to_string(),
                 ..Default::default()
             },
             BuiltinConfigForm::Browser,
@@ -1575,6 +2412,25 @@ mod tests {
             serde_json::from_value(browser).unwrap();
         assert_eq!(parsed_browser.command.as_deref(), Some("agent-browser"));
         assert_eq!(parsed_browser.max_output_bytes, Some(262_144));
+        assert_eq!(parsed_browser.allow_local_network, Some(true));
+        assert_eq!(
+            parsed_browser.disabled_commands.as_deref(),
+            Some(&["eval".to_string(), "cookies".to_string()][..])
+        );
+        assert_eq!(parsed_browser.allow_file_url, Some(true));
+        assert_eq!(
+            parsed_browser.allowed_file_dirs.as_deref(),
+            Some(&["/data/html".to_string(), "/tmp/preview".to_string()][..])
+        );
+        let env = parsed_browser.env.expect("browser env 应写入");
+        assert_eq!(
+            env.get("AGENT_BROWSER_EXECUTABLE_PATH").map(String::as_str),
+            Some("/usr/bin/chromium")
+        );
+        assert_eq!(
+            env.get("AGENT_BROWSER_COLOR_SCHEME").map(String::as_str),
+            Some("dark")
+        );
 
         let shell = merge_builtin_config(
             None,

@@ -93,6 +93,56 @@ pub struct ToolCredentialSource {
     pub name: String,
 }
 
+/// browser 工具「详情页动态探测」结果（CLI 文档 + 本机推荐 + common 兜底合并）
+///
+/// None = 未探测 / 探测失败，前端回落到 common 静态目录。全部字段 `serde(default)`，
+/// 保证新旧前后端双向兼容。
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct BrowserEnvProbeDTO {
+    /// 探测到的 agent-browser CLI 版本（如 "0.43.0"）
+    pub cli_version: Option<String>,
+    /// 合并后的变量目录：静态兜底项 + CLI 动态发现项
+    pub entries: Vec<BrowserEnvEntryDTO>,
+}
+
+/// 单个变量的展示与输入引导
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct BrowserEnvEntryDTO {
+    /// 环境变量全名
+    pub key: String,
+    /// 中文名（兜底项）/ 说明首句（CLI 发现项）
+    pub label: String,
+    /// 含义说明
+    pub desc: String,
+    /// 示例值 / 可填值提示
+    pub hint: String,
+    /// 有限枚举选项；空 = 自由文本
+    pub choices: Vec<BrowserEnvOptionDTO>,
+    /// 本机探测到的推荐值（可点击填入）
+    pub recommended: Vec<BrowserEnvOptionDTO>,
+    /// 是否高级项
+    pub advanced: bool,
+    /// 是否来自 CLI 动态文档（前端标注来源）
+    pub from_cli: bool,
+    /// 是否允许写入配置（恒为 true）
+    ///
+    /// 所有条目一视同仁可配置：风险项不再只读禁用，只通过 advanced + desc 标提示风险，
+    /// 由管理员自行判断。此 DTO 由前后端共用，故字段对所有条目保持一致。
+    pub configurable: bool,
+}
+
+/// 环境变量的可选项 / 推荐值
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct BrowserEnvOptionDTO {
+    /// 实际写入的值
+    pub value: String,
+    /// 展示文案
+    pub label: String,
+}
+
 /// Get tool response
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GetToolResponse {
@@ -134,6 +184,9 @@ pub struct GetToolResponse {
     pub updated_at: i64,
     /// 统计数据（调用次数 + 失败次数）
     pub stats: Option<crate::models::ToolStats>,
+    /// browser 工具的环境变量动态目录与推荐值（仅 browser 工具有值）
+    #[serde(default)]
+    pub browser_env_probe: Option<BrowserEnvProbeDTO>,
 }
 
 /// Delete tool request

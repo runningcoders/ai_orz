@@ -4,8 +4,8 @@
 //! - 内置同步：browser 随 init_base_data 入库，tags 含 browser + network（network tag 复用）
 //! - 清单级就绪标志（第①层）：runtime_ready 与 agent-browser 可寻址性一致
 //!   （Ready / NotReady{cli_not_installed + 安装引导}）
-//! - debug-call 白名单拒绝：eval / cookies / close --all / screenshot 位置参数
-//!   （校验先于 CLI 预检，与是否安装 agent-browser 无关，断言稳定）
+//! - debug-call 默认不设命令黑名单：CLI 原生能力一律透传，工具层不硬拒
+//!   （仅管理员在工具配置页显式配置 disabled_commands 才屏蔽）
 //! - CLI 未安装统一引导：不可寻址环境 open 调用返回 cli_not_installed 结构化输出；
 //!   已安装环境自动跳过（避免真实浏览器/网络副作用）
 //!
@@ -136,55 +136,21 @@ async fn test_browser_tool_listed_with_readiness(pool: SqlitePool) {
     }
 }
 
-/// 白名单拒绝：脚本执行类（eval）/ 状态泄露类（cookies/storage）/
-/// close --all / screenshot 位置参数——校验先于 CLI 预检，不依赖本机安装状态
+/// 默认不设子命令黑名单：任意命令都透传给 CLI（工具层不硬拒）。
+/// 用一个不存在的子命令验证——它只会让 CLI 报错，不会有真实浏览器副作用，
+/// 关键断言是错误不来自工具层的「黑名单 / 已禁用」拦截。
 #[sqlx::test]
-async fn test_browser_debug_call_whitelist_rejection(pool: SqlitePool) {
+async fn test_browser_debug_call_no_default_command_block(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = crate::common::TestApp::new(pool).await;
     let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
 
-    // 脚本执行类（eval）
-    let result = debug_call(
-        &app,
-        &jwt,
-        json!({ "command": "eval", "args": ["alert(1)"] }),
-    )
-    .await;
-    assert_eq!(result["success"], false);
-    let error = result["error"].as_str().unwrap();
+    let result = debug_call(&app, &jwt, json!({ "command": "bogus_xyz_no_such_cmd" })).await;
+    let error = result["error"].as_str().unwrap_or_default();
     assert!(
-        error.contains("eval") && error.contains("白名单"),
-        "eval rejection: {}",
-        error
+        !error.contains("黑名单") && !error.contains("已被本工具配置禁用"),
+        "默认不应由工具层拦截命令: {error}"
     );
-
-    // 状态泄露类（cookies / storage）
-    for leak in ["cookies", "storage"] {
-        let result = debug_call(&app, &jwt, json!({ "command": leak })).await;
-        assert_eq!(result["success"], false, "{} should be rejected", leak);
-        assert!(
-            result["error"].as_str().unwrap().contains("白名单"),
-            "{} rejection: {}",
-            leak,
-            result["error"]
-        );
-    }
-
-    // close --all 会波及其他 Agent 会话
-    let result = debug_call(&app, &jwt, json!({ "command": "close", "args": ["--all"] })).await;
-    assert_eq!(result["success"], false);
-    assert!(result["error"].as_str().unwrap().contains("--all"));
-
-    // screenshot 位置参数（产物路径由系统管理，防 Agent 指定任意写入路径）
-    let result = debug_call(
-        &app,
-        &jwt,
-        json!({ "command": "screenshot", "args": ["/etc/evil.png"] }),
-    )
-    .await;
-    assert_eq!(result["success"], false);
-    assert!(result["error"].as_str().unwrap().contains("路径"));
 }
 
 /// CLI 未安装统一引导：合法子命令在不可寻址环境返回 cli_not_installed
@@ -201,12 +167,7 @@ async fn test_browser_debug_call_cli_not_installed_guidance(pool: SqlitePool) {
         return;
     }
 
-    let result = debug_call(
-        &app,
-        &jwt,
-        json!({ "command": "open", "args": ["https://example.com"] }),
-    )
-    .await;
+    let result = debug_call(&app, &jwt, json!({ "command": "open https://example.com" })).await;
     assert_eq!(result["success"], false);
     assert_eq!(result["error_code"], "cli_not_installed");
     assert!(result["error"].as_str().unwrap().contains("agent-browser"));

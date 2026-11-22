@@ -7,8 +7,10 @@ use std::sync::{Arc, Mutex};
 
 pub mod agent_identity;
 pub mod browser;
+pub mod browser_env_probe;
 pub mod builtin;
 pub mod cli_lookup;
+pub mod desktop;
 pub mod doubao_search;
 pub mod fs_read;
 pub mod fs_write;
@@ -30,6 +32,8 @@ pub mod tavily_search;
 pub mod tool_readiness;
 pub mod tool_security;
 
+#[cfg(test)]
+mod browser_env_probe_tests;
 #[cfg(test)]
 mod fs_tests;
 #[cfg(test)]

@@ -29,6 +29,7 @@ const GENERIC_BUILTIN_TOOL_IDS: &[&str] = &[
     "tavily_search",
     "doubao_search",
     "browser",
+    "desktop",
     "mark_artifact",
 ];
 

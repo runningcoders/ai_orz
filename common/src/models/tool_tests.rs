@@ -36,6 +36,74 @@ fn builtin_config_validation_rules() {
     // 非对象（含 Null 存量兼容）直接通过
     assert!(validate_builtin_tool_config(&serde_json::Value::Null).is_ok());
     assert!(validate_builtin_tool_config(&json!("text")).is_ok());
+
+    // browser env：目录内键 + 字符串值 → 通过
+    assert!(
+        validate_builtin_tool_config(&json!({
+            "env": {
+                "AGENT_BROWSER_EXECUTABLE_PATH": "/usr/bin/chromium",
+                "AGENT_BROWSER_COLOR_SCHEME": "dark"
+            }
+        }))
+        .is_ok()
+    );
+    // browser allow_local_network：布尔值通过，非布尔拒绝（防绕过配置页直改库注入）
+    assert!(validate_builtin_tool_config(&json!({"allow_local_network": true})).is_ok());
+    assert!(validate_builtin_tool_config(&json!({"allow_local_network": false})).is_ok());
+    assert!(validate_builtin_tool_config(&json!({"allow_local_network": "true"})).is_err());
+    // 唯一硬约束是前缀：系统变量 / 非 AGENT_BROWSER_ 前缀 / 非字符串值 → 拒绝
+    assert!(validate_builtin_tool_config(&json!({"env": {"PATH": "/tmp"}})).is_err());
+    assert!(validate_builtin_tool_config(&json!({"env": {"LD_PRELOAD": "x"}})).is_err());
+    assert!(validate_builtin_tool_config(&json!({"env": {"AGENT_BROWSER_ARGS": 42}})).is_err());
+    assert!(validate_builtin_tool_config(&json!({"env": "not-an-object"})).is_err());
+    // 前缀内变量一律可配（headed / CDP / 凭据 / 组合等「风险项」只提示不拦截）
+    for key in [
+        "AGENT_BROWSER_HEADED",
+        "AGENT_BROWSER_PROVIDER",
+        "AGENT_BROWSER_SESSION",
+        "AGENT_BROWSER_API_TOKEN",
+        "AGENT_BROWSER_REMOTE_DEBUG",
+        "AGENT_BROWSER_CDP",
+    ] {
+        assert!(
+            validate_builtin_tool_config(&json!({"env": {key: "x"}})).is_ok(),
+            "前缀内风险项应可配: {key}"
+        );
+    }
+    // 风险提示仍在（供配置页展示），但不再等同禁止
+    assert!(browser_env_blocked_reason("AGENT_BROWSER_HEADED").is_some());
+    assert!(browser_env_blocked_reason("AGENT_BROWSER_API_TOKEN").is_some());
+    assert!(browser_env_blocked_reason("AGENT_BROWSER_WEBGPU").is_none());
+    // 组合（ALLOWED_DOMAINS + state）也不再拦截——由管理员自行取舍
+    assert!(
+        validate_builtin_tool_config(&json!({"env": {
+            "AGENT_BROWSER_ALLOWED_DOMAINS": "example.com",
+            "AGENT_BROWSER_STATE": "on"
+        }}))
+        .is_ok()
+    );
+    // CLI 动态发现的目录外变量可直接配置，无需改静态目录
+    assert!(validate_builtin_tool_config(&json!({"env": {"AGENT_BROWSER_WEBGPU": "1"}})).is_ok());
+    assert!(browser_env_spec("AGENT_BROWSER_WEBGPU").is_none());
+    // disabled_commands：字符串数组合法，空串 / 非数组拒绝
+    assert!(
+        validate_builtin_tool_config(&json!({"disabled_commands": ["eval", "cookies"]})).is_ok()
+    );
+    assert!(validate_builtin_tool_config(&json!({"disabled_commands": ["eval", ""]})).is_err());
+    assert!(validate_builtin_tool_config(&json!({"disabled_commands": "eval"})).is_err());
+    // file:// 配置：allow_file_url 布尔、allowed_file_dirs 非空字符串数组
+    assert!(validate_builtin_tool_config(&json!({"allow_file_url": true})).is_ok());
+    assert!(validate_builtin_tool_config(&json!({"allow_file_url": "yes"})).is_err());
+    assert!(
+        validate_builtin_tool_config(&json!({"allowed_file_dirs": ["/data/html", "/tmp/p"]}))
+            .is_ok()
+    );
+    assert!(validate_builtin_tool_config(&json!({"allowed_file_dirs": [""]})).is_err());
+    assert!(validate_builtin_tool_config(&json!({"allowed_file_dirs": "/data"})).is_err());
+    // 目录覆盖完整性
+    assert!(browser_env_spec("AGENT_BROWSER_EXECUTABLE_PATH").is_some());
+    assert!(browser_env_spec("AGENT_BROWSER_HEADED").is_none());
+    assert!(!BROWSER_ENV_BLOCKED.is_empty());
 }
 
 #[test]

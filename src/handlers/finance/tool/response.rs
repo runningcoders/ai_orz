@@ -74,6 +74,8 @@ pub(super) fn to_detail(tool: &Tool) -> ToolDetail {
         created_at: tool.po.created_at,
         updated_at: tool.po.updated_at,
         stats: tool.stats.clone(),
+        // 动态探测由 handler 经 `attach_browser_env_probe` 异步补齐
+        browser_env_probe: None,
     }
 }
 
@@ -124,6 +126,21 @@ pub(super) async fn attach_credential_source(
         .flatten()
         .map(|server| server.po.name);
     detail.credential_source = credential_source(tool, server_name);
+}
+
+/// 详情回显补齐 browser 工具的环境变量动态目录（CLI 文档 + 本机推荐 + common 兜底）
+///
+/// best-effort：CLI 未安装 / 探测超时 / 解析失败一律保持 `None`，前端回落静态目录，
+/// 详情接口绝不因此失败。仅对内置 browser 工具执行；探测结果带 60s TTL 缓存。
+pub(super) async fn attach_browser_env_probe(tool: &Tool, detail: &mut ToolDetail) {
+    if tool.po.id != "browser" {
+        return;
+    }
+    let command = serde_json::from_value::<common::config::BrowserConfig>(tool.po.config.clone())
+        .ok()
+        .and_then(|config| config.command);
+    detail.browser_env_probe =
+        crate::pkg::tool_registry::browser_env_probe::probe(command.as_deref()).await;
 }
 
 fn has_config(config: &Value) -> bool {
