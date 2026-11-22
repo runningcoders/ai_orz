@@ -2,6 +2,7 @@ use dioxus::dioxus_core::{Runtime, current_scope_id};
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
+pub mod use_attachments;
 pub mod use_resource;
 pub mod use_workspace_data;
 

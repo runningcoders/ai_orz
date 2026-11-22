@@ -3,6 +3,7 @@ use crate::api::hr::*;
 use crate::api::message::{load_older_messages, poll_new_messages, send_message_to_agent};
 use crate::api::project::{query_projects, query_tasks};
 use crate::components::SearchableSelect;
+use crate::components::avatar_bubble::collapse_avatar_bubble;
 use crate::components::chat::{MessageBubble, TypingIndicator};
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::hud::{HudCard, HudPanel};
@@ -2059,7 +2060,10 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 "刷新"
                                             }
                                         }
-                                        div { class: "agent-chat-messages flex-1 min-h-0 max-h-[65vh] lg:max-h-none",
+                                        div {
+                                            class: "agent-chat-messages flex-1 min-h-0 max-h-[65vh] lg:max-h-none",
+                                            // 头像浮层用展开瞬间的视口锚点，滚动后先收起
+                                            onscroll: move |_| collapse_avatar_bubble(),
                                             // 上拉翻页入口（置于顶部：列表按时间正序，早消息在上）
                                             if msg_has_more() {
                                                 div { class: "flex justify-center pb-1",
