@@ -79,12 +79,22 @@ pub struct PaginationParams {
 }
 
 /// Unified paged query result.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct PagedResult<T> {
     /// Current page items.
     pub items: Vec<T>,
     /// Total count matching query, ignoring pagination.
     pub total: usize,
+}
+
+/// 空页默认值：不要求 `T: Default`（DTO 通常不值得为此加派生）。
+impl<T> Default for PagedResult<T> {
+    fn default() -> Self {
+        Self {
+            items: Vec::new(),
+            total: 0,
+        }
+    }
 }
 
 impl<T> PagedResult<T> {

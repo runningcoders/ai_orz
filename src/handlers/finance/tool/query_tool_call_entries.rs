@@ -13,7 +13,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "query_tool_call_entries",
     name = "Query Tool Call Records",
-    description = "Filter tool call trace records by structured fields (call_id, tool_id, agent_id, task_id, status, started_after/started_before) with a row limit. Returns entries with arguments, results, and timing; use get_tool_call_entry when you already know the call_id.",
+    description = "Filter tool call trace records by structured fields (call_id, tool_id, agent_id, project_id, task_id, status, started_after/started_before) with limit/offset pagination. Returns { items, total } where items carry arguments, results, and timing; use get_tool_call_entry when you already know the call_id.",
     params = "common::api::QueryToolCallEntriesRequest",
     tags = "tool_management"
 )]
@@ -22,7 +22,7 @@ pub async fn query_tool_call_entries(
     ctx: RequestContext,
     params: QueryToolCallEntriesRequest,
 ) -> Result<QueryToolCallEntriesResponse> {
-    let entries = runtime::domain()
+    let page = runtime::domain()
         .tool_execution()
         .query_tool_call_entries(
             ctx,
@@ -31,6 +31,7 @@ pub async fn query_tool_call_entries(
                 agent_id: params.agent_id,
                 agent_ids: common::api::split_csv_ids(params.agent_ids.as_deref()),
                 project_id: params.project_id,
+                without_project: params.without_project.unwrap_or(false),
                 task_id: params.task_id,
                 tool_id: params.tool_id,
                 status: params
@@ -39,10 +40,11 @@ pub async fn query_tool_call_entries(
                 started_after: params.started_after,
                 started_before: params.started_before,
                 limit: params.limit,
+                offset: params.offset.unwrap_or(0),
             },
         )
         .await?;
 
-    let response: QueryToolCallEntriesResponse = entries.into_iter().map(Into::into).collect();
+    let response: QueryToolCallEntriesResponse = page.map(Into::into);
     Ok(crate::redact!(response)?)
 }

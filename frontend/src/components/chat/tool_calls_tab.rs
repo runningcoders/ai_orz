@@ -1,8 +1,8 @@
 //! 工具调用 Tab（聊天信息侧栏）
 //!
-//! 展示最近的工具调用记录（JSONL 扫描查询，limit 30），并与后台进程列表
-//! 按 `call_id` join 出仍在运行的关联进程；点击 PID 徽标弹出进程详情
-//! （复用 ProcessDetailContent）。行头可点击展开查看 input/output 摘要。
+//! 展示工具调用记录（JSONL 索引分页查询，每页 20 条，与「思考轨迹」Tab 同款
+//! 页码页脚），并与后台进程列表按 `call_id` join 出仍在运行的关联进程；点击 PID
+//! 徽标弹出进程详情（复用 ProcessDetailContent）。行头可点击展开查看 input/output 摘要。
 //!
 //! ## 条目卡片：三行布局（对齐「思考轨迹」列表卡片的行结构）
 //!
@@ -32,6 +32,7 @@ use std::time::Duration;
 
 use dioxus::prelude::*;
 
+use super::think_traces_tab::page_bounds;
 use crate::api::finance::query_tool_call_entries;
 use crate::api::system::list_processes;
 use crate::components::avatar_bubble::{AvatarTone, BubbleAlign};
@@ -46,8 +47,19 @@ use common::api::{
     ProcessInfo, QueryToolCallEntriesRequest, ToolCallEntryDetail, ToolCallStatusDto,
 };
 
-/// 工具调用记录查询条数上限（JSONL 扫描开销控制）
-const ENTRY_LIMIT: usize = 30;
+/// 每页条数（与「思考轨迹」Tab 保持一致）
+const PAGE_SIZE: usize = 20;
+
+/// 当前页越界时的回退目标：最后一页的 offset；不需要回退返回 None
+///
+/// 数据被清理后 `offset` 可能已经超过 `total`，继续停在该页只会看到空列表。
+fn fallback_offset(total: usize, page_offset: usize, page_size: usize) -> Option<usize> {
+    if total == 0 || page_offset == 0 {
+        return None;
+    }
+    let last_offset = ((total - 1) / page_size) * page_size;
+    (last_offset < page_offset).then_some(last_offset)
+}
 
 /// 防抖刷新等待时长（毫秒），与 ChatSidePanel 保持一致
 const REFRESH_DEBOUNCE_MS: u64 = 2000;
@@ -117,17 +129,23 @@ pub fn running_pid_badge(pid_by_call: &HashMap<String, u32>, call_id: &str) -> O
 /// 工具调用 Tab
 ///
 /// - `project_id`：项目对话模式时按项目过滤
-/// - `agent_ids`：默认对话模式时按「当前任务出现过的 Agent」集合过滤
-///   （两者均为空时不查询）
+/// - `agent_ids`：按 Agent 集合过滤（保留给显式圈定范围的场景）
+/// - `without_project`：默认对话模式只看未归属项目的游离调用（与默认对话
+///   Agent 列表同属「无项目」口径；三项全空时不查询）
 /// - `refresh_tick`：SSE 消息/手动刷新计数器，变化时防抖 2s 后刷新
 #[component]
 pub fn ToolCallsTab(
     project_id: Option<String>,
     agent_ids: Option<Vec<String>>,
     refresh_tick: u64,
+    /// 仅查询未归属项目的记录（默认对话）
+    #[props(default)]
+    without_project: bool,
 ) -> Element {
     let toast = use_toast();
     let mut entries = use_signal(Vec::<ToolCallEntryDetail>::new);
+    let mut total = use_signal(|| 0usize);
+    let mut offset = use_signal(|| 0usize);
     let mut processes = use_signal(Vec::<ProcessInfo>::new);
     let mut loading = use_signal(|| false);
     let mut loaded = use_signal(|| false);
@@ -139,8 +157,11 @@ pub fn ToolCallsTab(
     let mut detail_pid = use_signal(|| None::<u32>);
 
     // 加载：工具调用记录与进程列表并行请求（代际校验丢弃过期结果）
-    let mut load = move |pid: Option<String>, aids: Option<Vec<String>>, debounce: bool| {
-        if pid.is_none() && aids.as_ref().is_none_or(|ids| ids.is_empty()) {
+    let mut load = move |pid: Option<String>,
+                         aids: Option<Vec<String>>,
+                         page_offset: usize,
+                         debounce: bool| {
+        if pid.is_none() && aids.as_ref().is_none_or(|ids| ids.is_empty()) && !without_project {
             return;
         }
         let my_gen = load_gen() + 1;
@@ -153,20 +174,47 @@ pub fn ToolCallsTab(
                     return;
                 }
             }
-            let req = QueryToolCallEntriesRequest {
+            let mut req = QueryToolCallEntriesRequest {
                 project_id: pid,
                 // 多 Agent 走逗号分隔的单键值（GET query 不支持重复键）
                 agent_ids: aids.map(|ids| ids.join(",")),
-                limit: Some(ENTRY_LIMIT),
+                without_project: without_project.then_some(true),
+                limit: Some(PAGE_SIZE),
+                offset: Some(page_offset),
                 ..Default::default()
             };
-            match query_tool_call_entries(&req).await {
-                Ok(list) => entries.set(list),
-                Err(e) => toast.error(format!("加载工具调用记录失败: {}", e)),
+            let mut page = match query_tool_call_entries(&req).await {
+                Ok(page) => page,
+                Err(e) => {
+                    if load_gen() != my_gen {
+                        return;
+                    }
+                    toast.error(format!("加载工具调用记录失败: {}", e));
+                    loading.set(false);
+                    loaded.set(true);
+                    return;
+                }
+            };
+            // 尾页越界自动回退：数据被清理后当前页可能为空，重取最后一个有数据的页
+            let mut next_offset = page_offset;
+            if page.items.is_empty()
+                && let Some(last_offset) = fallback_offset(page.total, page_offset, PAGE_SIZE)
+            {
+                req.offset = Some(last_offset);
+                if let Ok(fallback) = query_tool_call_entries(&req).await {
+                    page = fallback;
+                    next_offset = last_offset;
+                }
             }
             if load_gen() != my_gen {
                 return;
             }
+            if next_offset != page_offset {
+                offset.set(next_offset);
+            }
+            let page_total = page.total;
+            entries.set(page.items);
+            total.set(page_total);
             loading.set(false);
             loaded.set(true);
         });
@@ -182,7 +230,9 @@ pub fn ToolCallsTab(
     // 供 Modal 内进程变更后重拉 join 数据的参数副本
     let pid_for_change = project_id.clone();
     let aids_for_change = agent_ids.clone();
-    let has_scope = project_id.is_some() || agent_ids.as_ref().is_some_and(|ids| !ids.is_empty());
+    let has_scope = project_id.is_some()
+        || agent_ids.as_ref().is_some_and(|ids| !ids.is_empty())
+        || without_project;
 
     // 范围切换 → 立即加载；refresh_tick 变化 → 防抖刷新
     //
@@ -190,9 +240,9 @@ pub fn ToolCallsTab(
     // `project_id` / `agent_ids` / `refresh_tick` 都是普通 prop —— 只在闭包里读它们，
     // 值变了 effect 也不会重跑（SSE 与周期轮询都推不动这个 Tab）。
     use_effect(use_reactive(
-        (&project_id, &agent_ids, &refresh_tick),
-        move |(pid, aids, tick)| {
-            let scope = format!("{:?}|{:?}", pid, aids);
+        (&project_id, &agent_ids, &without_project, &refresh_tick),
+        move |(pid, aids, without_project, tick)| {
+            let scope = format!("{:?}|{:?}|{}", pid, aids, without_project);
             let scope_changed = prev_scope() != scope;
             let tick_changed = prev_tick() != tick;
             // 修复 E2E-1：仅在值真正变化时写回。Signal::set 不做相等去重，
@@ -204,11 +254,13 @@ pub fn ToolCallsTab(
                 prev_tick.set(tick);
             }
             if scope_changed {
+                offset.set(0);
                 expanded_call_id.set(None);
                 detail_pid.set(None);
-                load(pid, aids, false);
+                load(pid, aids, 0, false);
             } else if tick_changed {
-                load(pid, aids, true);
+                // 刷新当前页：用户翻到第几页就留在第几页
+                load(pid, aids, offset(), true);
             }
         },
     ));
@@ -221,21 +273,37 @@ pub fn ToolCallsTab(
 
     let pid_by_call = join_running_pids(&processes.read());
     let list = entries.read().clone();
+    let total_now = total();
+    let offset_now = offset();
+    let (start_no, end_no) = page_bounds(offset_now, list.len(), total_now);
+    let page_no = offset_now / PAGE_SIZE + 1;
+    let has_prev = offset_now > 0;
+    let has_next = offset_now + list.len() < total_now;
     let refresh_btn_pid = project_id.clone();
     let refresh_btn_aids = agent_ids.clone();
+    // 翻页按钮各自捕获作用域副本
+    let pid_prev = project_id.clone();
+    let aids_prev = agent_ids.clone();
+    let pid_next = project_id.clone();
+    let aids_next = agent_ids.clone();
 
     rsx! {
         div { class: "space-y-2",
             // 头部：计数 + 手动刷新
             div { class: "flex items-center justify-between",
                 span { class: "text-xs text-base-content/60",
-                    "最近 {list.len()} 条工具调用"
+                    "共 {total_now} 条工具调用"
                 }
                 button {
                     class: "btn hud-btn btn-ghost btn-xs",
                     title: "刷新",
                     disabled: loading(),
-                    onclick: move |_| load(refresh_btn_pid.clone(), refresh_btn_aids.clone(), false),
+                    onclick: move |_| load(
+                        refresh_btn_pid.clone(),
+                        refresh_btn_aids.clone(),
+                        offset(),
+                        false,
+                    ),
                     "⟳"
                 }
             }
@@ -372,6 +440,42 @@ pub fn ToolCallsTab(
                     }
                 }
             }
+
+            // 分页（与「思考轨迹」Tab 同款页脚）
+            //
+            // 空页也保留页脚（`offset_now > 0` 分支）：数据被清理导致当前页越界时，
+            // 用户仍能点「上一页」回到有数据的页，而不是被困在空页。
+            if !list.is_empty() || offset_now > 0 {
+                div { class: "flex items-center justify-between pt-1",
+                    span { class: "text-xs text-base-content/60",
+                        "第 {page_no} 页 · {start_no}-{end_no} 条 / 共 {total_now} 条"
+                    }
+                    div { class: "flex gap-1",
+                        button {
+                            class: "btn hud-btn btn-ghost btn-xs",
+                            disabled: !has_prev || loading(),
+                            onclick: move |_| {
+                                let next = offset().saturating_sub(PAGE_SIZE);
+                                offset.set(next);
+                                expanded_call_id.set(None);
+                                load(pid_prev.clone(), aids_prev.clone(), next, false);
+                            },
+                            "上一页"
+                        }
+                        button {
+                            class: "btn hud-btn btn-ghost btn-xs",
+                            disabled: !has_next || loading(),
+                            onclick: move |_| {
+                                let next = offset() + PAGE_SIZE;
+                                offset.set(next);
+                                expanded_call_id.set(None);
+                                load(pid_next.clone(), aids_next.clone(), next, false);
+                            },
+                            "下一页"
+                        }
+                    }
+                }
+            }
         }
 
         // 进程详情弹窗（复用共享组件；进程变更后重拉 join 数据）
@@ -383,7 +487,12 @@ pub fn ToolCallsTab(
                 ProcessDetailContent {
                     pid,
                     on_changed: move |_| {
-                        load(pid_for_change.clone(), aids_for_change.clone(), false);
+                        load(
+                            pid_for_change.clone(),
+                            aids_for_change.clone(),
+                            offset(),
+                            false,
+                        );
                     },
                 }
             }
@@ -499,6 +608,19 @@ mod tests {
         assert!(src.contains(pid_render), "PID 徽标文案不得丢失");
         let pid_call = concat!("running_pid_badge(&pid_by_call", ", &call_id)");
         assert!(src.contains(pid_call), "第二行必须用 PID 判据函数取 pid");
+    }
+
+    #[test]
+    fn fallback_offset_moves_back_to_last_page() {
+        // 45 条、每页 20 → 最后一页 offset=40；当前 offset=60 越界需回退
+        assert_eq!(fallback_offset(45, 60, 20), Some(40));
+        // 40 条时 offset=40 正好是空页，最后一页是 20
+        assert_eq!(fallback_offset(40, 40, 20), Some(20));
+        // 无数据 / 已在第一页：无需回退
+        assert_eq!(fallback_offset(0, 20, 20), None);
+        assert_eq!(fallback_offset(45, 0, 20), None);
+        // 未越界：不干预正常翻页
+        assert_eq!(fallback_offset(45, 20, 20), None);
     }
 
     #[test]

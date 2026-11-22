@@ -243,6 +243,91 @@ fn query_calls_supports_call_id_and_cross_tool_filters() {
 }
 
 #[test]
+fn query_calls_without_project_excludes_scoped_entries() {
+    // 默认对话「工具」Tab：只看未归属项目的游离调用，项目内调用一条都不能带出
+    let temp_dir = tempdir().unwrap();
+    let logger = ToolCallLogger::new(temp_dir.path().to_path_buf());
+
+    let free = ToolCallEntry {
+        call_id: "free-call".to_string(),
+        tool_id: "tool-a".to_string(),
+        tool_name: "Tool A".to_string(),
+        agent_id: Some("agent-1".to_string()),
+        task_id: None,
+        project_id: None,
+        started_at: 1000,
+        finished_at: 1100,
+        duration_ms: 100,
+        input: json!({}),
+        output: None,
+        error: None,
+        status: ToolCallStatus::Completed,
+        metadata: json!(null),
+    };
+    let scoped = ToolCallEntry {
+        call_id: "scoped-call".to_string(),
+        project_id: Some("project-1".to_string()),
+        started_at: 2000,
+        finished_at: 2100,
+        ..free.clone()
+    };
+    logger.log_call(free).unwrap();
+    logger.log_call(scoped).unwrap();
+
+    let results = logger
+        .query_calls(super::logger::ToolCallQuery {
+            without_project: true,
+            limit: Some(10),
+            ..Default::default()
+        })
+        .expect("query should succeed");
+
+    let ids: Vec<&str> = results.iter().map(|e| e.call_id.as_str()).collect();
+    assert_eq!(ids, vec!["free-call"]);
+}
+
+#[test]
+fn query_calls_page_applies_offset_and_reports_total() {
+    // 分页：total 始终是命中总数（不受 limit/offset 影响），items 只取当前窗口
+    let temp_dir = tempdir().unwrap();
+    let logger = ToolCallLogger::new(temp_dir.path().to_path_buf());
+    let entry = |call_id: &str, started_at: u64| ToolCallEntry {
+        call_id: call_id.to_string(),
+        tool_id: "tool-page".to_string(),
+        tool_name: "Tool Page".to_string(),
+        agent_id: Some("agent-1".to_string()),
+        task_id: None,
+        project_id: None,
+        started_at,
+        finished_at: started_at + 100,
+        duration_ms: 100,
+        input: json!({}),
+        output: None,
+        error: None,
+        status: ToolCallStatus::Completed,
+        metadata: json!(null),
+    };
+    for (i, call_id) in ["c1", "c2", "c3"].iter().enumerate() {
+        logger
+            .log_call(entry(call_id, 1_000 + i as u64 * 100))
+            .unwrap();
+    }
+
+    let page = logger
+        .query_calls_page(super::logger::ToolCallQuery {
+            limit: Some(1),
+            offset: 1,
+            ..Default::default()
+        })
+        .expect("paged query should succeed");
+
+    assert_eq!(page.total, 3);
+    assert_eq!(page.items.len(), 1);
+    // 最新优先排序：c3, c2, c1 → offset=1 命中 c2
+    assert_eq!(page.items[0].call_id, "c2");
+}
+
+#[test]
 fn test_multiple_entries_append_correctly() {
     let temp_dir = tempdir().unwrap();
     let base_path = temp_dir.path().to_path_buf();

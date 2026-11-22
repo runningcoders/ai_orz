@@ -122,7 +122,7 @@ fn query_scans_all_agents_without_agent_filter() {
 
 #[test]
 fn query_filters_by_agent_ids_set() {
-    // 默认对话口径：只聚合「当前任务出现过的 Agent」，集合外的 Agent 一条都不能带出
+    // 按 Agent 集合圈定范围，集合外的 Agent 一条都不能带出
     let dir = tempdir().unwrap();
     let base = dir.path();
     let date = today();
@@ -169,6 +169,28 @@ fn query_filters_project_and_scene() {
     );
     assert_eq!(page.total, 1);
     assert_eq!(page.items[0].run_id, "run-1");
+}
+
+#[test]
+fn query_without_project_excludes_project_scoped_runs() {
+    // 默认对话「思考」Tab：只看未归属项目的游离轨迹
+    let dir = tempdir().unwrap();
+    let base = dir.path();
+    let date = today();
+    let mut scoped = entry("run-scoped", "agent-a", 1_000);
+    scoped.project_id = Some("p1".to_string());
+    write_entry(base, "agent-a", &date, &entry("run-free", "agent-a", 2_000));
+    write_entry(base, "agent-a", &date, &scoped);
+
+    let page = query(
+        base,
+        ThinkTraceQuery {
+            without_project: true,
+            ..Default::default()
+        },
+    );
+    assert_eq!(page.total, 1);
+    assert_eq!(page.items[0].run_id, "run-free");
 }
 
 #[test]

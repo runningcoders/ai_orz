@@ -1168,8 +1168,9 @@ mod tests {
             .await
             .expect("runtime query should succeed with context scope");
 
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].call_id, call_id);
+        assert_eq!(results.total, 1);
+        assert_eq!(results.items.len(), 1);
+        assert_eq!(results.items[0].call_id, call_id);
     }
 
     #[tokio::test]

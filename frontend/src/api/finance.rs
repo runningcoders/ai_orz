@@ -355,6 +355,10 @@ pub async fn query_tool_call_entries(
         ("agent_id", params.agent_id.clone()),
         ("agent_ids", params.agent_ids.clone()),
         ("project_id", params.project_id.clone()),
+        (
+            "without_project",
+            params.without_project.map(|v| v.to_string()),
+        ),
         ("task_id", params.task_id.clone()),
         ("tool_id", params.tool_id.clone()),
         // 用 serde 序列化枚举，与后端 QueryToolCallEntriesRequest.status 的反序列化保持一致；
@@ -373,6 +377,7 @@ pub async fn query_tool_call_entries(
             params.started_before.map(|v| v.to_string()),
         ),
         ("limit", params.limit.map(|v| v.to_string())),
+        ("offset", params.offset.map(|v| v.to_string())),
     ]);
     api_get_or_default(&format!("/api/v1/finance/tool-call-entries{}", qs)).await
 }

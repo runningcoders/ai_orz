@@ -29,10 +29,11 @@ pub(crate) fn with_context_scope(
             || query.agent_id.is_some()
             || query.agent_ids.as_ref().is_some_and(|ids| !ids.is_empty())
             || query.project_id.is_some()
+            || query.without_project
             || query.task_id.is_some();
         if !is_admin && !has_explicit_scope {
             return Err(common::error::Error::bad_request(
-                "tool call query requires at least one of call_id / agent_id / agent_ids / project_id / task_id"
+                "tool call query requires at least one of call_id / agent_id / agent_ids / project_id / without_project / task_id"
                     .to_string(),
             ));
         }
@@ -74,6 +75,12 @@ pub(crate) fn with_context_scope(
         ctx.project_id.as_deref(),
         query.project_id.as_deref(),
     )?;
+    // 带项目作用域的 Agent 不能反向索取「无项目」记录（防越权放宽范围）
+    if query.without_project && ctx.project_id.is_some() {
+        return Err(common::error::Error::bad_request(
+            "tool call query without_project conflicts with request context".to_string(),
+        ));
+    }
     ensure_scope_does_not_conflict("task_id", ctx.task_id.as_deref(), query.task_id.as_deref())?;
 
     if let Some(limit) = query.limit
@@ -158,12 +165,14 @@ mod tests {
             agent_id: None,
             agent_ids: None,
             project_id: None,
+            without_project: false,
             task_id: None,
             tool_id: None,
             status: None,
             started_after: None,
             started_before: None,
             limit: None,
+            offset: 0,
         }
     }
 
@@ -219,12 +228,22 @@ mod tests {
 
     #[tokio::test]
     async fn user_member_may_scope_by_agent_ids() {
-        // 对话页默认对话按「当前任务出现过的 Agent」集合查询，也算显式作用域
+        // 按 Agent 集合圈定范围，也算显式作用域
         let ctx = ctx_with(CallerType::User, Some(UserRole::Member as i32), None);
         let mut query = empty_query();
         query.agent_ids = Some(vec!["agent-1".to_string(), "agent-2".to_string()]);
         let merged = with_context_scope(ctx, query).expect("member with agent set scope");
         assert_eq!(merged.agent_ids.as_deref().map(|ids| ids.len()), Some(2));
+    }
+
+    #[tokio::test]
+    async fn user_member_may_scope_by_without_project() {
+        // 默认对话「工具」Tab：只看未归属项目的游离调用，也算显式作用域
+        let ctx = ctx_with(CallerType::User, Some(UserRole::Member as i32), None);
+        let mut query = empty_query();
+        query.without_project = true;
+        let merged = with_context_scope(ctx, query).expect("member with without_project scope");
+        assert!(merged.without_project);
     }
 
     #[tokio::test]

@@ -22,6 +22,7 @@ pub(crate) fn with_context_scope(
             agent_id: query.agent_id.clone(),
             agent_ids: None,
             project_id: None,
+            without_project: false,
             task_id: query.task_id.clone(),
             limit: query.pagination.limit,
             max_limit: MAX_MEMORY_TRACE_QUERY_LIMIT,

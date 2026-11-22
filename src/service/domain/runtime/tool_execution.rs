@@ -302,9 +302,13 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
         &self,
         ctx: RequestContext,
         query: ToolCallQuery,
-    ) -> Result<Vec<ToolCallEntry>> {
+    ) -> Result<common::api::PagedResult<ToolCallEntry>> {
         let query = super::tool_call_query::with_context_scope(ctx, query)?;
-        Ok(self.tool_call_logger.query_calls(query)?)
+        let page = self.tool_call_logger.query_calls_page(query)?;
+        Ok(common::api::PagedResult {
+            items: page.items,
+            total: page.total,
+        })
     }
 
     async fn get_tool_call_entry_by_id(

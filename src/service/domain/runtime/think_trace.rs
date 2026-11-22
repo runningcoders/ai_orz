@@ -644,6 +644,8 @@ pub struct ThinkTraceQuery {
     /// 与 `agent_id` 同时存在时两者都生效（交集）
     pub agent_ids: Option<Vec<String>>,
     pub project_id: Option<String>,
+    /// 仅未归属项目的轨迹（默认对话右侧「思考」Tab 的全量游离视角）
+    pub without_project: bool,
     pub task_id: Option<String>,
     /// 精确匹配某次 run（即 MemoryTrace.id）
     pub run_id: Option<String>,

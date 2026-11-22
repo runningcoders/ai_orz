@@ -7,10 +7,11 @@
 //! 置顶身份（负责人/前台接待恒在首位，方案 A 后行内不再打标）、
 //! 点击进入单 Agent 详情子页。
 //!
-//! 默认对话（无项目）沿用同一组件：置顶 Agent = 前台接待，
-//! 任务列表 = 游离任务 —— 除数据源外与项目模式完全一致。
+//! 默认对话（无项目）沿用同一组件：`all_agents = true` 时名单换成组织内
+//! 全部 Agent（`list_agents` 一次拉全量），置顶 Agent = 前台接待；任务列表
+//! 仍复用面板已拉的游离任务，只用于行内「负责任务」计数与展开区。
 //!
-//! ## 数据口径（对齐 mention_picker::load_project_agents）
+//! ## 数据口径（项目模式，对齐 mention_picker::load_project_agents）
 //! 项目没有成员表，「参与的 Agent」的成员集合 = 置顶 Agent ∪ 任务
 //! assignee（assignee_type==1 去重，用户 assignee 不展示）→ `query_agents(ids)`
 //! 批量取详情。本组件不自己拉任务列表：复用面板已拉取的 `TaskListItem`
@@ -27,12 +28,13 @@ use std::time::Duration;
 use dioxus::prelude::*;
 use wasm_bindgen::JsCast;
 
-use crate::api::hr::query_agents;
+use crate::api::hr::{list_agents, query_agents};
 use crate::components::chat::chat_side_panel::{AgentInfoTab, loading_placeholder};
 use crate::utils::status::{agent_runtime_badge, agent_runtime_text, short_id};
 use crate::utils::{avatar_initials, avatar_status_ring};
 use common::api::{
-    AgentListItem, AgentQueryRequest, GetAgentResponse, PaginationParams, TaskListItem,
+    AgentListItem, AgentQueryRequest, GetAgentResponse, ListAgentsRequest, PaginationParams,
+    TaskListItem,
 };
 
 /// Agent 详情批量查询上限（mention_picker CANDIDATE_LIMIT 同量级；项目任务有限不会触顶）
@@ -79,11 +81,12 @@ fn sort_project_agents(items: &mut [AgentListItem], pinned_agent_id: Option<&str
 /// 侧栏 Agent 列表 Tab
 ///
 /// - `pinned_agent_id`：置顶 Agent（项目模式 = 项目负责人；默认对话 = 前台接待），
-///   既是成员集合来源之一，也恒排列表首位
-/// - `tasks`：面板已拉取的任务列表（assignee 推导成员集合的另一来源）
+///   既是任务模式的成员集合来源之一，也恒排列表首位
+/// - `tasks`：面板已拉取的任务列表（任务模式推导成员集合 / 两种模式都用于行内任务数）
 /// - `refresh_tick`：SSE + 手动刷新计数器，变化时防抖重取 Agent 详情
 /// - `agent_info`：chat 主链路轮询共享的 Agent 详情，详情子页优先消费（id 匹配零请求）
 /// - `agent_stats_tick`：Agent 统计刷新驱动（SSE + 手动 + 30s 周期叠加，透传 AgentInfoTab）
+/// - `all_agents`：true = 组织内全部 Agent（默认对话）；false = 置顶 Agent ∪ 任务 assignee
 #[component]
 pub fn ProjectAgentsTab(
     pinned_agent_id: Option<String>,
@@ -91,95 +94,120 @@ pub fn ProjectAgentsTab(
     refresh_tick: u64,
     agent_info: Signal<Option<GetAgentResponse>>,
     agent_stats_tick: u64,
+    /// 是否展示组织内全部 Agent（默认对话）
+    #[props(default)]
+    all_agents: bool,
 ) -> Element {
-    let agent_ids = agent_ids_from_tasks(&tasks, pinned_agent_id.as_deref());
+    // 成员集合：项目对话 = 置顶 Agent ∪ 任务 assignee；默认对话 = 全部 Agent
+    let member_ids = agent_ids_from_tasks(&tasks, pinned_agent_id.as_deref());
+    // 作用域键：全量模式恒为 "all" —— 游离任务集合变化不该触发全量 Agent 重取；
+    // 任务推导模式按成员集合变化。
+    let scope_key = if all_agents {
+        "all".to_string()
+    } else {
+        member_ids.join(",")
+    };
+    let scope_empty = !all_agents && member_ids.is_empty();
 
     let mut agents = use_signal(Vec::<AgentListItem>::new);
     let mut failed = use_signal(|| false);
+    // 首次加载完成标记：全量模式可能真的一个 Agent 都没有，不能靠「列表为空」判断加载中
+    let mut loaded = use_signal(|| false);
     // 视图状态机：view_agent=Some(id) → Detail；None → list。
     // last_selected 与 view 分离：返回列表时 view 清空但选中高亮保留（T2 §2.6）。
     let mut view_agent = use_signal(|| None::<String>);
     let mut last_selected = use_signal(|| None::<String>);
 
-    // 详情加载 + 刷新：集合变化 → 立即取；refresh_tick 变化 → 防抖重取。
+    // 详情加载 + 刷新：作用域变化 → 立即取；refresh_tick 变化 → 防抖重取。
     // 守卫结构与 ToolCallsTab 一致：仅值真正变化时写回，避免 effect 自触发循环。
-    let mut prev_ids = use_signal(String::new);
+    let mut prev_scope = use_signal(String::new);
     let mut prev_tick = use_signal(|| 0u64);
 
     let mut load_agents = move |ids: Vec<String>, debounce: bool| {
-        if ids.is_empty() {
+        if scope_empty {
             agents.set(Vec::new());
             failed.set(false);
+            loaded.set(true);
             return;
         }
-        // 代际键：防抖窗口内集合再变时，旧请求醒来即丢弃（prev_ids 已被 effect 更新为新键）
-        let key = ids.join(",");
+        // 代际键：全量模式恒为 "all"（任务集合变化不触发重取），任务模式按成员集合
+        let key = if all_agents {
+            "all".to_string()
+        } else {
+            ids.join(",")
+        };
         spawn(async move {
             if debounce {
                 gloo_timers::future::sleep(Duration::from_millis(REFRESH_DEBOUNCE_MS)).await;
-                // 代际校验：防抖窗口内集合又变了，本次过期丢弃
-                if prev_ids() != key {
+                // 代际校验：防抖窗口内作用域又变了，本次过期丢弃
+                if prev_scope() != key {
                     return;
                 }
             }
-            let req = AgentQueryRequest {
-                ids: Some(ids),
-                pagination: PaginationParams {
-                    limit: Some(AGENT_QUERY_LIMIT),
-                    offset: None,
-                },
-                ..Default::default()
+            let result = if all_agents {
+                // 无上限拉全量：侧栏要完整名单，分页语义在这里没有意义
+                list_agents(ListAgentsRequest::default())
+                    .await
+                    .map(|page| page.items)
+            } else {
+                query_agents(&AgentQueryRequest {
+                    ids: Some(ids),
+                    pagination: PaginationParams {
+                        limit: Some(AGENT_QUERY_LIMIT),
+                        offset: None,
+                    },
+                    ..Default::default()
+                })
+                .await
+                .map(|page| page.items)
             };
-            match query_agents(&req).await {
-                Ok(page) => {
-                    agents.set(page.items);
+            match result {
+                Ok(items) => {
+                    agents.set(items);
                     failed.set(false);
                 }
                 Err(_) => failed.set(true),
             }
+            loaded.set(true);
         });
     };
 
-    // ⚠️ 必须用 `use_reactive` 显式声明依赖：`agent_ids` 与 `refresh_tick` 都是普通
+    // ⚠️ 必须用 `use_reactive` 显式声明依赖：`scope_key` 与 `refresh_tick` 都是普通
     // 值 prop，`use_effect` 对它们不订阅 —— 任务集合变了、SSE 与周期 tick 来了都不会刷新
     use_effect(use_reactive(
-        (&agent_ids, &refresh_tick),
-        move |(ids, tick)| {
-            let key = ids.join(",");
-            let ids_changed = prev_ids() != key;
+        (&scope_key, &refresh_tick),
+        move |(key, tick)| {
+            let scope_changed = prev_scope() != key;
             let tick_changed = prev_tick() != tick;
-            if ids_changed {
-                prev_ids.set(key);
+            if scope_changed {
+                prev_scope.set(key);
             }
             if tick_changed {
                 prev_tick.set(tick);
             }
-            if ids_changed {
-                // 项目切换 / 任务集合变化：复位视图与选中高亮，避免残留上个项目的状态
+            if scope_changed {
+                // 项目切换 / 成员集合变化：复位视图与选中高亮，避免残留上个项目的状态
                 view_agent.set(None);
                 last_selected.set(None);
-                load_agents(ids, false);
-            } else if tick_changed && !ids.is_empty() && view_agent().is_none() {
+                loaded.set(false);
+                load_agents(member_ids.clone(), false);
+            } else if tick_changed && !scope_empty && view_agent().is_none() {
                 // 只在列表可见时重取：已点进某个 Agent 详情子页时列表并不在屏上，
                 // 为它批量拉一遍详情纯属浪费（详情子页自己的刷新由 AgentInfoTab 承担）
-                load_agents(ids, true);
+                load_agents(member_ids.clone(), true);
             }
         },
     ));
 
     // ---- 渲染分支（全部 hook 已在上方完成，早退安全）----
 
-    // 加载中：首次未拿到详情（集合非空但一个详情都没有且未失败）
-    if !agent_ids.is_empty() && agents.read().is_empty() && !failed() {
-        return loading_placeholder();
-    }
     if failed() {
         return rsx! {
             div { class: "text-center py-12 text-base-content/60 text-sm", "Agent 信息加载失败" }
         };
     }
     // 空态：既无置顶 Agent 也无任务 assignee（成员集合为空）
-    if agent_ids.is_empty() {
+    if scope_empty {
         return rsx! {
             div { class: "text-center py-12",
                 div { class: "text-sm text-base-content/60", "暂无参与的 Agent" }
@@ -188,6 +216,10 @@ pub fn ProjectAgentsTab(
                 }
             }
         };
+    }
+    // 加载中：首次未拿到详情（作用域非空但还没完成第一次请求）
+    if !loaded() {
+        return loading_placeholder();
     }
     // Detail 视图：返回行 + AgentInfoTab 原样（T2 §2.6：详情滚动位置重置到面板顶部）
     if let Some(agent_id) = view_agent() {
@@ -218,6 +250,13 @@ pub fn ProjectAgentsTab(
     let mut items: Vec<AgentListItem> = agents.read().clone();
     let pinned_id = pinned_agent_id.clone();
     sort_project_agents(&mut items, pinned_id.as_deref());
+
+    // 列表空态：全量模式下组织内确实一个 Agent 都没有（任务模式不会走到这里）
+    if items.is_empty() {
+        return rsx! {
+            div { class: "text-center py-12 text-base-content/60 text-sm", "暂无 Agent" }
+        };
+    }
 
     rsx! {
         div { class: "space-y-0.5",
