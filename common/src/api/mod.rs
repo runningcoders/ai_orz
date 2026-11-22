@@ -111,6 +111,7 @@ pub mod attachment;
 mod attachment_test;
 pub mod auth;
 pub mod background_task;
+pub mod cache;
 pub mod cerebellum;
 pub mod cron_trigger;
 #[cfg(test)]
@@ -161,6 +162,7 @@ pub use background_task::{
     CleanupTasksRequest, CleanupTasksResponse, GetTaskProgressRequest, ListBackgroundTasksRequest,
     ListBackgroundTasksResponse, TaskIdResponse, TaskProgressSnapshot, TaskStatus, TaskType,
 };
+pub use cache::*;
 pub use cerebellum::*;
 pub use cron_trigger::*;
 pub use email_integration::*;

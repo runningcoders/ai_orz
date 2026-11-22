@@ -1,12 +1,16 @@
 //! Handler: GET /api/v1/hr/agents - List all agents with optional status filtering
+//!
+//! 档案字段走 `hr.agent_profiles` 缓存（写路径主动失效），运行时状态每请求
+//! 从 runtime 域实时合并 —— 缓存里不含秒级变化的字段。
+
+use std::collections::HashMap;
 
 use crate::pkg::RequestContext;
-use crate::service::dao::agent::AgentQuery;
-use crate::service::domain::hr::domain;
+use crate::service::domain::hr::agent_profile;
+use crate::service::domain::runtime::domain as runtime_domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{AgentListItem, ListAgentsRequest, PagedResult};
 use common::enums::AgentRuntimeState;
-use common::enums::AgentStatus;
 use common::error::Result;
 
 /// List all AI agents with optional status filtering
@@ -22,40 +26,36 @@ pub async fn list_agents(
     ctx: RequestContext,
     params: ListAgentsRequest,
 ) -> Result<PagedResult<AgentListItem>> {
-    // list 是语法糖：只接受分页，内部固定排除 Deleted
-    let page = domain()
-        .agent_manage()
-        .query(
-            ctx,
-            AgentQuery {
-                exclude_status: Some(AgentStatus::Deleted),
-                pagination: params.pagination,
-                ..Default::default()
-            },
-        )
-        .await?;
+    let profiles = agent_profile::profiles(&ctx).await?;
 
-    Ok(page.map(|agent| {
-        // 从 runtime_info 读取运行时状态
-        let runtime_state = match &agent.runtime_info {
-            Some(info) => info.state as i32,
-            None => AgentRuntimeState::Idle as i32,
-        };
+    // 运行时状态是内存态，始终实时读取；档案不缓存它
+    let runtime: HashMap<String, i32> = runtime_domain()
+        .list_runtime_agents(None, None, None)
+        .into_iter()
+        .map(|(id, info)| (id, info.state as i32))
+        .collect();
 
-        AgentListItem {
-            id: agent.id().to_string(),
-            name: agent.name().to_string(),
-            roles: agent.po.get_roles(),
-            description: if agent.po.description.is_empty() {
-                None
-            } else {
-                Some(agent.po.description.clone())
-            },
-            kind: agent.po.kind.to_string(),
-            model_provider_id: agent.po.model_provider_id.clone(),
-            status: agent.po.status as i32,
-            created_at: agent.po.created_at,
-            runtime_state,
-        }
-    }))
+    let total = profiles.len();
+    let offset = params.pagination.offset.unwrap_or(0);
+    let items: Vec<AgentListItem> = profiles
+        .into_iter()
+        .skip(offset)
+        .take(params.pagination.limit.unwrap_or(usize::MAX))
+        .map(|profile| AgentListItem {
+            runtime_state: runtime
+                .get(&profile.id)
+                .copied()
+                .unwrap_or(AgentRuntimeState::Idle as i32),
+            id: profile.id,
+            name: profile.name,
+            roles: profile.roles,
+            description: profile.description,
+            kind: profile.kind,
+            model_provider_id: profile.model_provider_id,
+            status: profile.status,
+            created_at: profile.created_at,
+        })
+        .collect();
+
+    Ok(PagedResult { items, total })
 }

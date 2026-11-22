@@ -1297,6 +1297,16 @@ fn system_routes() -> Router {
             "/workspace/metrics",
             get(handlers::system::workspace_metrics::get_workspace_metrics_handler),
         )
+        // Cache admin routes - 进程内 TTL 缓存概览 / 清空 / 清扫
+        .route("/cache", get(handlers::system::cache::get_caches_handler))
+        .route(
+            "/cache/{name}/clear",
+            post(handlers::system::cache::clear_cache_handler),
+        )
+        .route(
+            "/cache/{name}/prune",
+            post(handlers::system::cache::prune_cache_handler),
+        )
         // Tool log storage routes - 工具日志存储监控与清理（① 运行时输出层治理）
         .route(
             "/storage/tool-logs",

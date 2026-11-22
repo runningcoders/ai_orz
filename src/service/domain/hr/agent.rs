@@ -5,6 +5,7 @@ use crate::models::skill::Skill;
 use crate::models::tool::Tool;
 use crate::pkg::RequestContext;
 use crate::service::dao::agent::AgentQuery;
+use crate::service::domain::hr::agent_profile;
 use crate::service::domain::hr::{AgentManage, HrDomainImpl};
 use common::enums::{AgentStatus, CallerType};
 use common::error::{Result, bail_err, err};
@@ -430,6 +431,8 @@ impl AgentManage for HrDomainImpl {
         // 仅持久化 Agent 本体，不做任何额外安装。
         log_info!(ctx, "create_agent", "Step 1/2: 创建 Agent 基础信息");
         self.agent_dal.create(ctx.clone(), agent).await?;
+        // 成员集合变化：失效上层名单（实体缓存由 DAO 写路径失效）
+        agent_profile::invalidate_ids();
 
         // ── Step 2/2：补装基础包 ──
         // 出生自带的神经/技能/工具管理包补装（进修语义下的"基础课"）。
@@ -770,7 +773,9 @@ impl AgentManage for HrDomainImpl {
     /// 基础操作：更新 Agent 信息
     async fn update_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<()> {
         let ctx = enrich_ctx!(&ctx, agent);
-        self.agent_dal.update(ctx, agent).await
+        self.agent_dal.update(ctx, agent).await?;
+        agent_profile::invalidate_ids();
+        Ok(())
     }
 
     /// 删除 Agent
@@ -792,7 +797,9 @@ impl AgentManage for HrDomainImpl {
             );
         }
         let ctx = enrich_ctx!(&ctx, agent);
-        self.agent_dal.delete(ctx, agent).await
+        self.agent_dal.delete(ctx, agent).await?;
+        agent_profile::invalidate_ids();
+        Ok(())
     }
 
     /// 状态流转
@@ -865,6 +872,7 @@ impl AgentManage for HrDomainImpl {
             .ok_or_else(|| err!(NotFound, "Agent {} 不存在", agent.po.id))?;
         fresh.po.status = target_status;
         self.agent_dal.update(ctx.clone(), &fresh).await?;
+        agent_profile::invalidate_ids();
         // 同步调用方视图：状态更新，其余字段保持调用方原值（调用方如需最新
         // runtime_config 应重新 get_agent）。
         agent.po.status = target_status;

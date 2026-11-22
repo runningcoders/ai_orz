@@ -1,5 +1,6 @@
 pub mod aop;
 pub mod backup;
+pub mod cache;
 pub mod docs;
 pub mod health;
 pub mod logs;

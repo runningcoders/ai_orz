@@ -5,6 +5,7 @@
 
 pub mod auth;
 pub mod background_task;
+pub mod cache;
 pub mod email_integration;
 pub mod finance;
 pub mod generic_token_integration;
