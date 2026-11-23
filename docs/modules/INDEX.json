@@ -3,7 +3,7 @@
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
   "total": 677,
-  "total_bytes": 14350885,
+  "total_bytes": 14351190,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -4159,7 +4159,7 @@
           "path": "11-前端应用/A-设计/workspace_scene_design.md",
           "name": "workspace_scene_design",
           "title": "工作台现场化设计",
-          "bytes": 14056,
+          "bytes": 14254,
           "status": "草案",
           "scope": [
             "frontend/src/pages/workspace/mod.rs",
@@ -4171,9 +4171,9 @@
             "src/handlers/system/workspace_metrics.rs"
           ],
           "related": [
-            "workspace_topbar_metrics_design.md",
-            "frontend_architecture.md",
-            "ui_design_system.md"
+            "09-统计与监控/A-设计/workspace_topbar_metrics_design.md",
+            "11-前端应用/A-设计/frontend_architecture.md",
+            "11-前端应用/A-设计/ui_design_system.md"
           ]
         },
         {
@@ -4431,7 +4431,7 @@
           "path": "11-前端应用/B-落地方案/工作台现场化实施方案.md",
           "name": "工作台现场化实施方案",
           "title": "工作台现场化实施方案",
-          "bytes": 17343,
+          "bytes": 17450,
           "status": "已完成",
           "scope": [
             "common/src/api/scene.rs",
@@ -4439,9 +4439,9 @@
             "frontend/src/pages/workspace"
           ],
           "related": [
-            "workspace_scene_design.md",
-            "workspace_topbar_metrics_design.md",
-            "canvas_rendering_playbook.md"
+            "11-前端应用/A-设计/workspace_scene_design.md",
+            "09-统计与监控/A-设计/workspace_topbar_metrics_design.md",
+            "11-前端应用/A-设计/canvas_rendering_playbook.md"
           ]
         },
         {

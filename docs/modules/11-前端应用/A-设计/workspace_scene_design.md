@@ -13,9 +13,9 @@ scope:
 - common/src/enums/agent.rs
 - src/handlers/system/workspace_metrics.rs
 related:
-- workspace_topbar_metrics_design.md
-- frontend_architecture.md
-- ui_design_system.md
+- 09-统计与监控/A-设计/workspace_topbar_metrics_design.md
+- 11-前端应用/A-设计/frontend_architecture.md
+- 11-前端应用/A-设计/ui_design_system.md
 ---
 
 # 工作台现场化设计
@@ -25,9 +25,9 @@ related:
 > 查阅场景：评审工作台形态、决定 v1 范围、讨论流式/实时数据接入时打开
 >
 > 关联文档：
-> - [工作台顶栏聚合指标设计](workspace_topbar_metrics_design.md) — 已有的聚合端点先例
-> - [前端架构](frontend_architecture.md) — 路由与页面组织
-> - [UI 设计系统](ui_design_system.md) — HUD 视觉规范
+> - [工作台顶栏聚合指标设计](docs/modules/09-统计与监控/A-设计/workspace_topbar_metrics_design.md) — 已有的聚合端点先例
+> - [前端架构](docs/modules/11-前端应用/A-设计/frontend_architecture.md) — 路由与页面组织
+> - [UI 设计系统](docs/modules/11-前端应用/A-设计/ui_design_system.md) — HUD 视觉规范
 
 ---
 
@@ -116,7 +116,7 @@ v1 全景不做「分区」：现有数据里没有可靠的空间/区域概念�
 | 全屏 Canvas 关系图层 | [workspace/scene/canvas.rs](frontend/src/pages/workspace/scene/canvas.rs) | 数据为 6 个模拟节点，力导向决定位置 |
 | 运行时三态徽标 | [workspace/hud.rs](frontend/src/pages/workspace/hud.rs)、[status.rs](frontend/src/utils/status.rs#L192-L226) | 只表达「在忙/在睡」，不表达「等你」 |
 | 运行时状态枚举 | [agent.rs](common/src/enums/agent.rs#L102-L130) | 无 Waiting / Stalled，也无维度 |
-| 聚合指标端点 | [workspace_topbar_metrics_design.md](docs/modules/11-前端应用/A-设计/workspace_topbar_metrics_design.md) | 无「需要我」维度 |
+| 聚合指标端点 | [workspace_topbar_metrics_design.md](docs/modules/09-统计与监控/A-设计/workspace_topbar_metrics_design.md) | 无「需要我」维度 |
 | 对话页面 | [chat.rs](frontend/src/pages/message/chat.rs) | 独立路由，非景深层 |
 
 ---
