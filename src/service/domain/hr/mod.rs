@@ -6,6 +6,7 @@
 //! - Skill - 技能管理
 
 pub mod agent;
+pub mod agent_profile;
 pub mod ontology;
 pub mod skill;
 

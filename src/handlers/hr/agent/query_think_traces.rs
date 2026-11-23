@@ -35,6 +35,7 @@ pub async fn query_think_traces(
                 agent_id: params.agent_id,
                 agent_ids: common::api::split_csv_ids(params.agent_ids.as_deref()),
                 project_id: params.project_id,
+                without_project: params.without_project.unwrap_or(false),
                 task_id: params.task_id,
                 run_id: params.run_id,
                 scene: params.scene,

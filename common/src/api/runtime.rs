@@ -130,6 +130,13 @@ pub struct QueryThinkTracesRequest {
     #[param(source = "query")]
     #[serde(default)]
     pub project_id: Option<String>,
+    /// 仅返回未归属项目的轨迹（`project_id` 为空）
+    ///
+    /// 默认对话没有项目维度，右侧「思考」Tab 用它聚合全部游离轨迹
+    /// （与 `project_id` 同时给出时结果必为空，前端不会这样传）。
+    #[param(source = "query")]
+    #[serde(default)]
+    pub without_project: Option<bool>,
     /// 按任务过滤（仅 2026-10-22 之后写入的轨迹带该字段）
     #[param(source = "query")]
     #[serde(default)]

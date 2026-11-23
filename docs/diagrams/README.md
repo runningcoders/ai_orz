@@ -17,19 +17,19 @@
 | 文件 | 层级 | 讲什么 | 视图 | 对应知识库模块 |
 |---|---|---|---|---|
 | [ai-orz-architecture.html](./ai-orz-architecture.html) | 容器级总图 | 三级 workspace、四层单向调用、存储与外部系统、认知架构分层 | 主请求路径 / 异步与 Agent 运行时 / 持久化 | 00-总览与架构 |
-| [ai-orz-think-path.html](./ai-orz-think-path.html) | 组件级 | 两阶段唤醒 → 小脑决策契约（entry_gate / entry_pool / chain_reply, close_default）→ 思考中注入新输入 → 三层预算循环（跨周期 RoundCollected 收集）→ 七相位图引擎 → 两段式落盘（增量 + 收尾，TraceFinishGuard 五条退出路径兜底 close 行）→ 前端时间线；轨迹查询走 `.jsonl.idx` 旁车索引（索引过滤 + seek 命中行）；含思考强度判相对偏移、先验与兜底分离 | 一轮思考 / 两阶段唤醒 / 轨迹链路 / 认知分层 | 02-Agent运行时 |
+| [ai-orz-think-path.html](./ai-orz-think-path.html) | 组件级 | 两阶段唤醒 → 小脑决策契约（entry_gate / entry_pool / chain_reply, close_default）→ 思考中注入新输入 → 三层预算循环（跨周期 RoundCollected 收集）→ 七相位图引擎 → 两段式落盘（增量 + 收尾，TraceFinishGuard 五条退出路径兜底 close 行）→ 前端时间线；轨迹查询走 `.jsonl.idx` 旁车索引（索引过滤 + seek 命中行），返回契约为 PagedResult（items + total，total 取自索引命中数），作用域新增 `without_project` 无项目口径（带 ctx.project_id 时拒绝）；含思考强度判相对偏移、先验与兜底分离 | 一轮思考 / 两阶段唤醒 / 轨迹链路 / 认知分层 | 02-Agent运行时 |
 | [ai-orz-tools.html](./ai-orz-tools.html) | 组件级 | CoreTool 三协议路由（Builtin / HTTP / MCP）+ 工具级凭据契约与身份注入 + 策略拦截与六态授权 + 技能包装配 | 三层调用 / 策略与授权 / 注册与装配 | 06-工具与技能 |
 | [ai-orz-tool-context.html](./ai-orz-tool-context.html) | 组件级 | 工具调用中的上下文（身份）数据流转：声明（`CredentialKind` 的 `UserInfo` / `AgentInfo` 两个非凭据变体 + `field` 白名单 + `binding` 四注入点）→ 解析（`is_identity` 二元分派 + 未命中按来源分叉）→ 注入（`check` 注入 + `base_env` 九键末位硬 insert）→ 使用（git 子进程 4 个 `GIT_*` / commit-msg hook） | 四层主链路 / 失败语义分叉 / 注入与优先级 / 落点实证 | 06-工具与技能 |
 | [ai-orz-aop.html](./ai-orz-aop.html) | 组件级 | pkg/aop 六 Trait + Registry 单例 + 12 类业务消费者（18 处注册 / 8 Sync + 10 Async）+ 3 类 tick 生产者 + context_carrier 贯穿 | 一次事件流转 / 启动顺序 / 生产者与兜底 | 10-异步基建(AOP) |
 | [ai-orz-memory.html](./ai-orz-memory.html) | 组件级 | 四层记忆（Core / Working / Short / Long）+ 两条 JSONL（writer + 旁车索引）+ 三路召回 + 短期记忆索引分层 + 睡眠沉淀 | 四层记忆 / 存储面 / 检索与沉淀 | 03-记忆系统 |
 | [ai-orz-ontology.html](./ai-orz-ontology.html) | 组件级 | 受控词表 TBox + 属性定义与门闩 + 骨架三元组 + 漂移与有效性治理（口径与现网 `get_ontology_drift_dashboard` / `get_property_effectiveness` 同源） | 读侧链路 / 写入门闩 / 治理面 | 00-总览与架构 |
 | [ai-orz-org-federation.html](./ai-orz-org-federation.html) | 组件级 | 多级组织 + UserRole 并查集继承 + JWT 双模式 + 身份凭证 + 配对码建联与跨组织签名 | 组织与角色 / 认证与凭证 / 联邦组网 | 01-组织与权限 |
-| [ai-orz-task-project.html](./ai-orz-task-project.html) | 组件级 | TaskStatus 六态（含 PendingReview=5）+ 验收闭环 + dependencies DAG + execution_plan / result 增量 + Project 五字段注入 | 任务状态机 / DAG 与唤醒 / 项目聚合 | 05-任务与项目 |
+| [ai-orz-task-project.html](./ai-orz-task-project.html) | 组件级 | TaskStatus 六态（含 PendingReview=5）+ 验收闭环 + dependencies DAG + execution_plan / result 增量 + Project 五字段注入；看板/工作台落 `frontend/src/pages/workspace/`（三栏布局 + 固定席位场，`WorkspaceView` 四变体）| 任务状态机 / DAG 与唤醒 / 项目聚合 | 05-任务与项目 |
 | [ai-orz-messaging.html](./ai-orz-messaging.html) | 组件级 | 渠道入站归一化 → 路由策略（含回复仲裁与协作压力）→ 入站过滤（规则门 + 小脑相关性门，渠道无关）→ MessageDomain（builder / delivery）→ 出站媒体分类（MIME 单点判定 / 超限跳过）→ 附件字节流与正文引用 → DAL/DAO → SSE 与唤醒 | 入站与路由 / 编排与投递 / 存储与唤醒 | 04-对话与消息 |
 | [ai-orz-a2a.html](./ai-orz-a2a.html) | 组件级 | Agent Card + JSON-RPC 四方法 + 协议映射与回调 + 30s 轮询兜底 + 联邦签名 | 协议入口 / 结果与兜底 / 联邦与长连接 | 07-外部Agent(A2A) |
 | [ai-orz-search.html](./ai-orz-search.html) | 组件级 | FTS5 全文 + 向量检索 + 图谱遍历三路召回 + 属性精确过滤 + `ids` 直取与 `include_retired` / `include_history` 受控出口 | 工具入口 / 三路召回 / 存储面 | 08-搜索 |
 | [ai-orz-stats.html](./ai-orz-stats.html) | 组件级 | 业务事件 → AOP 同步消费 → 四类指标落库（含按时序桶的耗时统计）→ 采集器落 pkg/stats/runtime（全局单例，handler 直读）→ 监控 API 与看板 | 采集 / 聚合 / 读取与看板 | 09-统计与监控 |
-| [ai-orz-frontend.html](./ai-orz-frontend.html) | 组件级 | Dioxus WASM 入口 / 路由 / 页面 / HUD / API 客户端 + 产物预览（HtmlPreview 唯一渲染出口） + build.rs 产物 | 应用骨架 / 页面与组件 / 数据与产物 | 11-前端应用 |
+| [ai-orz-frontend.html](./ai-orz-frontend.html) | 组件级 | Dioxus WASM 入口 / 路由（45 条）/ 页面模块（72 个 .rs）/ HUD / API 客户端 + 产物预览（HtmlPreview 唯一渲染出口）+ 工作台现场化（workspace/ 十模块，固定席位场 + 5s 场景投影轮询）+ 缓存管理页 + build.rs 产物 | 应用骨架 / 页面与组件 / 数据与产物 | 11-前端应用 |
 | [ai-orz-infra.html](./ai-orz-infra.html) | 组件级 | 配置 → 连接池与迁移 → 路径与 JSONL（pkg/jsonl：writer + sidecar）→ 向量重建三档 → 后台任务 → 打包发布 | 启动与配置 / 运行期资源 / 构建与发布 | 12-基础设施与部署 |
 | [ai-orz-data-model.html](./ai-orz-data-model.html) | ER 图（表级） | 三族九表：身份 / 工作 / 知识图谱，字段取自现网 SQLite schema | 身份与组织 / 任务与消息 / 知识图谱三件套 | 13-数据模型 |
 | [ai-orz-testing.html](./ai-orz-testing.html) | 组件级 | fmt / clippy / test / docs_lint / inline-test-lint 五道门禁 + 护栏用例 | 门禁组合 / 测试分层 / 文档与索引 | 14-测试 |
@@ -504,6 +504,63 @@
 **入口三处核对**：`docs/index.html`（卡区 8 处 desc 与模块表 8 行）与 `docs/ARCHITECTURE.md`（导航 8 行与专题表 8 行）描述的都是**视图名**，而 8 张图的组件数 / 连线数 / 卡片数 / 视图数全部未变（tool-context 视图数 0，与原图一致），两处无需改动。本段是本次唯一新增的文档内容。
 
 **未做人眼视觉复核**：以上全部是 archify 的自动几何度量，`visualReview` 仍为 `not-requested`。0 交叉 0 超限只说明「几何不违规」，是否真的好看需人眼确认。
+
+### 2026-11-23 增量同步（3 张重渲染，revision → `a5c4bc26`）
+
+**判定口径**：`archify-source-evidence-data` 的 `nodes{}` 引用路径清单 × **本批全量 diff 路径**（`git diff --name-only origin/main...HEAD`，76 条）求交得 per-图 touched 数。旧判定非恒真，本表当场重算。
+
+| 图 | touched | 判定 |
+|---|---|---|
+| frontend | **5** | **真需刷**（命中 `frontend/src/api/mod.rs`、`pages/hr/agent_detail.rs`、`pages/message/chat.rs`、`pages/mod.rs`、`src/router.rs`；`pages/mod.rs` 新增 `/system/cache` 路由、`api/mod.rs` 新增缓存与场景投影客户端，页面树与数据来源两层都变了）|
+| task-project | **2** | **真需刷（含腐坏）**（`board` 组件 source 指向的 `frontend/src/pages/workspace.rs` **本批已删除**，1766 行拆成 `frontend/src/pages/workspace/` 十模块；「图里点名的东西现在没了」是最硬的需更信号）|
+| think-path | **5** | **真需刷**（命中 `handlers/hr/agent/query_think_traces.rs`、`domain/runtime/think_trace.rs`、`think_trace_query.rs`、`think_trace_tests.rs`、`tool_execution.rs`；查询返回契约由 Vec 改为 PagedResult、作用域新增 `without_project`，属本图「轨迹链路」主干组件）|
+| architecture | 2 | 不刷（命中 `src/router.rs` 与 `domain/runtime/think_trace.rs`，分层边界与单向依赖一条没变，只是路由表追加三组与查询字段调整，属机械适配）|
+| org-federation | 1 | 不刷（只有 `src/router.rs` 一行路由注册，组织与联邦抽象层未变）|
+| messaging | 1 | 不刷（命中 `frontend/src/pages/message/chat.rs` 的附件输入下沉 hook 与头像气泡，消息编排 / 出站 / 入站链路未变）|
+| tools | 2 | 不刷（命中 `domain/hr/agent.rs` 的 ids 缓存失效调用与 `tool_execution.rs` 的查询返回契约，工具注册面与三层调用链未变）|
+| tool-context | 1 | 不刷（只有 `tool_execution.rs` 查询返回形态变化，身份注入四层链路一条没变）|
+| a2a / aop / data-model / infra / memory / ontology / search / stats / testing | 0 | 不需更（`nodes{}` 引用路径与本批 76 条 diff 路径交集为空）|
+
+**三张改动摘要**：
+
+- **frontend**：`pages` 副标 `15+ 页面模块` → 实测 **`72 个页面模块 · 45 条路由`**（`find frontend/src/pages -name "*.rs" | wc -l` = 72，`grep -c '#[route(' frontend/src/pages/mod.rs` = 45）；新增两个组件「工作台 / 驾驶舱」（sources `pages/workspace/mod.rs` + `scene/canvas.rs`）与「缓存管理页」（`pages/system/cache.rs`），各接一条 `pages` 一级路由边、工作台再接一条 `→ api` 的「5s 场景投影」边；新增第 5 张卡「工作台现场化 + 缓存管理页（2026-11-23 新增）」5 条。组件 14 → **16**、连线 13 → **16**、卡片 4 → **5**、视图 3（未变）。
+- **task-project**：`board` 组件 sources 从**已删除**的 `frontend/src/pages/workspace.rs` 换成 `frontend/src/pages/workspace/mod.rs` + `scene/seats.rs`；副标 `WorkspaceGraph 四视图` → **`workspace/ · 三栏 + 固定席位场`**（按 `workspace/mod.rs` 头注释实测：三栏布局 = 左 Project 浮层 / 中固定席位场 / 右 Agent 浮层；`WorkspaceView` 是四**变体** Global/ProjectDetail/AgentDetail/TaskDetail，且场景层只渲染一种视图即固定席位场——原「四视图」把变体说成了视图）。组件 / 连线 / 卡片 / 视图数全不变（22 / 28 / 8 / 3）。
+- **think-path**：`trace` 副标 `926 行` → **`928 行`**（实测 `wc -l`）、`query` 副标 `321 行` → **`344 行 · 按 agent 分页 + 无项目口径`**、`think_round` 副标 `2,357 行` → **`2,401 行`**（实测目录总量）；「轨迹查询走旁车索引」卡补两条：`without_project` 作用域（带 ctx.project_id 时拒绝，防越权放宽，各查询带回归用例）与 `PagedResult{items,total}` 契约（total 取自索引命中数，前端据 total 做页码与越界回退）。组件 / 连线 / 视图数不变（16 / 16 / 4），卡片 12（未变，补充既有卡）。
+
+**声明值当场实测（2026-11-23 10:2x，HEAD `a5c4bc26`）**：
+
+| 声明项 | 实测 | 对照 |
+|---|---|---|
+| `frontend/src/pages` 下 `.rs` 文件数 | **72** | 旧图声明「15+」，已改 |
+| `#[route(` 条数（`pages/mod.rs`） | **45** | 旧图未声明，本轮补 |
+| `frontend/src/components` 下 `.rs` 文件数 | **63** | 未变 |
+| `frontend/src/pages/workspace/` 行数 | **3,922**（mod 1,008 / dock 913 / scene/canvas 847 / hud 379 / feed 211 / helpers 195 / scene/seats 184 / scene/mod 81 / presentation 52 / source 52） | 原单文件 `workspace.rs` 1,766 行（本批删除） |
+| `frontend/src/pages/system/cache.rs` | **275** | 新增 |
+| `think_trace.rs` | **928** | 旧图标 926（+2） |
+| `think_trace_query.rs` | **344** | 旧图标 321（+23） |
+| `think_round/` 目录总量 | **2,401** | 旧图标 2,357（+44） |
+| `dao/cerebellum` | **519** | 未变 |
+| `dao/cortex` | **3,795** | 未变 |
+| `think_loop.rs` | **889** | 未变 |
+| `pkg/think_path/` | **2,499** | 未变 |
+| `inbox.rs` | **368** | 未变 |
+| `tool_execution.rs` | **564** | 未变 |
+
+**取舍说明**：三张都只在既有组件/卡片上改字段与补条目，没有新增视图。frontend 新增两个组件是因为「工作台」与「缓存管理页」各占一条一级路由、各有独立数据来源，属页面树的结构变化而非文案变化；task-project 的 `board` 只换 source 与副标，不新增组件——工作台在本图里是「消费方」，它的内部拆分属 frontend 图承载域。
+
+**门禁（串行单进程，`ARCHIFY_HOME=/Users/aman/Technology/archify/archify`）**：
+
+| 图 | validate | finalize --browser-check | check | 产物字节 |
+|---|---|---|---|---|
+| frontend | **0** | **0**（四道全 pass） | **0** | **862,740** |
+| task-project | **0** | **0**（四道全 pass） | **0** | **885,570** |
+| think-path | **0** | **0**（四道全 pass） | **0** | **873,086** |
+
+三张 `meta.repository.revision` 统一 = `a5c4bc26a69f819c72c7a702b6135d25bc6ac312`（本批已推送分支 tip，非孤儿锚点）。`docs/diagrams/*.json` 实测 **0**（生成回执未入仓）。
+
+**入口三处核对**：`docs/index.html` 三处 desc、`docs/ARCHITECTURE.md` 专题表三行、本文件清单三行，逐处 `count == 1` 断言通过后替换，只命中应改那一处。
+
+**未做人眼视觉复核**：以上全部是 archify 的自动几何度量，`visualReview` 为 `not-requested`。四道门禁全 pass 只说明「几何与结构不违规」，是否真的好看需人眼确认。
 
 ## 五、维护约定
 

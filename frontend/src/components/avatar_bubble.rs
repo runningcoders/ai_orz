@@ -374,6 +374,22 @@ pub fn AvatarBubble(
     }
 }
 
+/// 收起所有头像气泡浮层。
+///
+/// 浮层用 `position: fixed` + 展开瞬间的视口坐标锚定（点击或键盘聚焦，
+/// 以此脱离消息区 `overflow-y-auto` 的裁剪），一旦滚动锚点即失效；
+/// 这里让带标记的触发元素失焦，DaisyUI 的 `:focus-within` 随之关闭浮层。
+pub fn collapse_avatar_bubble() {
+    if let Some(active) = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.active_element())
+        && active.class_name().contains("avatar-bubble-trigger")
+        && let Ok(el) = active.dyn_into::<web_sys::HtmlElement>()
+    {
+        let _ = el.blur();
+    }
+}
+
 /// Agent 信息卡内容（紧凑预览版）。
 ///
 /// 身份行与徽章行复用 [`crate::components::agent_summary`]（与聊天侧栏 Agent Tab 同源）；

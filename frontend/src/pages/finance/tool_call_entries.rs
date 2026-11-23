@@ -66,7 +66,7 @@ pub fn FinanceToolCallEntries() -> Element {
         loading.set(true);
         spawn(async move {
             match query_tool_call_entries(&params).await {
-                Ok(list) => entries.set(list),
+                Ok(page) => entries.set(page.items),
                 Err(e) => toast.error(format!("加载调用记录失败: {e}")),
             }
             loading.set(false);
@@ -91,12 +91,14 @@ pub fn FinanceToolCallEntries() -> Element {
             agent_id: None,
             agent_ids: None,
             project_id: None,
+            without_project: None,
             task_id: None,
             tool_id: None,
             status: None,
             started_after: None,
             started_before: None,
             limit: Some(50),
+            offset: None,
         });
         load_auths();
     });
@@ -550,12 +552,14 @@ fn build_trace_query(
         agent_id: non_empty(agent_id),
         agent_ids: None,
         project_id: None,
+        without_project: None,
         task_id: None,
         tool_id: non_empty(tool_id),
         status: None,
         started_after: None,
         started_before: None,
         limit: limit.trim().parse::<usize>().ok(),
+        offset: None,
     }
 }
 

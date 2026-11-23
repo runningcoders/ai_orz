@@ -464,6 +464,12 @@ pub struct QueryToolCallEntriesRequest {
     /// Filter by Project ID.
     #[param(source = "query")]
     pub project_id: Option<String>,
+    /// 仅返回未归属项目的记录（`project_id` 为空）
+    ///
+    /// 默认对话没有项目维度，右侧「工具」Tab 用它聚合全部游离调用
+    /// （与 `project_id` 同时给出时结果必为空，前端不会这样传）。
+    #[param(source = "query")]
+    pub without_project: Option<bool>,
     /// Filter by Task ID.
     #[param(source = "query")]
     pub task_id: Option<String>,
@@ -483,10 +489,16 @@ pub struct QueryToolCallEntriesRequest {
     #[param(source = "query")]
     #[serde(default)]
     pub limit: Option<usize>,
+    /// Skip count（分页游标）。默认 0，从最新一条开始。
+    #[param(source = "query")]
+    #[serde(default)]
+    pub offset: Option<usize>,
 }
 
 /// Query tool call trace entries response.
-pub type QueryToolCallEntriesResponse = Vec<ToolCallEntryDetail>;
+///
+/// `total` = 命中过滤条件的总条数（与分页无关），供侧栏「工具」Tab 展示页码。
+pub type QueryToolCallEntriesResponse = PagedResult<ToolCallEntryDetail>;
 
 /// Get one tool call trace entry by call ID.
 ///

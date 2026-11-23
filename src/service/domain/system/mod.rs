@@ -14,6 +14,7 @@ use std::sync::{Arc, OnceLock};
 
 mod aop_monitor;
 mod process;
+pub mod scene_projection;
 pub mod seed;
 
 pub use process::ProcessStatusDetail;

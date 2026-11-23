@@ -2,6 +2,7 @@
 
 use crate::models::agent::AgentPo;
 use crate::pkg::RequestContext;
+use crate::pkg::cache::TtlCache;
 use crate::pkg::storage::{build_fts5_search_plan, merge_fts5_results, push_fts5_like_conditions};
 use crate::service::dao::agent::{AgentDao, AgentQuery, AgentSearch};
 use chrono::Utc;
@@ -9,7 +10,9 @@ use common::enums::AgentKind;
 use common::enums::AgentStatus;
 use common::error::Result;
 use sqlx::FromRow;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 
 // ==================== FTS5 辅助 ====================
 
@@ -37,9 +40,9 @@ struct AgentSearchRow {
 
 static AGENT_DAO: OnceLock<Arc<dyn AgentDao>> = OnceLock::new();
 
-/// 创建一个全新的 Agent DAO 实例（用于测试）
+/// 创建一个全新的 Agent DAO 实例（用于测试；默认关闭缓存，避免跨测试库串数据）
 pub fn new() -> Arc<dyn AgentDao> {
-    Arc::new(AgentDaoSqliteImpl::new())
+    Arc::new(AgentDaoSqliteImpl::with_cache(false))
 }
 
 /// 获取 AgentDao 单例
@@ -48,17 +51,103 @@ pub fn dao() -> Arc<dyn AgentDao> {
 }
 
 /// 初始化单例
+///
+/// 生产构建开启实体 / 名单缓存；测试构建自动关闭，避免全局缓存与
+/// 各测试用例直接改库后的预期冲突。
 pub fn init() {
-    let _ = AGENT_DAO.set(new());
+    let _ = AGENT_DAO.set(Arc::new(AgentDaoSqliteImpl::with_cache(!cfg!(test))));
+}
+
+// ==================== 缓存 ====================
+//
+// 只做第一层：Agent 维度（按 id）的实体缓存。
+// 「要哪些 Agent」是上层业务语义，ID 名单由上层自己缓存，DAO 不感知。
+
+/// 实体缓存：按 Agent id 单条缓存，写路径主动失效
+const ENTITY_TTL: Duration = Duration::from_secs(60);
+
+fn entity_cache() -> &'static TtlCache<String, AgentPo> {
+    static CACHE: OnceLock<&'static TtlCache<String, AgentPo>> = OnceLock::new();
+    CACHE.get_or_init(|| crate::pkg::cache::register("hr.agent_dao.entities", ENTITY_TTL))
+}
+
+/// 写路径失效单个实体
+fn invalidate(agent_id: &str) {
+    entity_cache().invalidate(&agent_id.to_string());
 }
 
 // ==================== 实现 ====================
 
-struct AgentDaoSqliteImpl;
+struct AgentDaoSqliteImpl {
+    /// 是否启用实体 / 名单缓存（测试实例关闭，避免共享全局缓存串库）
+    cache_enabled: bool,
+}
 
 impl AgentDaoSqliteImpl {
-    fn new() -> Self {
-        Self
+    fn with_cache(cache_enabled: bool) -> Self {
+        Self { cache_enabled }
+    }
+
+    /// 回填实体缓存（Deleted 永不入缓存，保证 `find_by_id` 语义不打折）
+    fn fill_entities(items: &[AgentPo]) {
+        for po in items {
+            if po.status != AgentStatus::Deleted {
+                entity_cache().insert(po.id.clone(), po.clone());
+            }
+        }
+    }
+
+    /// 无缓存路径：一次批量查询后按入参 ID 顺序重排
+    async fn fetch_ordered(&self, ctx: &RequestContext, ids: &[String]) -> Result<Vec<AgentPo>> {
+        let page = self
+            .query_page(
+                ctx,
+                AgentQuery {
+                    ids: Some(ids.to_vec()),
+                    exclude_status: Some(AgentStatus::Deleted),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        let found: HashMap<String, AgentPo> = page
+            .items
+            .into_iter()
+            .map(|po| (po.id.clone(), po))
+            .collect();
+        Ok(ids.iter().filter_map(|id| found.get(id).cloned()).collect())
+    }
+
+    /// 未缓存的通用查询（COUNT + LIST），供公开 `query` 与批量补齐共用
+    async fn query_page(
+        &self,
+        ctx: &RequestContext,
+        query: AgentQuery,
+    ) -> Result<common::api::PagedResult<AgentPo>> {
+        let pool = ctx.db_pool();
+        let mut count_builder = sqlx::QueryBuilder::new("SELECT COUNT(*) FROM agents WHERE 1=1");
+        push_query_filters(&mut count_builder, &query);
+        let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
+
+        let mut list_builder = sqlx::QueryBuilder::new(
+            r#"SELECT id, name, role, description, soul, capabilities, runtime_config, model_provider_id, status, kind, created_by, modified_by, created_at, updated_at FROM agents WHERE 1=1"#,
+        );
+        push_query_filters(&mut list_builder, &query);
+        list_builder.push(" ORDER BY created_at DESC");
+
+        if let Some(limit) = query.pagination.limit {
+            list_builder.push(" LIMIT ").push_bind(limit as i64);
+        } else if query.pagination.offset.is_some() {
+            list_builder.push(" LIMIT -1");
+        }
+        if let Some(offset) = query.pagination.offset {
+            list_builder.push(" OFFSET ").push_bind(offset as i64);
+        }
+
+        let items = list_builder.build_query_as().fetch_all(pool).await?;
+        Ok(common::api::PagedResult {
+            items,
+            total: total as usize,
+        })
     }
 }
 #[async_trait::async_trait]
@@ -86,10 +175,21 @@ impl AgentDao for AgentDaoSqliteImpl {
             .execute(_ctx.db_pool())
             .await?;
 
+        if self.cache_enabled {
+            invalidate(&agent.id);
+        }
         Ok(())
     }
 
     async fn find_by_id(&self, _ctx: RequestContext, id: &str) -> Result<Option<AgentPo>> {
+        let key = id.to_string();
+        if self.cache_enabled
+            && let Some(po) = entity_cache().get(&key)
+            && po.status != AgentStatus::Deleted
+        {
+            return Ok(Some(po));
+        }
+
         let agent = sqlx::query_as!(
             AgentPo,
             r#"
@@ -103,6 +203,11 @@ FROM agents WHERE id = ? AND status <> 0
         .fetch_optional(_ctx.db_pool())
         .await?;
 
+        if self.cache_enabled
+            && let Some(po) = &agent
+        {
+            entity_cache().insert(key, po.clone());
+        }
         Ok(agent)
     }
 
@@ -111,31 +216,54 @@ FROM agents WHERE id = ? AND status <> 0
         _ctx: RequestContext,
         query: AgentQuery,
     ) -> Result<common::api::PagedResult<AgentPo>> {
-        let pool = _ctx.db_pool();
-        let mut count_builder = sqlx::QueryBuilder::new("SELECT COUNT(*) FROM agents WHERE 1=1");
-        push_query_filters(&mut count_builder, &query);
-        let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
-
-        let mut list_builder = sqlx::QueryBuilder::new(
-            r#"SELECT id, name, role, description, soul, capabilities, runtime_config, model_provider_id, status, kind, created_by, modified_by, created_at, updated_at FROM agents WHERE 1=1"#,
-        );
-        push_query_filters(&mut list_builder, &query);
-        list_builder.push(" ORDER BY created_at DESC");
-
-        if let Some(limit) = query.pagination.limit {
-            list_builder.push(" LIMIT ").push_bind(limit as i64);
-        } else if query.pagination.offset.is_some() {
-            list_builder.push(" LIMIT -1");
+        // 过滤条件千变万化，DAO 不为查询缓存「名单」；只把查回来的实体回填缓存。
+        let page = self.query_page(&_ctx, query).await?;
+        if self.cache_enabled {
+            Self::fill_entities(&page.items);
         }
-        if let Some(offset) = query.pagination.offset {
-            list_builder.push(" OFFSET ").push_bind(offset as i64);
+        Ok(page)
+    }
+
+    async fn find_by_ids(&self, _ctx: RequestContext, ids: &[String]) -> Result<Vec<AgentPo>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
         }
 
-        let items = list_builder.build_query_as().fetch_all(pool).await?;
-        Ok(common::api::PagedResult {
-            items,
-            total: total as usize,
-        })
+        if !self.cache_enabled {
+            return self.fetch_ordered(&_ctx, ids).await;
+        }
+
+        let mut found: HashMap<String, AgentPo> = HashMap::new();
+        let mut missing: HashSet<String> = HashSet::new();
+        for id in ids {
+            match entity_cache().get(id) {
+                Some(po) => {
+                    found.insert(id.clone(), po);
+                }
+                None => {
+                    missing.insert(id.clone());
+                }
+            }
+        }
+
+        if !missing.is_empty() {
+            let page = self
+                .query_page(
+                    &_ctx,
+                    AgentQuery {
+                        ids: Some(missing.into_iter().collect()),
+                        exclude_status: Some(AgentStatus::Deleted),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            Self::fill_entities(&page.items);
+            for po in page.items {
+                found.insert(po.id.clone(), po);
+            }
+        }
+
+        Ok(ids.iter().filter_map(|id| found.get(id).cloned()).collect())
     }
 
     async fn search_agents(
@@ -293,12 +421,21 @@ FROM agents WHERE id = ? AND status <> 0
         }
 
         // 合并去重：MATCH 结果（BM25 序）在前，LIKE 结果仅补位
-        Ok(merge_fts5_results(
+        let results = merge_fts5_results(
             primary,
             secondary,
             |po| po.id.clone(),
             limit_i64.max(0) as usize,
-        ))
+        );
+
+        if self.cache_enabled {
+            for (po, _) in &results {
+                if po.status != AgentStatus::Deleted {
+                    entity_cache().insert(po.id.clone(), po.clone());
+                }
+            }
+        }
+        Ok(results)
     }
 
     async fn find_all(&self, _ctx: RequestContext) -> Result<Vec<AgentPo>> {
@@ -345,6 +482,9 @@ WHERE id = ?
             .execute(_ctx.db_pool())
             .await?;
 
+        if self.cache_enabled {
+            invalidate(&agent.id);
+        }
         Ok(())
     }
 
@@ -362,6 +502,9 @@ UPDATE agents SET status = 0, modified_by = ?, updated_at = ? WHERE id = ?
         .execute(_ctx.db_pool())
         .await?;
 
+        if self.cache_enabled {
+            invalidate(&agent.id);
+        }
         Ok(())
     }
 

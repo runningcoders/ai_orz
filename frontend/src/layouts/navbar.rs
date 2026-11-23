@@ -191,6 +191,7 @@ pub fn Navbar() -> Element {
                                 li { Link { to: Route::SystemBackup {}, "备份管理" } }
                                 li { Link { to: Route::SystemProcesses {}, "进程管理" } }
                                 li { Link { to: Route::SystemAop {}, "AOP 监控" } }
+                                li { Link { to: Route::SystemCache {}, "缓存管理" } }
                                 li { Link { to: Route::SystemSeed {}, "Seed 配置迁移" } }
                                 li { Link { to: Route::SystemTasks {}, "后台任务" } }
                             }
@@ -307,6 +308,7 @@ pub fn Navbar() -> Element {
                             li { Link { to: Route::SystemBackup {}, onclick: move |_| drawer_open.set(false), "备份管理" } }
                             li { Link { to: Route::SystemProcesses {}, onclick: move |_| drawer_open.set(false), "进程管理" } }
                             li { Link { to: Route::SystemAop {}, onclick: move |_| drawer_open.set(false), "AOP 监控" } }
+                            li { Link { to: Route::SystemCache {}, onclick: move |_| drawer_open.set(false), "缓存管理" } }
                             li { Link { to: Route::SystemSeed {}, onclick: move |_| drawer_open.set(false), "Seed 配置迁移" } }
                             li { Link { to: Route::SystemTasks {}, onclick: move |_| drawer_open.set(false), "后台任务" } }
                         }

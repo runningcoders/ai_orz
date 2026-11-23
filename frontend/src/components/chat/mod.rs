@@ -11,8 +11,8 @@
 //! - `ThinkRoundsTimeline`: 思考轮次时间线（面板与思考轨迹 Tab 共用）
 //! - `ThinkPathGraphView`: 思考路径图视图（同名节点复用 + 转移边聚合 + 图/列表双视图 +
 //!   缩略图 + 放大弹窗；思考轨迹 Tab 与 Agent 轨迹面板共用同一组件，防两处漂移）
-//! - `ProjectAgentsTab`: 侧栏 Agent Tab（两种模式共用）—— 置顶 Agent + 任务 assignee
-//!   推导的 Agent 列表（默认对话置顶 = 前台接待）与单 Agent 详情子页，面板内切换不走路由
+//! - `ProjectAgentsTab`: 侧栏 Agent Tab（两种模式共用）—— 项目模式展示置顶 Agent +
+//!   任务 assignee；默认对话展示组织内全部 Agent（前台接待置顶）；均带单 Agent 详情子页
 //! - `CancelThinkingButton`: 「停止思考」按钮（含二次确认），对话内取消目标 Agent
 //!   当前思考轮次；置底状态气泡与输入区发送键位两个落点共用
 

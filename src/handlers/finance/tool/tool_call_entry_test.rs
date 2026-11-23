@@ -65,10 +65,11 @@ async fn query_tool_call_entries_handler_returns_scoped_trace_details() {
     .await
     .expect("handler query should succeed");
 
-    assert_eq!(response.len(), 1);
-    assert_eq!(response[0].call_id, call_id);
-    assert_eq!(response[0].tool_id, tool_id);
-    let serialized = serde_json::to_string(&response[0]).unwrap();
+    assert_eq!(response.total, 1);
+    assert_eq!(response.items.len(), 1);
+    assert_eq!(response.items[0].call_id, call_id);
+    assert_eq!(response.items[0].tool_id, tool_id);
+    let serialized = serde_json::to_string(&response.items[0]).unwrap();
     assert!(serialized.contains("***"));
     assert!(!serialized.contains("placeholder-value"));
 }

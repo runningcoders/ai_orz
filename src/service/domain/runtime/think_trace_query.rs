@@ -38,6 +38,8 @@ pub(crate) struct TraceScopeFields<'a> {
     pub agent_id: Option<String>,
     pub agent_ids: Option<Vec<String>>,
     pub project_id: Option<String>,
+    /// 仅未归属项目的轨迹（默认对话右侧「思考」Tab 的全量游离视角）
+    pub without_project: bool,
     pub task_id: Option<String>,
     pub limit: Option<usize>,
     pub max_limit: usize,
@@ -56,6 +58,7 @@ pub(crate) fn with_context_fields(
         agent_id,
         agent_ids,
         project_id,
+        without_project,
         task_id,
         limit,
         max_limit,
@@ -72,11 +75,11 @@ pub(crate) fn with_context_fields(
             .is_some_and(|role| matches!(role, UserRole::Admin | UserRole::SuperAdmin));
         let has_explicit_scope = agent_id.is_some()
             || agent_ids.as_ref().is_some_and(|ids| !ids.is_empty())
-            || (allow_project && project_id.is_some())
+            || (allow_project && (project_id.is_some() || without_project))
             || task_id.is_some();
         if !is_admin && !has_explicit_scope {
             return Err(common::error::Error::bad_request(format!(
-                "{noun} query requires at least one of agent_id / agent_ids / project_id / task_id"
+                "{noun} query requires at least one of agent_id / agent_ids / project_id / without_project / task_id"
             )));
         }
         return Ok(TraceScope {
@@ -121,6 +124,12 @@ pub(crate) fn with_context_fields(
             project_id.as_deref(),
             noun,
         )?;
+        // 带项目作用域的 Agent 不能反向索取「无项目」轨迹（防越权放宽范围）
+        if without_project && ctx.project_id.is_some() {
+            return Err(common::error::Error::bad_request(format!(
+                "{noun} query without_project conflicts with request context"
+            )));
+        }
     }
     ensure_scope_does_not_conflict("task_id", ctx.task_id.as_deref(), task_id.as_deref(), noun)?;
 
@@ -147,6 +156,7 @@ pub(crate) fn with_context_scope(
             agent_id: query.agent_id.clone(),
             agent_ids: query.agent_ids.clone(),
             project_id: query.project_id.clone(),
+            without_project: query.without_project,
             task_id: query.task_id.clone(),
             limit: query.pagination.limit,
             max_limit: MAX_THINK_TRACE_QUERY_LIMIT,
@@ -225,7 +235,7 @@ mod tests {
 
     #[tokio::test]
     async fn user_member_may_scope_by_agent_ids() {
-        // 默认对话按「当前任务出现过的 Agent」集合查询，也算显式作用域
+        // 按 Agent 集合圈定范围，也算显式作用域
         let ctx = ctx_with(CallerType::User, Some(UserRole::Member as i32), None);
         let query = ThinkTraceQuery {
             agent_ids: Some(vec!["agent-1".to_string(), "agent-2".to_string()]),
@@ -233,6 +243,18 @@ mod tests {
         };
         let merged = with_context_scope(ctx, query).expect("member with agent set scope");
         assert_eq!(merged.agent_ids.as_deref().map(|ids| ids.len()), Some(2));
+    }
+
+    #[tokio::test]
+    async fn user_member_may_scope_by_without_project() {
+        // 默认对话「思考」Tab：只看未归属项目的游离轨迹，也算显式作用域
+        let ctx = ctx_with(CallerType::User, Some(UserRole::Member as i32), None);
+        let query = ThinkTraceQuery {
+            without_project: true,
+            ..Default::default()
+        };
+        let merged = with_context_scope(ctx, query).expect("member with without_project scope");
+        assert!(merged.without_project);
     }
 
     #[tokio::test]
@@ -308,6 +330,7 @@ mod tests {
                     agent_id: None,
                     agent_ids: None,
                     project_id: None,
+                    without_project: false,
                     task_id: None,
                     limit: None,
                     max_limit: 100,

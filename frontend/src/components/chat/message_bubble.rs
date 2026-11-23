@@ -7,9 +7,11 @@
 use common::api::MessageListItem;
 use dioxus::prelude::*;
 
+use crate::components::avatar_bubble::{AvatarBubble, AvatarTone};
 use crate::components::markdown::MarkdownRenderer;
 use crate::store::auth::use_auth_state;
 use crate::store::directory::use_directory;
+use crate::utils::avatar::avatar_initials;
 use crate::utils::file::format_file_size;
 use crate::utils::message::{
     MSG_MIXED, MSG_TASK_COMPLETED, MSG_TASK_PENDING_REVIEW, MSG_TEXT, involves_user,
@@ -19,7 +21,8 @@ use crate::utils::time::format_message_time;
 
 /// 单条消息气泡
 ///
-/// - 显示头像 + **发送者名字** + 角色 + 时间 + 消息内容
+/// - 显示**真实头像**（Agent / 用户走 `AvatarBubble`，点击可展开资料卡）+ 发送者名字
+///   + 角色 + 时间 + 消息内容
 /// - `show_receiver` 为真时，在发送者后面拼出接收方（复用正文 @ 提及的 chip 写法），
 ///   用于群聊场景看清「谁在跟谁聊」
 /// - 与当前用户无关的消息（Agent 之间的横向交流）整体降透明度（`message-bystander`）
@@ -28,10 +31,21 @@ use crate::utils::time::format_message_time;
 /// 发送者名字来自全局 `Directory`（`store/directory.rs`）：按 `from_role` 到对应的
 /// Agent / 用户名称表查 `from_id`。查不到时回退 `角色 + 短 ID`，
 /// **不会**渲染出 "user"/"agent" 这类英文角色码。
+///
+/// ⚠️ 系统消息没有可查询的实体，继续用静态字母头像；Agent / 用户用发送者首字，
+/// 否则同屏多个 Agent 都会显示成同一个 "A"，分不清谁是谁。
+///
+/// `avatar_popover` 显式开启点击头像弹资料卡（默认关）：
+/// `AvatarBubble` 的浮层用 `position: fixed` + 视口坐标，宿主祖先若带 `clip-path`
+/// 会把浮层裁掉、带 `transform` 类定位基准会整体偏移。工作台全屏对话框只多一层
+/// `backdrop-filter`（偏移约一个内边距，仍在可视区内）且消息区足够高，可以开启；
+/// Agent 详情页外层 `HudPanel` 带 `clip-path`、底部收起态消息区只有 `max-h-24`，
+/// 两者都开不得。
 #[component]
 pub fn MessageBubble(
     msg: MessageListItem,
     #[props(default = true)] show_receiver: bool,
+    #[props(default = false)] avatar_popover: bool,
 ) -> Element {
     let role = msg.from_role;
     let avatar = role_avatar(role);
@@ -49,7 +63,14 @@ pub fn MessageBubble(
         None
     };
     // 收发双方都不是当前用户 → 旁听消息，视觉弱化（hover 恢复，便于细看）
-    let bystander = !involves_user(&msg, &auth.read().user_id);
+    let current_user_id = auth.read().user_id.clone();
+    let bystander = !involves_user(&msg, &current_user_id);
+    // 用户头像卡片的副标题：只有自己才是「当前用户」，别人是组织成员
+    let user_subtitle = if msg.from_id == current_user_id {
+        "当前用户"
+    } else {
+        "组织成员"
+    };
     let item_class = if bystander {
         format!("message-item {class} message-bystander")
     } else {
@@ -58,7 +79,23 @@ pub fn MessageBubble(
 
     rsx! {
         div { class: "{item_class}", key: "{msg.message_id}",
-            div { class: "message-avatar", "{avatar}" }
+            // 宿主只提供定位位（flex-none）：`.avatar` 由 AvatarBubble 自己贴在触发层
+            if avatar_popover && (role == 0 || role == 1) {
+                div { class: "flex-none",
+                    AvatarBubble {
+                        name: sender.clone(),
+                        tone: if role == 0 { AvatarTone::User } else { AvatarTone::Agent },
+                        agent_id: (role == 1).then(|| msg.from_id.clone()),
+                        user_id: (role == 0).then(|| msg.from_id.clone()),
+                        user_subtitle: (role == 0).then(|| user_subtitle.to_string()),
+                    }
+                }
+            } else if role == 0 || role == 1 {
+                // 未开启浮层：至少用发送者首字区分不同 Agent（不能退回统一的 "A"）
+                div { class: "message-avatar", "{avatar_initials(&sender)}" }
+            } else {
+                div { class: "message-avatar", "{avatar}" }
+            }
             div { class: "message-body",
                 div { class: "message-meta",
                     // 修复：这里原先渲染的是 `role_class()` 返回的 "user"/"agent" 英文角色码。

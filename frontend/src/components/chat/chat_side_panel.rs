@@ -2,14 +2,15 @@
 //!
 //! 沟通页面右侧可收起的信息面板，按对话模式动态组装 Tab：
 //! - 项目对话：总览 / 任务 / 产物 / Agent（项目内 Agent 列表）/ 工具 / 思考
-//! - 默认对话：任务 / 产物 / Agent（当前任务参与的 Agent）/ 工具 / 思考
+//! - 默认对话：任务 / 产物 / Agent（组织内全部 Agent）/ 工具 / 思考
 //!
-//! 两种模式除「项目总览」外结构完全对齐：默认对话只是把数据源换成游离任务
-//! （`project_id IS NULL`），Agent / 工具 / 思考统一圈定「当前任务出现过的 Agent」
-//! （前台接待恒在集合首位）。
+//! 两种模式除「项目总览」外结构完全对齐：默认对话任务源换成游离任务
+//! （`project_id IS NULL`）；Agent Tab 展示组织内全部 Agent（前台接待恒在首位），
+//! 工具 / 思考 Tab 则聚合所有未归属项目的记录 —— 三者共用「无项目」口径，
+//! 默认对话因此能看到除项目对话以外的全部信息。
 //!
 //! 思考 Tab 展示 `pkg/think_trace` 落盘的运行时轨迹：项目模式按 project_id
-//! 跨 Agent 聚合，默认对话按「当前任务出现过的 Agent」集合过滤（与工具调用 Tab 同源口径）。
+//! 跨 Agent 聚合，默认对话按 `without_project` 过滤全部游离轨迹（与工具调用 Tab 同源口径）。
 //!
 //! 面板纯只读：数据加载复用现有项目/任务/产物/Agent API，
 //! 创建与编辑操作仍在跳转各自详情页完成。
@@ -50,7 +51,6 @@ use crate::components::avatar_bubble::AvatarTone;
 use crate::components::chat::ProjectAgentsTab;
 use crate::components::chat::ThinkTracesTab;
 use crate::components::chat::ToolCallsTab;
-use crate::components::chat::project_agents_tab::agent_ids_from_tasks;
 use crate::components::graph::{EdgeCurve, Graph, GraphEdge, GraphNode, task_status_node_type};
 use crate::components::hud::{HudPanel, HudProgress};
 use crate::components::identity_chip::IdentityChip;
@@ -162,8 +162,7 @@ fn tab_name(is_project_mode: bool, tab: usize) -> Option<&'static str> {
 /// - 任务只用任务列表（依赖图与列表都从 `TaskListItem` 构建）
 /// - 产物两者都用：项目级产物来自详情，任务级产物要按任务标题分组
 /// - 项目模式的 Agent 两者都用：owner 来自详情，成员集合由任务 assignee 推导
-/// - 默认对话的 Agent 只用任务列表：置顶 Agent 来自 `target_agent_id`，
-///   成员集合由游离任务 assignee 推导
+/// - 默认对话的 Agent 只用任务列表：名单是全量 Agent，任务列表仅用于行内任务数
 /// - 工具 / 思考各自取数，不消费侧栏这两份数据
 ///
 /// ⚠️ 同名 Tab 在两种模式下消费的数据并不相同，两个分支都必须带 `is_project_mode`：
@@ -175,7 +174,7 @@ fn tab_data_needs(is_project_mode: bool, tab: usize) -> (bool, bool) {
         Some("总览") => (true, false),
         Some("任务") => (false, true),
         Some("产物" | "Agent") if is_project_mode => (true, true),
-        // 默认对话：成员集合由任务 assignee 推导，切过去时必须补齐任务列表
+        // 默认对话：名单是全量 Agent，但仍要用任务列表算每行负责任务数
         Some("Agent") => (false, true),
         _ => (false, false),
     }
@@ -229,7 +228,7 @@ fn group_by_task<'a>(arts: &[&'a ArtifactDetail]) -> Vec<(String, Vec<&'a Artifa
 ///   必须以 Signal 传入：use_effect 依赖其变化触发项目数据加载，
 ///   普通 prop 非响应式，切换项目后 effect 不会重跑（面板会永远转圈）
 /// - `target_agent_id`：当前会话目标 Agent ID，由 chat 页统一解析（项目会话 = 项目
-///   owner，默认对话 = 前台 Agent）。默认对话用它作为 Agent 列表的置顶项
+///   owner，默认对话 = 前台 Agent）。默认对话用它作为「全部 Agent」列表的置顶项
 ///   （与 3s 轮询同源，避免「展示 A、刷新 B」错位）；项目模式由项目的 owner 置顶
 /// - `agent_info`：主链路轮询共享的 Agent 详情，Agent Tab 优先消费（id 匹配时零请求）
 /// - `refresh_tick`：SSE 消息计数器，变化时防抖 2s 后自动刷新项目数据。
@@ -579,11 +578,6 @@ pub fn ChatSidePanel(
     let project_data = project().clone();
     let tasks_list = tasks.read().clone();
     let tab = active_tab();
-    // 默认对话的 Agent 作用域：前台接待（置顶）∪ 游离任务 assignee。
-    // Agent 列表、工具调用、思考轨迹三处共用同一份集合 —— 否则会出现
-    // 「列表里有这个 Agent，但轨迹里过滤不到」的口径漂移。
-    let default_agent_ids = agent_ids_from_tasks(&tasks_list, target_agent_id().as_deref());
-    let default_agent_scope = (!default_agent_ids.is_empty()).then_some(default_agent_ids);
 
     // 放大弹窗的图数据：与缩略图共用同一份构建函数，仅画布尺寸不同。
     // 弹窗关闭时不构建（空数据 + 不渲染），避免每次重渲染都白跑一遍布局。
@@ -672,8 +666,7 @@ pub fn ChatSidePanel(
             ),
             // 产物硬绑定真实项目，游离任务不可能有产物 → 先做空态占位
             1 => empty_hint("暂无产物"),
-            // Agent Tab 与项目模式完全同构：前台接待置顶 + 当前游离任务的 assignee，
-            // 点击行进入 Agent 详情子页（不再是单值「只显示前台接待」）
+            // Agent Tab：组织内全部 Agent，前台接待置顶，点击行进入详情子页
             2 => rsx! {
                 ProjectAgentsTab {
                     pinned_agent_id: target_agent_id(),
@@ -681,20 +674,24 @@ pub fn ChatSidePanel(
                     refresh_tick: tool_tab_tick,
                     agent_info,
                     agent_stats_tick,
+                    all_agents: true,
                 }
             },
-            // 工具 / 思考：范围与 Agent 列表同源（当前任务出现过的 Agent 集合）
+            // 工具 / 思考：与「默认对话 = 无项目」对齐，展示全部游离记录
+            // （不再按 Agent 集合过滤 —— 那会把同 Agent 的项目内记录一并带出来）
             3 => rsx! {
                 ToolCallsTab {
                     project_id: None,
-                    agent_ids: default_agent_scope.clone(),
+                    agent_ids: None,
+                    without_project: true,
                     refresh_tick: live_tab_tick,
                 }
             },
             4 => rsx! {
                 ThinkTracesTab {
                     project_id: None,
-                    agent_ids: default_agent_scope.clone(),
+                    agent_ids: None,
+                    without_project: true,
                     refresh_tick: live_tab_tick,
                 }
             },

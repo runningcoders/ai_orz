@@ -36,7 +36,7 @@ source_files:
 - ⚠️ 增量写盘刻意**同步**，不要改成 `spawn_blocking` / 后台队列：JSONL 是 append-only，**行序即轮次序**，`merge_into` 的「增量行累积 → 收尾行替换」完全依赖它。并发写导致后一轮先落盘，合并出的轨迹轮次就错序了。
 - ⚠️ 查询不做「读够一页就停」的早停：`total` 必须是合并后的真实总数，前端 `has_next = offset + len < total` 与「共 N 条」都依赖它；早停会让 total 变成「已扫描到的条数」，翻页当场失效。真要降成本，方向是调用方传 `started_after` 缩小时间窗口（由 `date_in_range` 在文件级粗筛掉整段历史分片）。
 
-对外的唯一查询入口是 `GET /api/v1/hr/agents/think-traces`，它同时服务两种调用姿势：Agent 详情页带 `agent_id` 看单 Agent 历史；对话页「思考」Tab 带 `project_id` 聚合多 Agent。响应把 rounds / occurrences / routes **一次性内联返回**，前端展开条目时无需二次请求。
+对外的唯一查询入口是 `GET /api/v1/hr/agents/think-traces`，它同时服务两种调用姿势：Agent 详情页带 `agent_id` 看单 Agent 历史；对话页「思考」Tab 带 `project_id` 聚合多 Agent（默认对话带 `without_project` 聚合全部游离轨迹）。响应把 rounds / occurrences / routes **一次性内联返回**，前端展开条目时无需二次请求。
 
 一次图 run 内思考循环可能被重新触发（新消息触发意图修订、`poll_exit` 回退执行），每次重跑都会追加一行 JSONL。查询层在分页前按 `(agent_id, run_id, scene)` 把这些行**合并成一条连续轨迹**（轮次 / 节点序号 / 图步号接续编号、步数与 advisor 次数求和、指纹重算），否则轨迹面板会把同一个动作显示成两个动作、各自统计轮次。
 
@@ -65,11 +65,11 @@ source_files:
 
 ### 3.2 作用域守门与会话一致
 
-`with_context_fields` 的规则：Agent/System 调用若上下文带 agent/project/task 作用域，查询条件必须与之一致（显式冲突 → 400；上下文有、查询缺 → 用上下文补齐）；User 调用中 Admin/SuperAdmin 可全量，普通成员必须显式提供 `agent_id` / `project_id` / `task_id` 之一。口径与工具调用轨迹一致，避免「工具轨迹能查、思考轨迹能越权」的权限缝隙。
+`with_context_fields` 的规则：Agent/System 调用若上下文带 agent/project/task 作用域，查询条件必须与之一致（显式冲突 → 400；上下文有、查询缺 → 用上下文补齐）；User 调用中 Admin/SuperAdmin 可全量，普通成员必须显式提供 `agent_id` / `project_id` / `without_project` / `task_id` 之一。口径与工具调用轨迹一致，避免「工具轨迹能查、思考轨迹能越权」的权限缝隙。
 
 ### 3.3 双入口共用一条链路
 
-详情页与对话页不各写一套查询：都打到 `query_think_traces`，靠 `agent_id` / `project_id` 区分聚合范围。展开即用的设计让列表响应偏重（含全部 rounds），因此必须保留分页上限 100 与前端 20 条/页。
+详情页与对话页不各写一套查询：都打到 `query_think_traces`，靠 `agent_id` / `project_id` / `without_project` 区分聚合范围。展开即用的设计让列表响应偏重（含全部 rounds），因此必须保留分页上限 100 与前端 20 条/页。
 
 ### 3.4 与记忆轨迹的关联
 

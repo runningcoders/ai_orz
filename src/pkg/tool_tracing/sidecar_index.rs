@@ -143,6 +143,7 @@ fn matches_index(fields: &CallIndexFields, query: &ToolCallQuery) -> bool {
             .project_id
             .as_ref()
             .is_none_or(|project_id| fields.project_id.as_deref() == Some(project_id.as_str()))
+        && (!query.without_project || fields.project_id.is_none())
         && query
             .task_id
             .as_ref()

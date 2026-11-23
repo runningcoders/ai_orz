@@ -384,7 +384,7 @@ async fn test_tool_call_trace_recorded(pool: SqlitePool) {
     // 5. 通过 domain 层查询 trace（需要 agent_id scope 通过 with_context_scope 校验）
     let query_ctx = RequestContext::builder().agent_id(agent_id.clone()).build();
 
-    let entries = runtime::domain()
+    let page = runtime::domain()
         .tool_execution()
         .query_tool_call_entries(
             query_ctx,
@@ -400,12 +400,15 @@ async fn test_tool_call_trace_recorded(pool: SqlitePool) {
 
     // 应该至少有一条 trace 记录
     assert!(
-        !entries.is_empty(),
+        !page.items.is_empty(),
         "Should find at least 1 trace entry for tool_id"
     );
 
     // 找到我们刚才的调用
-    let our_trace = entries.iter().find(|entry| entry.call_id == tool_call_id);
+    let our_trace = page
+        .items
+        .iter()
+        .find(|entry| entry.call_id == tool_call_id);
     assert!(
         our_trace.is_some(),
         "Should find trace entry with call_id: {}",
@@ -795,7 +798,7 @@ async fn test_real_llm_auto_tool_call(pool: SqlitePool) {
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
     let query_ctx = RequestContext::builder().agent_id(agent_id.clone()).build();
-    let entries = runtime::domain()
+    let page = runtime::domain()
         .tool_execution()
         .query_tool_call_entries(
             query_ctx,
@@ -810,13 +813,13 @@ async fn test_real_llm_auto_tool_call(pool: SqlitePool) {
         .expect("trace query failed");
 
     assert!(
-        !entries.is_empty(),
+        !page.items.is_empty(),
         "Should find at least 1 trace entry for tool_id (LLM should have called the tool)"
     );
 
     eprintln!(
         "Real LLM auto tool call test passed! {} trace entries found.",
-        entries.len()
+        page.items.len()
     );
 
     // Cleanup

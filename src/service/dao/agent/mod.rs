@@ -65,6 +65,11 @@ pub struct AgentStatsQuery {
 pub trait AgentDao: Send + Sync {
     async fn insert(&self, ctx: RequestContext, agent: &AgentPo) -> Result<()>;
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<AgentPo>>;
+    /// 按 ID 批量读取（第一层实体能力）
+    ///
+    /// 缓存优先：逐个查实体缓存，缺失的 ID 一次性批量回源补齐；
+    /// 返回顺序与入参 `ids` 一致，查不回的 ID（已删除）直接跳过。
+    async fn find_by_ids(&self, ctx: RequestContext, ids: &[String]) -> Result<Vec<AgentPo>>;
     /// 通用查询
     async fn query(
         &self,

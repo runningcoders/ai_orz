@@ -79,12 +79,22 @@ pub struct PaginationParams {
 }
 
 /// Unified paged query result.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct PagedResult<T> {
     /// Current page items.
     pub items: Vec<T>,
     /// Total count matching query, ignoring pagination.
     pub total: usize,
+}
+
+/// 空页默认值：不要求 `T: Default`（DTO 通常不值得为此加派生）。
+impl<T> Default for PagedResult<T> {
+    fn default() -> Self {
+        Self {
+            items: Vec::new(),
+            total: 0,
+        }
+    }
 }
 
 impl<T> PagedResult<T> {
@@ -111,6 +121,7 @@ pub mod attachment;
 mod attachment_test;
 pub mod auth;
 pub mod background_task;
+pub mod cache;
 pub mod cerebellum;
 pub mod cron_trigger;
 #[cfg(test)]
@@ -136,6 +147,7 @@ pub mod project;
 #[cfg(test)]
 mod project_test;
 pub mod runtime;
+pub mod scene;
 pub mod seed;
 pub mod skill;
 #[cfg(test)]
@@ -161,6 +173,7 @@ pub use background_task::{
     CleanupTasksRequest, CleanupTasksResponse, GetTaskProgressRequest, ListBackgroundTasksRequest,
     ListBackgroundTasksResponse, TaskIdResponse, TaskProgressSnapshot, TaskStatus, TaskType,
 };
+pub use cache::*;
 pub use cerebellum::*;
 pub use cron_trigger::*;
 pub use email_integration::*;
@@ -180,6 +193,7 @@ pub use organization::*;
 pub use organization_link::*;
 pub use project::*;
 pub use runtime::*;
+pub use scene::*;
 pub use seed::*;
 pub use skill::*;
 pub use system::*;

@@ -450,6 +450,10 @@ pub async fn query_think_traces(
         ("agent_id", params.agent_id.clone()),
         ("agent_ids", params.agent_ids.clone()),
         ("project_id", params.project_id.clone()),
+        (
+            "without_project",
+            params.without_project.map(|v| v.to_string()),
+        ),
         ("task_id", params.task_id.clone()),
         ("scene", params.scene.clone()),
         ("started_after", params.started_after.map(|v| v.to_string())),

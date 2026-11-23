@@ -417,11 +417,13 @@ pub trait RuntimeToolExecution: Send + Sync {
     ) -> std::result::Result<crate::models::tool::ToolExecutionResult, common::error::Error>;
 
     /// Query tool call trace entries with access scope enforced by Runtime Domain.
+    ///
+    /// 返回分页结果：`items` 为当前页，`total` 为命中过滤条件的总条数。
     async fn query_tool_call_entries(
         &self,
         ctx: RequestContext,
         query: crate::pkg::tool_tracing::logger::ToolCallQuery,
-    ) -> Result<Vec<crate::pkg::tool_tracing::entry::ToolCallEntry>>;
+    ) -> Result<common::api::PagedResult<crate::pkg::tool_tracing::entry::ToolCallEntry>>;
 
     /// Get one tool call trace entry by call ID with access scope enforced by Runtime Domain.
     async fn get_tool_call_entry_by_id(

@@ -95,15 +95,20 @@ pub fn route_label(r: &ThinkTraceRouteDto) -> String {
 /// 思考轨迹 Tab
 ///
 /// - `project_id`：按项目过滤（项目对话模式）
-/// - `agent_ids`：按 Agent 集合过滤（默认对话 = 当前任务出现过的 Agent）
+/// - `agent_ids`：按 Agent 集合过滤（保留给显式圈定范围的场景）
+/// - `without_project`：默认对话模式只看未归属项目的游离轨迹（与默认对话
+///   Agent 列表同属「无项目」口径）
 /// - `refresh_tick`：SSE 消息/手动刷新计数器，变化时防抖 2s 后刷新
 ///
-/// 两者均为空时不查询（保持与 ToolCallsTab 同源的 fail-closed 行为）。
+/// 三项范围均为空时不查询（保持与 ToolCallsTab 同源的 fail-closed 行为）。
 #[component]
 pub fn ThinkTracesTab(
     project_id: Option<String>,
     agent_ids: Option<Vec<String>>,
     refresh_tick: u64,
+    /// 仅查询未归属项目的轨迹（默认对话）
+    #[props(default)]
+    without_project: bool,
 ) -> Element {
     let toast = use_toast();
     let mut entries = use_signal(Vec::<ThinkTraceListItem>::new);
@@ -127,7 +132,7 @@ pub fn ThinkTracesTab(
                          scene: Option<String>,
                          page_offset: usize,
                          debounce: bool| {
-        if pid.is_none() && aids.as_ref().is_none_or(|ids| ids.is_empty()) {
+        if pid.is_none() && aids.as_ref().is_none_or(|ids| ids.is_empty()) && !without_project {
             return;
         }
         let my_gen = load_gen() + 1;
@@ -144,6 +149,7 @@ pub fn ThinkTracesTab(
                 project_id: pid,
                 // 多 Agent 走逗号分隔的单键值（GET query 不支持重复键）
                 agent_ids: aids.map(|ids| ids.join(",")),
+                without_project: without_project.then_some(true),
                 scene,
                 pagination: PaginationParams {
                     limit: Some(PAGE_SIZE),
@@ -171,7 +177,9 @@ pub fn ThinkTracesTab(
         });
     };
 
-    let has_scope = project_id.is_some() || agent_ids.as_ref().is_some_and(|ids| !ids.is_empty());
+    let has_scope = project_id.is_some()
+        || agent_ids.as_ref().is_some_and(|ids| !ids.is_empty())
+        || without_project;
 
     // 范围切换 → 立即加载并重置分页/筛选；refresh_tick 变化 → 防抖刷新当前页
     //
@@ -179,9 +187,9 @@ pub fn ThinkTracesTab(
     // `project_id` / `agent_ids` / `refresh_tick` 都是普通 prop —— 只在闭包里读它们，
     // 值变了 effect 也不会重跑（SSE 与周期轮询都推不动这个 Tab）。
     use_effect(use_reactive(
-        (&project_id, &agent_ids, &refresh_tick),
-        move |(pid, aids, tick)| {
-            let scope = format!("{:?}|{:?}", pid, aids);
+        (&project_id, &agent_ids, &without_project, &refresh_tick),
+        move |(pid, aids, without_project, tick)| {
+            let scope = format!("{:?}|{:?}|{}", pid, aids, without_project);
             let scope_changed = prev_scope() != scope;
             let tick_changed = prev_tick() != tick;
             // 仅在值真正变化时写回，避免 Signal::set 触发 effect 自订阅循环
