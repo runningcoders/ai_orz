@@ -2,8 +2,8 @@
   "generated_by": "tools/wiki_index.py",
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
-  "total": 675,
-  "total_bytes": 14319486,
+  "total": 677,
+  "total_bytes": 14350885,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -4090,11 +4090,11 @@
     {
       "id": "11-前端应用",
       "counts": {
-        "A-设计": 3,
-        "B-落地方案": 30,
+        "A-设计": 4,
+        "B-落地方案": 31,
         "C-知识": 49
       },
-      "total": 82,
+      "total": 84,
       "docs": [
         {
           "tier": "A-设计",
@@ -4152,6 +4152,28 @@
           ],
           "related": [
             "11-前端应用/A-设计/frontend_architecture.md"
+          ]
+        },
+        {
+          "tier": "A-设计",
+          "path": "11-前端应用/A-设计/workspace_scene_design.md",
+          "name": "workspace_scene_design",
+          "title": "工作台现场化设计",
+          "bytes": 14056,
+          "status": "草案",
+          "scope": [
+            "frontend/src/pages/workspace/mod.rs",
+            "frontend/src/pages/workspace/source.rs",
+            "frontend/src/pages/workspace/scene/mod.rs",
+            "frontend/src/pages/message/chat.rs",
+            "frontend/src/utils/status.rs",
+            "common/src/enums/agent.rs",
+            "src/handlers/system/workspace_metrics.rs"
+          ],
+          "related": [
+            "workspace_topbar_metrics_design.md",
+            "frontend_architecture.md",
+            "ui_design_system.md"
           ]
         },
         {
@@ -4403,6 +4425,24 @@
           "status": "已完成",
           "scope": [],
           "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "11-前端应用/B-落地方案/工作台现场化实施方案.md",
+          "name": "工作台现场化实施方案",
+          "title": "工作台现场化实施方案",
+          "bytes": 17343,
+          "status": "已完成",
+          "scope": [
+            "common/src/api/scene.rs",
+            "src/handlers/system/scene_projection.rs",
+            "frontend/src/pages/workspace"
+          ],
+          "related": [
+            "workspace_scene_design.md",
+            "workspace_topbar_metrics_design.md",
+            "canvas_rendering_playbook.md"
+          ]
         },
         {
           "tier": "B-落地方案",

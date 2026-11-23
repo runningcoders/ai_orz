@@ -113,11 +113,11 @@ v1 全景不做「分区」：现有数据里没有可靠的空间/区域概念�
 
 | 已有 | 位置 | 缺口 |
 |------|------|------|
-| 全屏 Canvas 关系图层 | [workspace/mod.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/pages/workspace/mod.rs#L1026-L1049) | 数据为 6 个模拟节点，力导向决定位置 |
-| 运行时三态徽标 | [workspace/hud.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/pages/workspace/hud.rs#L93-L106)、[status.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/utils/status.rs#L192-L226) | 只表达「在忙/在睡」，不表达「等你」 |
-| 运行时状态枚举 | [agent.rs](file:///Users/aman/Technology/rust/ai_orz/common/src/enums/agent.rs#L102-L130) | 无 Waiting / Stalled，也无维度 |
-| 聚合指标端点 | [workspace_topbar_metrics_design.md](file:///Users/aman/Technology/rust/ai_orz/docs/modules/09-统计与监控/A-设计/workspace_topbar_metrics_design.md) | 无「需要我」维度 |
-| 对话页面 | [chat.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/pages/message/chat.rs) | 独立路由，非景深层 |
+| 全屏 Canvas 关系图层 | [workspace/scene/canvas.rs](frontend/src/pages/workspace/scene/canvas.rs) | 数据为 6 个模拟节点，力导向决定位置 |
+| 运行时三态徽标 | [workspace/hud.rs](frontend/src/pages/workspace/hud.rs)、[status.rs](frontend/src/utils/status.rs#L192-L226) | 只表达「在忙/在睡」，不表达「等你」 |
+| 运行时状态枚举 | [agent.rs](common/src/enums/agent.rs#L102-L130) | 无 Waiting / Stalled，也无维度 |
+| 聚合指标端点 | [workspace_topbar_metrics_design.md](docs/modules/11-前端应用/A-设计/workspace_topbar_metrics_design.md) | 无「需要我」维度 |
+| 对话页面 | [chat.rs](frontend/src/pages/message/chat.rs) | 独立路由，非景深层 |
 
 ---
 
@@ -140,7 +140,7 @@ WorkspacePage                     页面壳，只持有场景状态机
     └─ Composer                   输入（v1 整段提交，v2 流式）
 ```
 
-> 当前实现：[workspace/](file:///Users/aman/Technology/rust/ai_orz/frontend/src/pages/workspace/mod.rs)（已拆为 mod / helpers / hud / dock / source / presentation / scene 七个模块；全景席位场见 [scene/mod.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/pages/workspace/scene/mod.rs)）
+> 当前实现：[workspace/mod.rs](frontend/src/pages/workspace/mod.rs)（已拆为 mod / helpers / hud / dock / source / presentation / scene 七个模块；全景席位场见 [scene/mod.rs](frontend/src/pages/workspace/scene/mod.rs)）
 
 ### 3.2 状态机
 
@@ -240,7 +240,7 @@ SceneSource
 └─ watch() -> Stream<SceneEvent>      增量；v1 由 diff 合成，带单调 seq
 ```
 
-> 当前实现：尚无（本文档定义）。运行时三态现状见 [agent.rs](file:///Users/aman/Technology/rust/ai_orz/common/src/enums/agent.rs#L102-L130)
+> 当前实现：尚无（本文档定义）。运行时三态现状见 [agent.rs](common/src/enums/agent.rs#L102-L130)
 
 ---
 
