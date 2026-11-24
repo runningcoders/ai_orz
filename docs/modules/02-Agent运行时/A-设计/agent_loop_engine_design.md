@@ -307,7 +307,7 @@ pub struct TaskStatusChangedEvent {
 }
 
 impl Event for TaskStatusChangedEvent {
-    fn kind(&self) -> EventKind { EventKind::new("task.status_changed") }
+    fn kind(&self) -> EventKind { EventKind::new("task.status.changed") }
     fn id(&self) -> &str { &self.event_id }
     fn order_key(&self) -> &str { &self.task_id }
     fn created_at(&self) -> i64 { self.created_at }
@@ -375,7 +375,7 @@ pub struct TaskEventConsumer;
 impl Consumer for TaskEventConsumer {
     fn name(&self) -> &str { "task_event" }
     fn interested_events(&self) -> Vec<EventKind> {
-        vec![EventKind::new("task.status_changed")]
+        vec![EventKind::new("task.status.changed")]
     }
     fn consume_mode(&self) -> ConsumeMode { ConsumeMode::Async }  // 异步，发送方不等待
 

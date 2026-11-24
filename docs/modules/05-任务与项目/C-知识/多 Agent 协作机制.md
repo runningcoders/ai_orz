@@ -161,7 +161,7 @@ MC-->>MQ : ack/nack
   - MessageConsumer 订阅 message.created，按 to_role 分发：Agent 消息触发唤醒，User 消息走投递，System 消息走工具执行。
   - 并发度为 4，空队列休眠 100ms，错误重试间隔 1000ms。
 - 任务状态联动
-  - TaskEventConsumer 订阅 task.status_changed，仅处理 Completed 变更，向 Owner Agent 发送 TaskDispatchNotification，驱动后续调度。
+  - TaskEventConsumer 订阅 task.status.changed，仅处理 Completed 变更，向 Owner Agent 发送 TaskDispatchNotification，驱动后续调度。
   - CronTriggerConsumer 定时检查进行中项目，向 Owner Agent 推送跟进通知，防止阻塞。
 
 章节来源
