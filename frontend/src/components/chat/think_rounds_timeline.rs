@@ -11,7 +11,8 @@ use common::api::ThinkTraceRoundDto;
 use common::enums::ThinkingIntensity;
 
 use crate::components::thinking_intensity_field::thinking_intensity_label;
-use crate::utils::number::{format_compact_count, format_decimal};
+use crate::utils::number::format_compact_count;
+use crate::utils::time::format_duration;
 
 /// 思考文本预览长度（字符）：超出部分折叠
 const TEXT_PREVIEW_CHARS: usize = 160;
@@ -82,33 +83,6 @@ fn intensity_class(intensity: Option<ThinkingIntensity>) -> &'static str {
         Some(i) if i.score() <= 33 => "badge badge-xs badge-success badge-soft",
         Some(i) if i.score() <= 66 => "badge badge-xs badge-warning badge-soft",
         Some(_) => "badge badge-xs badge-error badge-soft",
-    }
-}
-
-/// 耗时 → 合适单位（<1s 用 ms，<1min 用 s，<1h 用 m/s，更长用 h/m）
-fn format_duration(ms: u64) -> String {
-    if ms < 1_000 {
-        return format!("{ms}ms");
-    }
-    let total_seconds = ms / 1_000;
-    if total_seconds < 60 {
-        return format!("{}s", format_decimal(ms as f64 / 1_000.0, 1));
-    }
-    let total_minutes = total_seconds / 60;
-    if total_minutes < 60 {
-        let seconds = total_seconds % 60;
-        return if seconds == 0 {
-            format!("{total_minutes}m")
-        } else {
-            format!("{total_minutes}m {seconds}s")
-        };
-    }
-    let hours = total_minutes / 60;
-    let minutes = total_minutes % 60;
-    if minutes == 0 {
-        format!("{hours}h")
-    } else {
-        format!("{hours}h {minutes}m")
     }
 }
 
@@ -579,17 +553,6 @@ mod tests {
         ];
         assert_eq!(round_progress_label(&cumulative, false), "2 轮 · #8");
         assert_eq!(round_progress_label(&cumulative, true), "2 轮 · #8");
-    }
-
-    #[test]
-    fn duration_scales_to_readable_units() {
-        assert_eq!(format_duration(420), "420ms");
-        assert_eq!(format_duration(1_000), "1s");
-        assert_eq!(format_duration(1_500), "1.5s");
-        assert_eq!(format_duration(61_000), "1m 1s");
-        assert_eq!(format_duration(600_000), "10m");
-        assert_eq!(format_duration(3_600_000), "1h");
-        assert_eq!(format_duration(3_720_000), "1h 2m");
     }
 
     #[test]

@@ -34,6 +34,7 @@ use crate::store::directory::use_directory;
 use crate::store::toast::use_toast;
 use crate::utils::local_store;
 use crate::utils::mention::{read_caret, restore_caret};
+use crate::utils::time::format_date_group_label;
 use crate::utils::{
     HISTORY_PAGE_SIZE, HISTORY_SCAN_MAX_PAGES, MESSAGE_POLL_LIMIT, MESSAGE_POLL_SECS, MSG_TEXT,
     append_new_messages, build_optimistic_user_msg, in_project_context, is_attachment_message,
@@ -2202,8 +2203,6 @@ fn group_messages_by_date(messages: &[MessageListItem]) -> Vec<MessageListEntry>
     entries
 }
 
-/// 格式化毫秒时间戳为日期分组标签 (今天 / 昨天 / YYYY-MM-DD)
-// 修复 M5：日期分组使用本地时区，之前用 UTC 深夜时段日期分组错乱
 /// 未读角标（问题二·UI 形态优化）：可伸缩胶囊形红底 + 数字展示。
 ///
 /// 只改「长什么样」，不改「怎么计数」：count > 0 才渲染的显示行为原样保留；
@@ -2220,30 +2219,6 @@ fn unread_badge(count: u32) -> Element {
             "{count}",
         }
     }
-}
-
-fn format_date_group_label(ts_ms: i64) -> String {
-    use chrono::{Datelike, Local, TimeZone};
-    let secs = ts_ms / 1000;
-    let dt = match Local.timestamp_opt(secs, 0) {
-        chrono::LocalResult::Single(dt) => dt,
-        _ => return "未知".to_string(),
-    };
-
-    let now = Local::now();
-    let today_key = (now.year(), now.month(), now.day());
-    let msg_key = (dt.year(), dt.month(), dt.day());
-    if msg_key == today_key {
-        return "今天".to_string();
-    }
-    let yesterday = {
-        let y = now - chrono::Duration::days(1);
-        (y.year(), y.month(), y.day())
-    };
-    if msg_key == yesterday {
-        return "昨天".to_string();
-    }
-    format!("{:04}-{:02}-{:02}", msg_key.0, msg_key.1, msg_key.2)
 }
 
 #[cfg(test)]

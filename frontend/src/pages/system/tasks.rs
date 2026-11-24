@@ -15,6 +15,7 @@ use crate::components::modal::Modal;
 use crate::components::state::Loading;
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
+use crate::utils::time::{format_datetime_full, format_duration, now_ms};
 use common::api::{ListBackgroundTasksRequest, TaskProgressSnapshot, TaskStatus};
 use dioxus::prelude::*;
 
@@ -217,21 +218,13 @@ pub fn SystemTasks() -> Element {
                                                 "seed_apply_default" => "应用默认 Seed",
                                                 _ => t.task_type.as_str(),
                                             };
-                                            let started_time = chrono::DateTime::from_timestamp_millis(t.started_at)
-                                                .map(|dt| dt.format("%m-%d %H:%M:%S").to_string())
-                                                .unwrap_or_else(|| "-".to_string());
+                                            let started_time = format_datetime_full(t.started_at);
                                             let duration = if let Some(finished) = t.finished_at {
                                                 finished - t.started_at
                                             } else {
-                                                chrono::Utc::now().timestamp_millis() - t.started_at
+                                                now_ms() - t.started_at
                                             };
-                                            let duration_str = if duration < 1000 {
-                                                format!("{}ms", duration)
-                                            } else if duration < 60_000 {
-                                                format!("{:.1}s", duration as f64 / 1000.0)
-                                            } else {
-                                                format!("{:.1}m", duration as f64 / 60_000.0)
-                                            };
+                                            let duration_str = format_duration(duration.max(0) as u64);
 
                                             rsx! {
                                                 tr {

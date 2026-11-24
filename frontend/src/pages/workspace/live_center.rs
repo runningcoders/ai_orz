@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use crate::components::chat::AgentTracePanel;
 use crate::components::collapsible_content::CollapsibleContent;
 use crate::hooks::{EventSourceOptions, use_event_source};
-use crate::utils::time::now_ms;
+use crate::utils::time::{format_duration, now_ms};
 use common::api::focus::{
     CerebellumDecidedEvent, ThinkGraphAction, ThinkGraphEvent, ThinkOutputEvent, ToolStartedEvent,
 };
@@ -644,7 +644,7 @@ impl LiveState {
                         FeedKind::Lifecycle,
                         &format!("run:{graph_id}"),
                         format!("思考结束 · {label}"),
-                        format!("{edge_count} 条边 · {:.1}s", duration_ms as f64 / 1000.0),
+                        format!("{edge_count} 条边 · {}", format_duration(duration_ms)),
                         FeedMeta::payload(ev_payload),
                     );
                 }
@@ -720,15 +720,15 @@ impl LiveState {
         let round = ev.round_number + 1;
         let detail = if ev.tool_call_count > 0 {
             format!(
-                "{:.1}s · {} 次工具 · {} tokens",
-                ev.duration_ms as f64 / 1000.0,
+                "{} · {} 次工具 · {} tokens",
+                format_duration(ev.duration_ms),
                 ev.tool_call_count,
                 ev.total_tokens
             )
         } else {
             format!(
-                "{:.1}s · {} tokens（入 {} / 出 {}）",
-                ev.duration_ms as f64 / 1000.0,
+                "{} · {} tokens（入 {} / 出 {}）",
+                format_duration(ev.duration_ms),
                 ev.total_tokens,
                 ev.tokens_input,
                 ev.tokens_output
@@ -826,13 +826,9 @@ impl LiveState {
         } else {
             let out = entry.output.as_ref().map(value_text).unwrap_or_default();
             if out.is_empty() {
-                format!("完成 · {:.1}s", duration as f64 / 1000.0)
+                format!("完成 · {}", format_duration(duration))
             } else {
-                format!(
-                    "完成 · {:.1}s · {}",
-                    duration as f64 / 1000.0,
-                    brief(&out, 34)
-                )
+                format!("完成 · {} · {}", format_duration(duration), brief(&out, 34))
             }
         };
 
@@ -908,7 +904,7 @@ impl LiveState {
             FeedKind::Cerebellum,
             "cerebellum",
             "小脑决策".to_string(),
-            format!("{line} · {}ms", ev.latency_ms),
+            format!("{line} · {}", format_duration(ev.latency_ms)),
             FeedMeta::payload(pretty(&ev)),
         );
     }
@@ -1159,8 +1155,150 @@ pub fn AgentLiveCenter(
                     }
                 }
             } else {
+                // ---- 事件流 ----
+                div { class: "px-3 pt-2 pb-2",
+                    div { class: "flex items-center gap-2",
+                        span { class: "font-display text-[9px] tracking-[0.22em] text-base-content/35",
+                            "STREAM"
+                        }
+                        span { class: "ml-auto font-mono text-[9px] text-base-content/30",
+                            title: "{live.path}",
+                            "{scene}"
+                        }
+                        button {
+                            class: "rounded border border-base-content/15 px-1.5 py-0.5 font-mono text-[9px] text-base-content/45 hover:border-primary/50 hover:text-primary",
+                            onclick: move |_| {
+                                if let Some(cb) = on_open_detail {
+                                    cb.call(LiveDetail::Trace);
+                                } else {
+                                    trace_open.set(true);
+                                }
+                            },
+                            "TRACE"
+                        }
+                    }
+                    // 新事件从顶部展开，旧事件被平滑下推；key 保证旧节点只移位不重建
+                    div { class: "mt-1 max-h-56 overflow-y-auto pr-0.5",
+                        for item in live.feed.iter().rev().take(VISIBLE_FEED) {
+                            div { key: "{item.id}", class: "al-feed-enter",
+                                div { class: "al-feed-enter-inner",
+                                    FeedRow {
+                                        item: item.clone(),
+                                        expanded: open_item() == Some(item.id),
+                                        on_toggle: move |id| {
+                                            if open_item() == Some(id) {
+                                                open_item.set(None);
+                                            } else {
+                                                open_item.set(Some(id));
+                                            }
+                                        },
+                                        on_trace: move |_| {
+                                            if let Some(cb) = on_open_detail {
+                                                cb.call(LiveDetail::Trace);
+                                            } else {
+                                                trace_open.set(true);
+                                            }
+                                        },
+                                        on_open_detail,
+                                    }
+                                }
+                            }
+                        }
+                        if live.feed.is_empty() {
+                            div { class: "py-1 text-[10px] text-base-content/25",
+                                "等待关键事件…"
+                            }
+                        }
+                    }
+                }
+
+                // ---- 动作层 ----
+                div { class: "mt-2 border-t border-base-content/10 px-3 pt-2",
+                    div { class: "flex items-center gap-2",
+                        span { class: "font-display text-[9px] tracking-[0.22em] text-base-content/35",
+                            "ACTION"
+                        }
+                        span { class: "ml-auto font-mono text-[9px] text-base-content/30",
+                            "{tool_calls} calls"
+                        }
+                    }
+                    if live.tools.is_empty() {
+                        div { class: "py-1 text-[10px] text-base-content/25", "暂无工具调用" }
+                    } else {
+                        div { class: "mt-1 space-y-0.5",
+                            for tool in live.tools.iter().rev() {
+                                ToolRow {
+                                    key: "{tool.call_id}",
+                                    tool: tool.clone(),
+                                    selected: tool_detail().as_deref() == Some(tool.call_id.as_str()),
+                                    on_open_detail,
+                                    on_open: {
+                                        let tool = tool.clone();
+                                        move |id| {
+                                            // 有外层详情区时，点击工具卡直接把完整载荷铺到左侧；
+                                            // 独立使用时退回右栏内联抽屉。
+                                            if let Some(cb) = on_open_detail {
+                                                cb.call(LiveDetail::Text(tool_detail_text(&tool)));
+                                            } else {
+                                                tool_detail.set(Some(id));
+                                            }
+                                        }
+                                    },
+                                }
+                            }
+                        }
+                        // 动作详情抽屉：按 call_id 从实时列表取，状态/结果会跟着更新
+                        if let Some(open_call) = tool_detail() {
+                            if let Some(tool) = live.tools.iter().find(|t| t.call_id == open_call) {
+                                div { class: "mt-1.5 rounded-md border border-accent/25 bg-accent/5 p-2",
+                                    div { class: "flex items-center gap-2",
+                                        span { class: "{tool_dot(tool.status)}" }
+                                        span { class: "truncate font-mono text-[11px] text-base-content/80",
+                                            "{tool.name}"
+                                        }
+                                        if let Some(ms) = tool.duration_ms {
+                                            span { class: "font-mono text-[9px] text-base-content/35", "{format_duration(ms)}" }
+                                        }
+                                        button {
+                                            class: "ml-auto px-1 text-[10px] text-base-content/30 hover:text-base-content/70",
+                                            onclick: move |_| tool_detail.set(None),
+                                            "×"
+                                        }
+                                    }
+                                    if let Some(intent) = &tool.intent {
+                                        div { class: "mt-1 text-[10px] text-base-content/50", "{intent}" }
+                                    }
+                                    if !tool.payload.is_empty() {
+                                        CollapsibleContent {
+                                            len: tool.payload.chars().count(),
+                                            max_height: 170,
+                                            class: "mt-1",
+                                            pre { class: "whitespace-pre-wrap break-all font-mono text-[10px] leading-relaxed text-base-content/55",
+                                                "{tool.payload}"
+                                            }
+                                        }
+                                    }
+                                    div { class: "mt-1 flex justify-end",
+                                        button {
+                                            class: "rounded border border-primary/40 px-1.5 py-0.5 text-[9px] text-primary/80 hover:bg-primary/10",
+                                            onclick: move |_| {
+                                                if let Some(cb) = on_open_detail {
+                                                    cb.call(LiveDetail::Trace);
+                                                } else {
+                                                    trace_open.set(true);
+                                                }
+                                            },
+                                            "在完整轨迹中查看"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // ---- 大脑层：根图（阶段分组）+ 已走过的边 + 轮级子图 ----
-                div { class: "px-3 pt-2",
+                div { class: "mt-2 border-t border-base-content/10 px-3 pt-2",
                     div { class: "flex items-center gap-2",
                         span { class: "font-display text-[9px] tracking-[0.22em] text-base-content/35",
                             "CORTEX"
@@ -1224,148 +1362,6 @@ pub fn AgentLiveCenter(
                     }
                     if let Some(line) = &live.cerebellum {
                         div { class: "mt-1 truncate text-[10px] text-success/80", "{line}" }
-                    }
-                }
-
-                // ---- 动作层 ----
-                div { class: "mt-2 border-t border-base-content/10 px-3 pt-2",
-                    div { class: "flex items-center gap-2",
-                        span { class: "font-display text-[9px] tracking-[0.22em] text-base-content/35",
-                            "ACTION"
-                        }
-                        span { class: "ml-auto font-mono text-[9px] text-base-content/30",
-                            "{tool_calls} calls"
-                        }
-                    }
-                    if live.tools.is_empty() {
-                        div { class: "py-1 text-[10px] text-base-content/25", "暂无工具调用" }
-                    } else {
-                        div { class: "mt-1 space-y-0.5",
-                            for tool in live.tools.iter().rev() {
-                                ToolRow {
-                                    key: "{tool.call_id}",
-                                    tool: tool.clone(),
-                                    selected: tool_detail().as_deref() == Some(tool.call_id.as_str()),
-                                    on_open_detail,
-                                    on_open: {
-                                        let tool = tool.clone();
-                                        move |id| {
-                                            // 有外层详情区时，点击工具卡直接把完整载荷铺到左侧；
-                                            // 独立使用时退回右栏内联抽屉。
-                                            if let Some(cb) = on_open_detail {
-                                                cb.call(LiveDetail::Text(tool_detail_text(&tool)));
-                                            } else {
-                                                tool_detail.set(Some(id));
-                                            }
-                                        }
-                                    },
-                                }
-                            }
-                        }
-                        // 动作详情抽屉：按 call_id 从实时列表取，状态/结果会跟着更新
-                        if let Some(open_call) = tool_detail() {
-                            if let Some(tool) = live.tools.iter().find(|t| t.call_id == open_call) {
-                                div { class: "mt-1.5 rounded-md border border-accent/25 bg-accent/5 p-2",
-                                    div { class: "flex items-center gap-2",
-                                        span { class: "{tool_dot(tool.status)}" }
-                                        span { class: "truncate font-mono text-[11px] text-base-content/80",
-                                            "{tool.name}"
-                                        }
-                                        if let Some(ms) = tool.duration_ms {
-                                            span { class: "font-mono text-[9px] text-base-content/35", "{ms}ms" }
-                                        }
-                                        button {
-                                            class: "ml-auto px-1 text-[10px] text-base-content/30 hover:text-base-content/70",
-                                            onclick: move |_| tool_detail.set(None),
-                                            "×"
-                                        }
-                                    }
-                                    if let Some(intent) = &tool.intent {
-                                        div { class: "mt-1 text-[10px] text-base-content/50", "{intent}" }
-                                    }
-                                    if !tool.payload.is_empty() {
-                                        CollapsibleContent {
-                                            len: tool.payload.chars().count(),
-                                            max_height: 170,
-                                            class: "mt-1",
-                                            pre { class: "whitespace-pre-wrap break-all font-mono text-[10px] leading-relaxed text-base-content/55",
-                                                "{tool.payload}"
-                                            }
-                                        }
-                                    }
-                                    div { class: "mt-1 flex justify-end",
-                                        button {
-                                            class: "rounded border border-primary/40 px-1.5 py-0.5 text-[9px] text-primary/80 hover:bg-primary/10",
-                                            onclick: move |_| {
-                                                if let Some(cb) = on_open_detail {
-                                                    cb.call(LiveDetail::Trace);
-                                                } else {
-                                                    trace_open.set(true);
-                                                }
-                                            },
-                                            "在完整轨迹中查看"
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // ---- 事件流 ----
-                div { class: "mt-2 border-t border-base-content/10 px-3 pt-2 pb-2",
-                    div { class: "flex items-center gap-2",
-                        span { class: "font-display text-[9px] tracking-[0.22em] text-base-content/35",
-                            "STREAM"
-                        }
-                        span { class: "ml-auto font-mono text-[9px] text-base-content/30",
-                            title: "{live.path}",
-                            "{scene}"
-                        }
-                        button {
-                            class: "rounded border border-base-content/15 px-1.5 py-0.5 font-mono text-[9px] text-base-content/45 hover:border-primary/50 hover:text-primary",
-                            onclick: move |_| {
-                                if let Some(cb) = on_open_detail {
-                                    cb.call(LiveDetail::Trace);
-                                } else {
-                                    trace_open.set(true);
-                                }
-                            },
-                            "TRACE"
-                        }
-                    }
-                    // 新事件从顶部展开，旧事件被平滑下推；key 保证旧节点只移位不重建
-                    div { class: "mt-1 max-h-56 overflow-y-auto pr-0.5",
-                        for item in live.feed.iter().rev().take(VISIBLE_FEED) {
-                            div { key: "{item.id}", class: "al-feed-enter",
-                                div { class: "al-feed-enter-inner",
-                                    FeedRow {
-                                        item: item.clone(),
-                                        expanded: open_item() == Some(item.id),
-                                        on_toggle: move |id| {
-                                            if open_item() == Some(id) {
-                                                open_item.set(None);
-                                            } else {
-                                                open_item.set(Some(id));
-                                            }
-                                        },
-                                        on_trace: move |_| {
-                                            if let Some(cb) = on_open_detail {
-                                                cb.call(LiveDetail::Trace);
-                                            } else {
-                                                trace_open.set(true);
-                                            }
-                                        },
-                                        on_open_detail,
-                                    }
-                                }
-                            }
-                        }
-                        if live.feed.is_empty() {
-                            div { class: "py-1 text-[10px] text-base-content/25",
-                                "等待关键事件…"
-                            }
-                        }
                     }
                 }
             }
@@ -1543,17 +1539,13 @@ fn ToolRow(
                         span { class: "ml-1 text-[9px] text-secondary", "×{tool.burst}" }
                     }
                 }
+                // 主行内容始终固定为「意图」，完成事件只改状态点与尾部耗时，
+                // 不再切换成结果摘要（避免同一行出现两个时间 + 参数导致重复刷屏）。
                 span { class: "min-w-0 flex-1 truncate text-[10px] text-base-content/35",
-                    if tool.status == "running" {
-                        "{tool.intent.as_deref().or(Some(tool.args_preview.as_str())).unwrap_or(\"\")}"
-                    } else if tool.detail.is_empty() {
-                        "{tool.args_preview}"
-                    } else {
-                        "{tool.detail}"
-                    }
+                    "{tool.intent.as_deref().filter(|s| !s.trim().is_empty()).unwrap_or(tool.args_preview.as_str())}"
                 }
                 if let Some(ms) = tool.duration_ms {
-                    span { class: "font-mono text-[9px] text-base-content/35", "{ms}ms" }
+                    span { class: "font-mono text-[9px] text-base-content/35", "{format_duration(ms)}" }
                 } else if tool.status == "running" {
                     span { class: "font-mono text-[9px] text-primary/70 animate-pulse", "run" }
                 }
@@ -1767,7 +1759,7 @@ fn tool_detail_text(tool: &ToolView) -> LiveDetailText {
         body.push_str(&format!("意图：{intent}\n"));
     }
     if let Some(ms) = tool.duration_ms {
-        body.push_str(&format!("耗时：{ms} ms\n"));
+        body.push_str(&format!("耗时：{}\n", format_duration(ms)));
     }
     if !tool.args_preview.is_empty() {
         body.push_str(&format!("\n[入参]\n{}\n", tool.args_preview));
@@ -1834,14 +1826,12 @@ fn feed_dot(kind: FeedKind) -> &'static str {
     }
 }
 
-/// 相对上一条事件的间隔（游戏式 `+0.3s`）
+/// 相对上一条事件的间隔（`+` 前缀 + 最佳单位时长；`·` = 无间隔）
 fn delta_label(delta_ms: i64) -> String {
     if delta_ms <= 0 {
         "·".to_string()
-    } else if delta_ms < 1_000 {
-        format!("+{}ms", delta_ms)
     } else {
-        format!("+{:.1}s", delta_ms as f64 / 1000.0)
+        format!("+{}", format_duration(delta_ms as u64))
     }
 }
 
