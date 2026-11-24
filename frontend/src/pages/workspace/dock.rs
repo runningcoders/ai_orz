@@ -1069,27 +1069,101 @@ pub fn bottom_dock(
             // ---- 聚焦模式右侧：Agent 运行时现场（当前消息 / 任务 / 项目 / 产物） ----
             if focus {
                 div { class: "pointer-events-auto flex-1 min-w-[300px] min-h-0 h-full hud-glass rounded-xl border border-base-content/10 flex flex-col overflow-hidden",
-                    div { class: "p-3 border-b border-base-content/10 flex items-center gap-2",
-                        if let Some(a) = &selected_agent {
-                            span { class: "text-sm font-semibold truncate", "{a.name}" }
-                            span { class: "ml-auto flex-shrink-0 {agent_runtime_badge(a.runtime_state)}",
-                                {runtime
-                                    .as_ref()
-                                    .map(|_| runtime_state_label.to_string())
-                                    .unwrap_or_else(|| agent_runtime_label(a.runtime_state).to_string())}
+                    // 标题行：身份 + 运行时状态 + 用量总览（token / 上下文水位）
+                    // + 运行现场摘要。这些原本占固定区大半高度，上移后把更多
+                    // 竖向空间留给下面的实时事件流。
+                    div { class: "p-3 border-b border-base-content/10 space-y-1.5",
+                        div { class: "flex items-center gap-2 min-w-0",
+                            if let Some(a) = &selected_agent {
+                                span { class: "min-w-0 truncate text-sm font-semibold", "{a.name}" }
+                                span { class: "flex-shrink-0 {agent_runtime_badge(a.runtime_state)}",
+                                    {runtime
+                                        .as_ref()
+                                        .map(|_| runtime_state_label.to_string())
+                                        .unwrap_or_else(|| agent_runtime_label(a.runtime_state).to_string())}
+                                }
+                            } else {
+                                span { class: "text-sm font-semibold", "预览" }
                             }
-                        } else {
-                            span { class: "text-sm font-semibold", "预览" }
+                            // Token：近 60 分钟窗口累计；输入 / 输出固定，
+                            // 缓存命中与思考是各自子集，> 0 才入列。
+                            // 窄面板下允许换行，避免把右端退出按钮挤出可视区。
+                            div { class: "ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1 font-mono text-[10px] text-base-content/50",
+                                if let (Some(input), Some(output)) = (tokens_input, tokens_output) {
+                                    span {
+                                        class: "rounded bg-base-200/60 px-1 py-0.5",
+                                        title: "近 60 分钟输入 Token",
+                                        "入 {format_compact_count(input)}"
+                                    }
+                                    span {
+                                        class: "rounded bg-base-200/60 px-1 py-0.5",
+                                        title: "近 60 分钟输出 Token",
+                                        "出 {format_compact_count(output)}"
+                                    }
+                                    if tokens_cached > 0 {
+                                        span {
+                                            class: "rounded bg-base-200/60 px-1 py-0.5",
+                                            title: "缓存命中 Token（输入的子集）",
+                                            "缓 {format_compact_count(tokens_cached)}"
+                                        }
+                                    }
+                                    if tokens_reasoning > 0 {
+                                        span {
+                                            class: "rounded bg-base-200/60 px-1 py-0.5",
+                                            title: "思考 Token（输出的子集）",
+                                            "思 {format_compact_count(tokens_reasoning)}"
+                                        }
+                                    }
+                                }
+                            }
+                            button {
+                                class: "btn hud-btn btn-ghost btn-xs flex-shrink-0",
+                                title: "退出专注",
+                                onclick: move |_| on_exit_focus.call(()),
+                                "✕"
+                            }
                         }
-                        button {
-                            class: "btn hud-btn btn-ghost btn-xs",
-                            title: "退出专注",
-                            onclick: move |_| on_exit_focus.call(()),
-                            "✕"
+                        // 第二行：上下文水位 + 项目 + 本次思考现场（场景 / 轮次 / 工具数）
+                        div { class: "flex items-center gap-1.5 text-[10px] text-base-content/45 flex-wrap",
+                            if let Some((len, threshold)) = context_usage {
+                                div { class: "flex items-center gap-1",
+                                    if let Some(max) = threshold
+                                        && max > 0
+                                    {
+                                        RingProgress {
+                                            value: len,
+                                            max,
+                                            title: Some(format!(
+                                                "上下文 {} / 压缩阈值 {} tokens",
+                                                format_compact_count(len),
+                                                format_compact_count(max),
+                                            )),
+                                            size: Some(18),
+                                        }
+                                    }
+                                    span { "上下文 {format_compact_count(len)}" }
+                                    if let Some(max) = threshold
+                                        && max > 0
+                                    {
+                                        span { " / {format_compact_count(max)}" }
+                                    }
+                                }
+                            } else {
+                                span { "上下文 —" }
+                            }
+                            if let Some(name) = focus_project_name.clone() {
+                                span { class: "min-w-0 truncate", "· 项目 {name}" }
+                            }
+                            if let Some(think) = runtime.as_ref().and_then(|rt| rt.think_runtime.as_ref()) {
+                                span {
+                                    "· {think_scene_label(&think.scene)} · 第 {think.round}/{think.max_rounds} 轮 · 工具 {think.tool_call_count} 次"
+                                }
+                            }
                         }
                     }
-                    // 固定总览：角色 / 描述 / 快捷入口 / 任务 / 用量 / 运行现场。
-                    // 内容超过面板 48% 时自身滚动，把更长的一段留给实时事件中心。
+                    // 固定总览：角色 / 描述 / 快捷入口 / 任务上下文。
+                    // 用量与运行现场已上移标题行；内容超过面板 48% 时自身滚动，
+                    // 把更长的一段留给实时事件中心。
                     div { class: "flex-none max-h-[48%] min-h-0 overflow-y-auto p-3 space-y-3",
                         if let Some(a) = &selected_agent {
                             if !a.roles.is_empty() {
@@ -1100,7 +1174,7 @@ pub fn bottom_dock(
                                 }
                             }
                             if let Some(desc) = &a.description {
-                                p { class: "text-xs text-base-content/60 leading-relaxed line-clamp-4", "{desc}" }
+                                p { class: "text-xs text-base-content/60 leading-relaxed line-clamp-2", "{desc}" }
                             }
                         }
 
@@ -1151,9 +1225,6 @@ pub fn bottom_dock(
                                         show_value: Some(true),
                                     }
                                 }
-                                div { class: "text-[10px] text-base-content/35",
-                                    "描述、执行计划与产物等完整内容见左侧「任务详情」"
-                                }
                             }
                         } else if runtime
                             .as_ref()
@@ -1169,119 +1240,8 @@ pub fn bottom_dock(
                             }
                         }
 
-                        // ---- 用量：token 窗口累计 + 上下文水位（与对话页运行统计同源） ----
-                        div { class: "text-xs font-medium text-base-content/60", "用量" }
-                        div { class: "hud-glass rounded-lg p-3",
-                            if let (Some(input), Some(output)) = (tokens_input, tokens_output) {
-                                div { class: "text-[11px] text-base-content/50", "Token（近 60 分钟）" }
-                                // 与对话页紧凑统计同口径：输入 / 输出两项固定，
-                                // 缓存命中与思考均为其子集，> 0 才入列（0 = 未上报或无推理）。
-                                // 不设「合计」：对话页也没有，且加减关系用户可自行判断。
-                                div { class: "grid grid-cols-2 gap-1.5 mt-1.5 text-center",
-                                    div { class: "bg-base-200/60 rounded px-1 py-1",
-                                        div { class: "text-[10px] text-base-content/50", "输入" }
-                                        div { class: "font-mono text-sm", "{format_compact_count(input)}" }
-                                    }
-                                    div { class: "bg-base-200/60 rounded px-1 py-1",
-                                        div { class: "text-[10px] text-base-content/50", "输出" }
-                                        div { class: "font-mono text-sm", "{format_compact_count(output)}" }
-                                    }
-                                    if tokens_cached > 0 {
-                                        div { class: "bg-base-200/60 rounded px-1 py-1",
-                                            div { class: "text-[10px] text-base-content/50", "缓存命中" }
-                                            div { class: "font-mono text-sm",
-                                                "{format_compact_count(tokens_cached)}"
-                                            }
-                                        }
-                                    }
-                                    if tokens_reasoning > 0 {
-                                        div { class: "bg-base-200/60 rounded px-1 py-1",
-                                            div { class: "text-[10px] text-base-content/50", "思考" }
-                                            div { class: "font-mono text-sm",
-                                                "{format_compact_count(tokens_reasoning)}"
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                div { class: "text-xs text-base-content/50", "暂无 Token 统计" }
-                            }
-                            // 上下文水位：阈值缺失时只能给原始读数（并说明原因）
-                            if let Some((len, threshold)) = context_usage {
-                                div { class: "flex items-center gap-3 mt-3 pt-2 border-t border-base-content/10",
-                                    if let Some(max) = threshold
-                                        && max > 0
-                                    {
-                                        RingProgress {
-                                            value: len,
-                                            max,
-                                            caption: Some("上下文".to_string()),
-                                            title: Some(format!(
-                                                "上下文 {} / 压缩阈值 {} tokens",
-                                                format_compact_count(len),
-                                                format_compact_count(max),
-                                            )),
-                                            size: Some(44),
-                                        }
-                                    }
-                                    div { class: "min-w-0 text-xs text-base-content/60",
-                                        div { "上下文长度" }
-                                        div { class: "font-mono text-sm text-base-content/80",
-                                            "{format_compact_count(len)}"
-                                        }
-                                        if let Some(max) = threshold
-                                            && max > 0
-                                        {
-                                            div { class: "text-[10px] text-base-content/40",
-                                                "压缩阈值 {format_compact_count(max)}"
-                                            }
-                                        } else {
-                                            div { class: "text-[10px] text-base-content/40",
-                                                "未配置压缩阈值，暂无百分比"
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                div { class: "text-[11px] text-base-content/40 mt-2",
-                                    "上下文水位：Agent 尚未思考过"
-                                }
-                            }
-                        }
-
-                        // ---- 项目上下文 + 思考快照 ----
-                        div { class: "text-xs font-medium text-base-content/60", "运行现场" }
-                        div { class: "hud-glass rounded-lg p-3 space-y-1 text-xs text-base-content/60",
-                            div { class: "flex items-center gap-1",
-                                span { "项目" }
-                                span { class: "text-base-content/80 truncate",
-                                    {focus_project_name.clone().unwrap_or_else(|| "未关联项目".to_string())}
-                                }
-                            }
-                            if let Some(think) = runtime.as_ref().and_then(|rt| rt.think_runtime.as_ref()) {
-                                div { class: "flex items-center gap-1",
-                                    span { "场景" }
-                                    span { class: "text-base-content/80", "{think_scene_label(&think.scene)}" }
-                                }
-                                div { class: "flex items-center gap-1",
-                                    span { "轮次" }
-                                    span { class: "text-base-content/80",
-                                        "{think.round} / {think.max_rounds}"
-                                    }
-                                }
-                                div { class: "flex items-center gap-1",
-                                    span { "工具调用" }
-                                    span { class: "text-base-content/80", "{think.tool_call_count} 次" }
-                                }
-                                div { class: "flex items-center gap-1",
-                                    span { "本次思考 Token" }
-                                    span { class: "text-base-content/80", "{think.total_tokens}" }
-                                }
-                            }
-                            div { class: "text-[11px] text-base-content/40 pt-1",
-                                "工具调用流与浏览器画面将在这里实时展开。"
-                            }
-                        }
+                        // 用量 / 运行现场已上移到标题行，固定区只保留任务上下文，
+                        // 把剩余高度尽量让给下方实时事件流。
                     }
                     // 右侧可拉伸区：实时事件中心（工具调用 / 思考过程）。
                     // 与左侧同高对齐并独立滚动；详情统一铺到左侧主区。

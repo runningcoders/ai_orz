@@ -117,6 +117,27 @@ impl FeedKind {
     }
 }
 
+/// 入流事件的附加信息，打包传参避免 `push_feed` 参数列表继续膨胀
+struct FeedMeta {
+    /// 完整载荷（详情页正文 / 内联抽屉）
+    payload: String,
+    /// 关联的工具调用 id（无则 None）
+    call_id: Option<String>,
+    /// 事件意图（工具调用 / 思考摘要）；无则回退到 title 里的工具名
+    intent: Option<String>,
+}
+
+impl FeedMeta {
+    /// 只有完整载荷的常见事件（生命周期 / 思考 / 小脑决策）
+    fn payload(payload: String) -> Self {
+        Self {
+            payload,
+            call_id: None,
+            intent: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 struct FeedItem {
     id: u64,
@@ -134,6 +155,9 @@ struct FeedItem {
     key: String,
     /// 关联的工具调用（用于「在轨迹中查看」定位提示）
     call_id: Option<String>,
+    /// 模型自述的事件意图（工具调用 / 思考摘要）：
+    /// 信息流优先展示它，缺失时才回退到 `title` 里的工具名等兜底文案
+    intent: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -249,8 +273,7 @@ impl LiveState {
             &format!("resync:{}", self.seq + 1),
             "信号中断 · 已重置图状态".to_string(),
             format!("广播积压，跳过 {skipped} 条事件；后续事件将继续累积"),
-            String::new(),
-            None,
+            FeedMeta::payload(String::new()),
         );
     }
 
@@ -434,8 +457,7 @@ impl LiveState {
                             &format!("run:{graph_id}"),
                             "思考开始 · 轮级环".to_string(),
                             format!("挂在 {} 下", nested_parent.as_deref().unwrap_or("")),
-                            ev_payload.clone(),
-                            None,
+                            FeedMeta::payload(ev_payload.clone()),
                         );
                     }
                 } else {
@@ -454,8 +476,7 @@ impl LiveState {
                             self.edges.len(),
                             brief(&stimulus, 30)
                         ),
-                        ev_payload.clone(),
-                        None,
+                        FeedMeta::payload(ev_payload.clone()),
                     );
                 }
             }
@@ -534,8 +555,7 @@ impl LiveState {
                         &format!("fail:{}", self.seq + 1),
                         format!("节点失败 · {node}"),
                         "该节点未产出信号，图按失败边继续".to_string(),
-                        payload,
-                        None,
+                        FeedMeta::payload(payload),
                     );
                 }
                 let _ = signal;
@@ -576,8 +596,7 @@ impl LiveState {
                         &format!("route:{}", self.seq + 1),
                         format!("选路 · {via}"),
                         reason,
-                        payload,
-                        None,
+                        FeedMeta::payload(payload),
                     );
                 }
             }
@@ -618,8 +637,7 @@ impl LiveState {
                         &format!("run:{graph_id}"),
                         format!("思考异常 · {label}"),
                         brief(&err, 60),
-                        ev_payload,
-                        None,
+                        FeedMeta::payload(ev_payload),
                     );
                 } else {
                     self.push_feed(
@@ -627,8 +645,7 @@ impl LiveState {
                         &format!("run:{graph_id}"),
                         format!("思考结束 · {label}"),
                         format!("{edge_count} 条边 · {:.1}s", duration_ms as f64 / 1000.0),
-                        ev_payload,
-                        None,
+                        FeedMeta::payload(ev_payload),
                     );
                 }
             }
@@ -685,13 +702,17 @@ impl LiveState {
                 }
             }
         }
+        // 信息流优先展示「思考内容摘要」，而不是「第 N 轮思考」这类占位标题；
+        // 完整思考正文放在 payload 里，点击「详情」可到左侧大宽页查看。
         self.push_feed(
             FeedKind::Think,
             &format!("think:{round}"),
-            format!("第 {round} 轮思考"),
-            brief(&text, 52),
-            pretty(&ev),
-            None,
+            brief(&text, 72),
+            format!("第 {round} 轮思考 · {} 字", text.chars().count()),
+            FeedMeta::payload(format!(
+                "场景：{}\n轮次：第 {round} 轮\n\n{text}",
+                scene_label(&ev.scene)
+            )),
         );
     }
 
@@ -718,26 +739,38 @@ impl LiveState {
             &format!("round:{round}"),
             format!("大脑返回 · 第 {round} 轮"),
             detail,
-            pretty(&ev),
-            None,
+            FeedMeta::payload(pretty(&ev)),
         );
     }
 
     fn apply_tool_started(&mut self, ev: ToolStartedEvent) {
         let args_preview = brief(&value_text(&ev.args), 48);
-        let detail = ev
+        // 信息流以「调用意图」为主标题；工具名只是没有意图时的兜底值
+        let intent = ev
             .intent
             .as_deref()
-            .map(|i| brief(i, 52))
-            .unwrap_or_else(|| args_preview.clone());
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| brief(s, 80));
+        let title = intent
+            .clone()
+            .unwrap_or_else(|| format!("调用 · {}", ev.tool_name));
+        let detail = if intent.is_some() {
+            format!("运行中 · {}", ev.tool_name)
+        } else {
+            format!("运行中 · {args_preview}")
+        };
         let payload = pretty(&ev);
         let _ = self.push_feed(
             FeedKind::Tool,
             &format!("tool:{}", ev.call_id),
-            format!("调用 · {}", ev.tool_name),
-            format!("运行中 · {detail}"),
-            payload.clone(),
-            Some(ev.call_id.clone()),
+            title,
+            detail,
+            FeedMeta {
+                payload: payload.clone(),
+                call_id: Some(ev.call_id.clone()),
+                intent,
+            },
         );
         let now = now_ms();
         // 连续同类工具在 5s 内折叠成一张动作卡（详情仍可在事件流里逐条看）
@@ -818,8 +851,11 @@ impl LiveState {
                 &format!("tool:{}", entry.call_id),
                 format!("完成 · {tool_name}"),
                 detail,
-                payload.clone(),
-                Some(entry.call_id.clone()),
+                FeedMeta {
+                    payload: payload.clone(),
+                    call_id: Some(entry.call_id.clone()),
+                    intent: None,
+                },
             );
             self.tools.push(ToolView {
                 call_id: entry.call_id.clone(),
@@ -845,11 +881,14 @@ impl LiveState {
             .find(|f| f.key == format!("tool:{}", entry.call_id))
         {
             item.at = now_ms();
-            item.title = if failed {
-                format!("失败 · {tool_name}")
-            } else {
-                format!("完成 · {tool_name}")
-            };
+            // 有意图时保留意图主标题，只把状态写进副行；无意图才回退工具名
+            if item.intent.is_none() {
+                item.title = if failed {
+                    format!("失败 · {tool_name}")
+                } else {
+                    format!("完成 · {tool_name}")
+                };
+            }
             item.detail = format!("{tool_name} · {result_tail}");
             item.payload = payload;
             item.count = 1;
@@ -870,8 +909,7 @@ impl LiveState {
             "cerebellum",
             "小脑决策".to_string(),
             format!("{line} · {}ms", ev.latency_ms),
-            pretty(&ev),
-            None,
+            FeedMeta::payload(pretty(&ev)),
         );
     }
 
@@ -894,16 +932,23 @@ impl LiveState {
         });
     }
 
-    /// 入流：同 key 合并（移到最新端并计数），超限丢最旧
+    /// 入流：同 key 合并（移到最新端并计数），超限丢最旧。
+    ///
+    /// `meta.intent` 是事件意图（工具调用意图 / 思考摘要）；`title` 给兜底文案，
+    /// 有意图时由渲染层优先展示 `intent`，工具名只在没有意图时出场。
     fn push_feed(
         &mut self,
         kind: FeedKind,
         key: &str,
         title: String,
         detail: String,
-        payload: String,
-        call_id: Option<String>,
+        meta: FeedMeta,
     ) -> u64 {
+        let FeedMeta {
+            payload,
+            call_id,
+            intent,
+        } = meta;
         let now = now_ms();
         if !key.is_empty()
             && let Some(pos) = self.feed.iter().position(|f| f.key == key)
@@ -916,6 +961,10 @@ impl LiveState {
             item.detail = detail;
             if !payload.is_empty() {
                 item.payload = payload;
+            }
+            // 意图只在有新值时覆盖：完成事件不带意图，不能把开始时的意图冲掉
+            if intent.is_some() {
+                item.intent = intent;
             }
             // 同一次调用的 started/executed、同一轮的 reasoning/content 只算一条；
             // 只有小脑决策是真正可重复的同一类事件，保留累计次数。
@@ -946,6 +995,7 @@ impl LiveState {
             count: 1,
             key: key.to_string(),
             call_id,
+            intent,
         });
         if self.feed.len() > MAX_FEED {
             self.feed.drain(..self.feed.len() - MAX_FEED);
@@ -1736,6 +1786,15 @@ fn tool_detail_text(tool: &ToolView) -> LiveDetailText {
 }
 
 fn feed_detail_text(item: &FeedItem) -> LiveDetailText {
+    // 思考事件的 payload 已是可读正文（场景 / 轮次 / 完整思考）；
+    // 不再拼「[完整载荷]」，避免把散文当 JSON 展示。
+    if item.kind == FeedKind::Think && !item.payload.is_empty() {
+        return LiveDetailText {
+            title: item.title.clone(),
+            subtitle: item.detail.clone(),
+            body: item.payload.clone(),
+        };
+    }
     let mut body = String::new();
     if !item.detail.is_empty() {
         body.push_str(&item.detail);
