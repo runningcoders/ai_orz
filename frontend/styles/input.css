@@ -703,6 +703,11 @@
 .markdown-compact li {
   margin: 0.15em 0;
 }
+/* 话题链：Markdown 字号对齐原话题卡片的 11px，避免大字号撑破紧凑列表 */
+.thread-md .markdown-body {
+  font-size: 0.6875rem;
+  line-height: 1.55;
+}
 
 /* ========== 聊天气泡：宽度自适应 + 轻量配色 ========== */
 
@@ -715,13 +720,16 @@
      - 同文本 + group 包裹：243.1px / 2 行（270.1 × 90%，被砍）
      - 「在吗」+ group 包裹：57.4px / 2 行（63.8 × 90%，俩字硬换行）
    现在：百分比约束上移到 `.chat` 的直接子元素（相对 grid 列宽，参照正确，窄屏也留边），
-   气泡本身只用固定上限 28rem（= Tailwind `max-w-md`，与附件消息卡片宽度一致）。 */
+   消息体最多占列宽的 82% —— 左侧发送者头像 + 右侧对侧头像各占一块，
+   留 18% 的呼吸位；短消息仍由 fit-content 贴身，内容多长就撑多长。
+   气泡本身只给一个足够宽的固定上限（52rem ≈ 832px）：常见列宽下 82% 先触发，
+   超宽屏再用它兜住可读性，避免单行过长。 */
 .chat > *:not(.chat-image) {
-  max-width: 90%;
+  max-width: 82%;
 }
 .chat .chat-bubble {
   width: fit-content;
-  max-width: 28rem;
+  max-width: 52rem;
 }
 /* 气泡内的 markdown 不应再继承全局 `max-w-none`（详情页/文档页需要铺满），
    而是填满气泡宽度，配合上面的 fit-content 正确换行。 */
@@ -751,16 +759,16 @@
 /* 1.2) 有引用时给整块一个最小宽度：太短的消息（如「在吗」）旁边的引用块会被压到
    2 字一行，比被撑宽还难读。最小宽度必须挂在**包裹层**（`.chat` 的 grid item），
    并让气泡铺满它。
-   ⚠️ 别把 min-width 挂在气泡上：气泡会越过包裹层的 `max-width: 90%` 溢出去，
+   ⚠️ 别把 min-width 挂在气泡上：气泡会越过包裹层的 `max-width: 82%` 溢出去，
    引用块（=100% 包裹层）就与气泡错位（无头实测 240px 列 MISMATCH）。
-   用 `min(14rem, 90%)` 而不是 `min(14rem, 100%)`：min-width 会压过 max-width，
-   取 100% 时窄屏会顶到列边、丢掉 `max-width: 90%` 留的右边距。
+   用 `min(14rem, 82%)` 而不是 `min(14rem, 100%)`：min-width 会压过 max-width，
+   取 100% 时窄屏会顶到列边、丢掉 `max-width: 82%` 留的呼吸位。
    无头实测（chromium + 真实产物）：
-     - 720px 列：短主体 224px / 长主体 448px（不受影响），wrap = 气泡 = 引用块
-     - 300px 列：223.2px（收敛到 90%），三者仍相等
-     - 240px 列：169.2px（= 90%，保住右边距），三者仍相等 */
+     - 720px 列：短主体 224px / 长主体按 82% 封顶，wrap = 气泡 = 引用块
+     - 300px 列：收敛到 82%，三者仍相等
+     - 240px 列：= 82%，保住右边距，三者仍相等 */
 .chat .chat-has-quote {
-  min-width: min(14rem, 90%);
+  min-width: min(14rem, 82%);
 }
 .chat .chat-has-quote .chat-bubble {
   width: 100%;
@@ -2318,3 +2326,87 @@
   .project-agent-item-tasks li {
     overflow-wrap: anywhere;
   }
+
+/* ============================================================
+ * Agent 实时事件中心（专注模式）
+ * - 入场：极短的位移 + 淡入，模拟「信号落到面板上」
+ * - 运行节点：呼吸式光环，不改变布局尺寸
+ * - 扫描线：仅顶部一条极淡的光带，提示链路仍在流动
+ * 全部尊重 prefers-reduced-motion。
+ * ============================================================ */
+@keyframes al-feed-in {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes al-node-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-primary) 45%, transparent); }
+  70% { box-shadow: 0 0 0 5px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+@keyframes al-live-breathe {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+@keyframes al-scan-sweep {
+  0% { transform: translateY(-120%); }
+  100% { transform: translateY(520%); }
+}
+
+.al-feed-item { animation: al-feed-in 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+/* 新事件从顶部展开：grid 行高 0fr → 1fr，旧事件被平滑下推一位 */
+@keyframes al-feed-expand {
+  from { grid-template-rows: 0fr; }
+  to   { grid-template-rows: 1fr; }
+}
+.al-feed-enter {
+  display: grid;
+  grid-template-rows: 0fr;
+  animation: al-feed-expand 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.al-feed-enter-inner {
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.al-node-running { animation: al-node-pulse 1.8s ease-out infinite; }
+.al-live-dot { animation: al-live-breathe 1.6s ease-in-out infinite; }
+.al-scan { animation: al-scan-sweep 3.6s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .al-feed-item,
+  .al-node-running,
+  .al-live-dot,
+  .al-scan {
+    animation: none !important;
+  }
+  .al-feed-enter {
+    animation: none !important;
+    grid-template-rows: 1fr !important;
+  }
+}
+
+/* 边激活：新跳转落图时，箭头做一次短促的能量脉冲 */
+@keyframes al-edge-flash {
+  0% { opacity: 0.15; filter: drop-shadow(0 0 0 transparent); }
+  35% { opacity: 1; filter: drop-shadow(0 0 4px color-mix(in oklab, var(--color-primary) 55%, transparent)); }
+  100% { opacity: 0.9; filter: drop-shadow(0 0 0 transparent); }
+}
+.al-edge-flash { animation: al-edge-flash 0.9s ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .al-edge-flash { animation: none !important; }
+}
+
+/* 长内容折叠：越往下越淡，配合底部「点击展开全文」 */
+.collapsible-fade {
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 58%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 58%, transparent 100%);
+}
+/* 展开态显式清掉遮罩：折叠组件的两个分支都使用非空 class，
+   避免空值未覆盖旧样式导致“已展开但仍被裁住”。 */
+.collapsible-expanded {
+  -webkit-mask-image: none;
+  mask-image: none;
+}

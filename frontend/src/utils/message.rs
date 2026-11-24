@@ -333,11 +333,19 @@ mod tests {
     fn text_and_mixed_share_render_paths() {
         // 批3 主副渲染分支合并守卫：MSG_MIXED 与 MSG_TEXT 同路直渲染，
         // 任一渲染面回退/移除 MSG_MIXED 分支时本测试即失败暴露。
+        // 富消息渲染已抽到共享组件（对话页 / 专注态复用），守卫跟着指向新位置。
+        let rich = include_str!("../components/chat/rich_message.rs");
+        assert_eq!(
+            rich.matches("MSG_TEXT | MSG_MIXED => {").count(),
+            1,
+            "rich_message.rs 主渲染 match 须恰一处 MSG_TEXT|MSG_MIXED 合并臂"
+        );
+        // 对话页不得再保留第二套富消息渲染：两处漂移正是本次抽取要消除的问题
         let chat = include_str!("../pages/message/chat.rs");
         assert_eq!(
             chat.matches("MSG_TEXT | MSG_MIXED => {").count(),
-            1,
-            "chat.rs 主渲染 match 须恰一处 MSG_TEXT|MSG_MIXED 合并臂"
+            0,
+            "chat.rs 不应再保留本地富消息渲染（须复用 RichMessageItem）"
         );
         let bubble = include_str!("../components/chat/message_bubble.rs");
         // 副渲染把归一化结果落在局部 `message_type`（不 clone 整条 MessageListItem，

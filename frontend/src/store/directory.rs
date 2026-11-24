@@ -17,12 +17,12 @@ use dioxus::prelude::*;
 use wasm_bindgen::JsValue;
 use web_sys::console;
 
-use crate::api::hr::list_agents;
+use crate::api::hr::{get_agent, list_agents};
 use crate::api::organization::list_users;
 use crate::store::auth::use_auth_state;
 use crate::utils::mention::receiver_mention_html;
 use crate::utils::message::{NameMap, resolve_sender_name};
-use common::api::{ListAgentsRequest, MessageListItem, PaginationParams};
+use common::api::{GetAgentRequest, ListAgentsRequest, MessageListItem, PaginationParams};
 
 /// 目录单次拉取上限（组织规模上限保护，超出部分回退为短 ID 展示）
 const DIRECTORY_FETCH_LIMIT: usize = 500;
@@ -36,6 +36,10 @@ pub struct Directory {
     pub users: NameMap,
     /// 是否已尝试加载过（无论成功失败，避免反复重试打爆接口）
     pub loaded: bool,
+    /// 已发起过按需补拉的 Agent id（无论成功失败都不再重复请求）。
+    /// 仅作请求去重，不参与展示；放在目录里是为了让所有消息项共享同一份，
+    /// 避免同一 Agent 的每条消息各发一次 `get_agent`。
+    pub probed: std::collections::HashSet<String>,
 }
 
 impl Directory {
@@ -118,4 +122,30 @@ pub fn use_provide_directory() -> Signal<Directory> {
 /// 读取全局名称目录
 pub fn use_directory() -> Signal<Directory> {
     use_context::<Signal<Directory>>()
+}
+
+/// 目录里查不到某 Agent 时，按需拉取该 Agent 的单条详情并回填，
+/// 使气泡能显示真实名字而非兜底「Agent <id>」。
+///
+/// 去重集合挂在 `Directory.probed` 上（全局唯一）：同一 Agent 无论被多少条
+/// 消息引用，都只发一次请求；富消息项 / 对话页共用本函数。
+pub fn ensure_agent_name(mut directory: Signal<Directory>, from_id: String) {
+    if directory.peek().agents.contains_key(&from_id) {
+        return;
+    }
+    if directory.peek().probed.contains(&from_id) {
+        return;
+    }
+    directory.write().probed.insert(from_id.clone());
+    spawn(async move {
+        if let Ok(resp) = get_agent(GetAgentRequest {
+            id: from_id.clone(),
+            ..Default::default()
+        })
+        .await
+            && !resp.name.is_empty()
+        {
+            directory.write().agents.insert(from_id, resp.name);
+        }
+    });
 }

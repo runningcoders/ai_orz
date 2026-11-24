@@ -288,7 +288,12 @@ pub fn AvatarBubble(
         //      卡片 computed style 是 `display:block; opacity:1`（focus-within 正常工作）
         //      却一个像素都看不见 ——「点击无反应」。
         // 故 `.avatar` 只贴在触发层、紧邻圆形；宿主（`.chat-image`）只负责 grid 定位。
-        div { class: "dropdown dropdown-top {align_class}",
+        div {
+            class: "dropdown dropdown-top {align_class}",
+            // 点击头像 / 卡片只交给气泡自己处理，不要冒泡到对话框的
+            // 「点任意位置聚焦输入框」——否则焦点立刻被输入框抢走，
+            // DaisyUI 的 :focus-within 失效，卡片会一闪而过。
+            onclick: move |e| e.stop_propagation(),
             div {
                 tabindex: 0,
                 role: "button",
@@ -416,10 +421,20 @@ fn agent_bubble_card_content(agent: &GetAgentResponse) -> Element {
                     }
                 }
             }
-            Link {
-                class: "btn hud-btn btn-ghost btn-xs",
-                to: crate::pages::Route::HrAgentDetail { id: aid },
-                "在详情页打开 →"
+            div { class: "flex flex-col gap-1",
+                // 专注模式 = 工作台 AgentDetail 视图；只需要 Agent ID，无需额外状态
+                Link {
+                    class: "btn hud-btn btn-primary btn-xs w-full",
+                    to: crate::pages::Route::Workspace {
+                        view: Some(format!("agent:{aid}")),
+                    },
+                    "进入专注模式 →"
+                }
+                Link {
+                    class: "btn hud-btn btn-ghost btn-xs w-full",
+                    to: crate::pages::Route::HrAgentDetail { id: aid },
+                    "在详情页打开 →"
+                }
             }
         }
     }

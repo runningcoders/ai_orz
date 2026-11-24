@@ -3,6 +3,7 @@ use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
 pub mod use_attachments;
+pub mod use_event_source;
 pub mod use_resource;
 pub mod use_workspace_data;
 
@@ -21,6 +22,8 @@ use wasm_bindgen::JsCast;
 /// 改为：每次应用启动都从服务端刷新一次身份与角色，以服务端为唯一事实源。
 static IDENTITY_HYDRATED: AtomicBool = AtomicBool::new(false);
 
+#[allow(unused_imports)]
+pub use use_event_source::{EventSourceOptions, use_event_source};
 #[allow(unused_imports)]
 pub use use_resource::{ResourceState, use_resource};
 

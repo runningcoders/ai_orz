@@ -9,13 +9,12 @@
 use dioxus::prelude::*;
 use std::collections::HashSet;
 use std::time::Duration;
-use wasm_bindgen::JsCast;
-use wasm_bindgen::closure::Closure;
 
 use common::api::{ListMessagesRequest, MessageListItem};
 
 use crate::api::message::poll_new_messages;
 use crate::components::workspace_graph::WorkspaceView;
+use crate::hooks::{EventSourceOptions, use_event_source};
 use crate::utils::{
     MESSAGE_POLL_LIMIT, MESSAGE_POLL_SECS, page_hidden, replace_tmp_with_real, request_scope,
 };
@@ -53,12 +52,6 @@ pub fn use_message_feed(signals: MessageFeedSignals) {
 
 /// SSE 订阅：尽力而为的实时通道
 fn use_sse(signals: MessageFeedSignals) {
-    struct WsSseResource {
-        event_source: web_sys::EventSource,
-        on_message: Closure<dyn FnMut(web_sys::MessageEvent)>,
-    }
-
-    let mut resource = use_signal(|| Option::<WsSseResource>::None);
     let mut messages = signals.messages;
     let mut project_unread = signals.project_unread;
     let mut agent_unread = signals.agent_unread;
@@ -66,65 +59,53 @@ fn use_sse(signals: MessageFeedSignals) {
     let chat_to_agent_id = signals.to_agent_id;
     let view = signals.view;
 
-    use_effect(move || {
-        let on_message = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
-            if let Some(data) = event.data().as_string()
-                && let Ok(msg) = serde_json::from_str::<MessageListItem>(&data)
-            {
-                let mut msgs = messages.write();
-                // 移除同 content 的乐观消息（统一使用 replace_tmp_with_real）
-                replace_tmp_with_real(&mut msgs, &msg);
+    let on_message = EventHandler::new(move |data: String| {
+        let Ok(msg) = serde_json::from_str::<MessageListItem>(&data) else {
+            return;
+        };
+        let mut msgs = messages.write();
+        // 移除同 content 的乐观消息（统一使用 replace_tmp_with_real）
+        replace_tmp_with_real(&mut msgs, &msg);
 
-                // 过滤口径与历史首屏 / 上拉翻页共用同一个判定（`message_in_context`），
-                // 三处必须一致，否则会出现「实时推来的看得到、一刷新就消失」。
-                let cur_pid = chat_project_id.read().clone();
-                // raw_aid 供红点判定（保持「当前对话对象」原义），
-                // cur_aid 是过滤用的（仅 Agent 私聊才收窄，见 context_agent_filter）
-                let raw_aid = chat_to_agent_id.read().clone();
-                let cur_aid = context_agent_filter(&view.read().clone(), raw_aid.clone());
+        // 过滤口径与历史首屏 / 上拉翻页共用同一个判定（`message_in_context`），
+        // 三处必须一致，否则会出现「实时推来的看得到、一刷新就消失」。
+        let cur_pid = chat_project_id.read().clone();
+        // raw_aid 供红点判定（保持「当前对话对象」原义），
+        // cur_aid 是过滤用的（仅 Agent 私聊才收窄，见 context_agent_filter）
+        let raw_aid = chat_to_agent_id.read().clone();
+        let cur_aid = context_agent_filter(&view.read().clone(), raw_aid.clone());
 
-                let matched = message_in_context(&msg, cur_pid.as_deref(), cur_aid.as_deref());
+        let matched = message_in_context(&msg, cur_pid.as_deref(), cur_aid.as_deref());
 
-                if matched {
-                    // 去重
-                    if !msgs.iter().any(|m| m.message_id == msg.message_id) {
-                        msgs.push(msg);
-                        if msgs.len() > MAX_KEEP {
-                            let drain = msgs.len() - MAX_KEEP;
-                            msgs.drain(..drain);
-                        }
-                    }
-                } else if msg.from_role == 1 {
-                    // 不属于当前视图 → 更新侧边栏红点；Agent 回复（from_role=1）才触发
-                    if let Some(pid) = &msg.project_id
-                        && cur_pid.as_deref() != Some(pid)
-                    {
-                        project_unread.write().insert(pid.clone());
-                    }
-                    let sender_aid = &msg.from_id;
-                    if raw_aid.as_deref() != Some(sender_aid) {
-                        agent_unread.write().insert(sender_aid.clone());
-                    }
+        if matched {
+            // 去重
+            if !msgs.iter().any(|m| m.message_id == msg.message_id) {
+                msgs.push(msg);
+                if msgs.len() > MAX_KEEP {
+                    let drain = msgs.len() - MAX_KEEP;
+                    msgs.drain(..drain);
                 }
             }
-        }) as Box<dyn FnMut(_)>);
-
-        if let Ok(es) = web_sys::EventSource::new("/api/v1/finance/messages/sse") {
-            es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
-            resource.set(Some(WsSseResource {
-                event_source: es,
-                on_message,
-            }));
+        } else if msg.from_role == 1 {
+            // 不属于当前视图 → 更新侧边栏红点；Agent 回复（from_role=1）才触发
+            if let Some(pid) = &msg.project_id
+                && cur_pid.as_deref() != Some(pid)
+            {
+                project_unread.write().insert(pid.clone());
+            }
+            let sender_aid = &msg.from_id;
+            if raw_aid.as_deref() != Some(sender_aid) {
+                agent_unread.write().insert(sender_aid.clone());
+            }
         }
     });
 
-    use_drop(move || {
-        if let Some(res) = resource.take() {
-            res.event_source.set_onmessage(None);
-            drop(res.on_message);
-            res.event_source.close();
-        }
-    });
+    // 生命周期（创建 / 换 URL / 卸载）统一由 hook 管理
+    use_event_source(
+        "/api/v1/finance/messages/sse".to_string(),
+        on_message,
+        EventSourceOptions::default(),
+    );
 }
 
 /// 兜底轮询：可见时按固定间隔拉当前会话的增量

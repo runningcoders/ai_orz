@@ -11,6 +11,7 @@ pub mod chart_scene;
 pub mod charts;
 pub mod chat;
 pub mod code_editor;
+pub mod collapsible_content;
 pub mod confirm_dialog;
 pub mod create_tool;
 pub mod create_tool_http;

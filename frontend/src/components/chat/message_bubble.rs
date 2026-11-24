@@ -1,13 +1,15 @@
 //! 简版消息气泡组件
 //!
 //! 支持文本消息、图片附件、文件附件渲染。
-//! 不含工具调用卡片、任务卡片等复杂消息类型（chat.rs 主对话页保留自己的富版本）。
-//! 适用于 Agent 详情页、Workspace 底部对话框等极简场景。
+//! 不含工具调用卡片、任务卡片等复杂消息类型；完整富消息见
+//! [`super::rich_message::RichMessageItem`]（对话页 / 工作台专注态共用）。
+//! 适用于 Agent 详情页等只需要「谁说了什么」的极简场景。
 
 use common::api::MessageListItem;
 use dioxus::prelude::*;
 
 use crate::components::avatar_bubble::{AvatarBubble, AvatarTone};
+use crate::components::collapsible_content::CollapsibleContent;
 use crate::components::markdown::MarkdownRenderer;
 use crate::store::auth::use_auth_state;
 use crate::store::directory::use_directory;
@@ -18,6 +20,17 @@ use crate::utils::message::{
     is_attachment_message, role_avatar, role_class, role_label,
 };
 use crate::utils::time::format_message_time;
+
+/// 被引用消息的轻量预览（工作台/详情页消息流用）
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReplyPreview {
+    /// 被引用消息 ID：没有话题面板时滚动到该消息
+    pub message_id: String,
+    /// 消息链根 ID：有话题面板时用它打开整条链
+    pub root_id: Option<String>,
+    pub sender: String,
+    pub text: String,
+}
 
 /// 单条消息气泡
 ///
@@ -46,6 +59,15 @@ pub fn MessageBubble(
     msg: MessageListItem,
     #[props(default = true)] show_receiver: bool,
     #[props(default = false)] avatar_popover: bool,
+    /// 引用块：由持有完整消息列表的调用方解析后传入
+    #[props(default)]
+    reply_preview: Option<ReplyPreview>,
+    /// 长消息折叠高度（紧凑消息流用小值，全屏对话用大值）
+    #[props(default = 280)]
+    collapse_height: u32,
+    /// 有话题面板的宿主传入：点击引用块打开整条消息链，而不是只滚动
+    #[props(default)]
+    on_open_thread: Option<EventHandler<String>>,
 ) -> Element {
     let role = msg.from_role;
     let avatar = role_avatar(role);
@@ -78,7 +100,7 @@ pub fn MessageBubble(
     };
 
     rsx! {
-        div { class: "{item_class}", key: "{msg.message_id}",
+        div { id: "msg-{msg.message_id}", class: "{item_class}", key: "{msg.message_id}",
             // 宿主只提供定位位（flex-none）：`.avatar` 由 AvatarBubble 自己贴在触发层
             if avatar_popover && (role == 0 || role == 1) {
                 div { class: "flex-none",
@@ -109,7 +131,33 @@ pub fn MessageBubble(
                     }
                     span { class: "message-time", "{time}" }
                 }
-                {render_content(&msg)}
+                // 引用块：让紧凑消息流也能看出「这条在回谁」，点击回到被引用消息
+                if let Some(reply) = &reply_preview {
+                    button {
+                        class: "mb-1 flex w-full items-center gap-1.5 overflow-hidden rounded border-l-2 border-primary/40 bg-base-200/40 px-1.5 py-1 text-left text-[10px] text-base-content/50 transition-colors hover:bg-base-200/70",
+                        onclick: {
+                            let thread_root = reply
+                                .root_id
+                                .clone()
+                                .unwrap_or_else(|| reply.message_id.clone());
+                            let target = format!("msg-{}", reply.message_id);
+                            move |_| {
+                                if let Some(open) = on_open_thread {
+                                    open.call(thread_root.clone());
+                                    return;
+                                }
+                                if let Some(doc) = web_sys::window().and_then(|w| w.document())
+                                    && let Some(el) = doc.get_element_by_id(&target)
+                                {
+                                    el.scroll_into_view();
+                                }
+                            }
+                        },
+                        span { class: "flex-shrink-0 text-primary/70", "↩ {reply.sender}" }
+                        span { class: "truncate", "{reply.text}" }
+                    }
+                }
+                {render_content(&msg, collapse_height)}
             }
         }
     }
@@ -121,7 +169,7 @@ pub fn MessageBubble(
 /// （`content` = 附件 id、`file_type` 标记类型）。现在站内发送与渠道入站都把
 /// 附件以 `[文件名](attachment:id)` 并进正文（`Mixed`），走下面 Markdown 渲染
 /// 分支出图，不再产生新的独立附件消息。
-fn render_content(msg: &MessageListItem) -> Element {
+fn render_content(msg: &MessageListItem, collapse_height: u32) -> Element {
     // 任务完成回执(14) / 任务待验收知会(15) 是动作伴生消息，正文是 Markdown
     // 表格工作单而非 TaskAssignment 的 JSON 载荷：归一化成 MSG_TEXT，与
     // chat.rs render_message_content 同范式走同一套 MarkdownRenderer 渲染。
@@ -166,11 +214,21 @@ fn render_content(msg: &MessageListItem) -> Element {
         // 批3 混排主线：Text/Mixed 同路 Markdown 渲染（资源引用自动 chip 化）
         // Text 消息按 Markdown 渲染（紧凑样式）
         rsx! {
-            span { class: "message-text",
-                MarkdownRenderer { content: msg.content.clone(), compact: true, resolve_attachment_descriptions: true }
+            CollapsibleContent {
+                len: msg.content.chars().count(),
+                max_height: collapse_height,
+                span { class: "message-text",
+                    MarkdownRenderer { content: msg.content.clone(), compact: true, resolve_attachment_descriptions: true }
+                }
             }
         }
     } else {
-        rsx! { span { class: "message-text", "{msg.content}" } }
+        rsx! {
+            CollapsibleContent {
+                len: msg.content.chars().count(),
+                max_height: collapse_height,
+                span { class: "message-text", "{msg.content}" }
+            }
+        }
     }
 }
