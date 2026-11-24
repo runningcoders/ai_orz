@@ -944,6 +944,20 @@ impl ThinkNode for ConsolidateNode {
     async fn run(&self, bus: &mut ThinkBus) -> Result<NodeOutcome> {
         let deps = &self.deps;
         let artifacts = read_artifacts(bus)?;
+
+        // 意图阶段的直答 / 澄清短路（intent --direct|clarify--> poll_exit --> consolidate）
+        // 绕过了 deliberate，因而从未创建 Awaken 场景的 `TraceFinishGuard`：
+        // 没有 run_think_loop 就没有 close 行。若本轮恰好在下方的 summary_gate 落下
+        // 一条 fact 留痕，`(agent, run, awaken)` 分组就只有 fact、没有 close，
+        // 查询侧 `merge_same_run` 会把它永久标成半成品，前端一直显示「进行中」。
+        // 在这里按 exit 补一行兜底 close（与 guard 同口径：`reason=short_circuit:<exit>`），
+        // 仅限这两条短路出口；正常路径已由 persist_trace 写完整 close，不重复写。
+        // ⚠️ 影子模式不落任何副作用（含 trace），与整图 shadow 契约保持一致。
+        if !deps.shadow && (artifacts.exit == EXIT_DIRECT || artifacts.exit == EXIT_CLARIFY) {
+            deps.trace_sink()
+                .close_once(&format!("short_circuit:{}", artifacts.exit));
+        }
+
         crate::log_info!(
             &deps.ctx,
             "legacy_awaken",

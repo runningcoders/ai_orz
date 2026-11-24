@@ -70,6 +70,12 @@ impl RuntimeDomainImpl {
         )
         .await
         {
+            // 跳过路径在 `skip_if_pointless` 内已往本 scope 写了一条 fact 留痕，
+            // 但直接 return 不会进入下方的 run_think_loop，因而没有 close 行。
+            // 不补这一行，`(agent, trace_id, intent-analyze)` 分组就只有 fact，
+            // 查询侧按 `kind` 判首行后标成半成品，前端永久「进行中」。
+            // 放行路径（返回 None）不在这里写，交由 run_think_loop 正常收尾。
+            scope.close_once("intent_gate_skip");
             return Ok(skipped);
         }
 

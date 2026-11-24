@@ -812,8 +812,15 @@ fn merge_into(base: &mut ThinkTraceEntry, next: ThinkTraceEntry) {
     let final_line = next.kind.is_close(next.partial);
     let next_round_count = next.rounds.len();
     if final_line {
-        let drop_count = base.partial_round_count.min(base.rounds.len());
-        base.rounds.truncate(base.rounds.len() - drop_count);
+        // 只有**携带完整轮次**的收尾行才替换增量行。guard 兜底写的 close 行
+        // rounds 为空（LLM 报错 / 早退 / timeout 时 persist_trace 被跳过），
+        // 若照常 truncate 会把报错前已成功的轮次整段清空——与 close_once
+        // 「已有轮次不受影响」的契约相悖。空收尾行只负责关闭半成品标记。
+        if next_round_count > 0 {
+            let drop_count = base.partial_round_count.min(base.rounds.len());
+            base.rounds.truncate(base.rounds.len() - drop_count);
+        }
+        // 无论哪种收尾，本片段的增量都已定型，计数清零，避免污染后续重跑片段
         base.partial_round_count = 0;
     }
 
