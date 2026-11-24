@@ -361,6 +361,50 @@ fn extract_refs_generalized_schemes_and_rejects() {
 }
 
 #[test]
+fn extract_refs_with_spans_yields_exact_link_ranges() {
+    // span 必须精确覆盖 `[名](scheme:id)`，可直接用于原文 replace_range；
+    // UTF-8 多字节（中文名）下字节偏移也要正确。
+    let text =
+        "见 [设计稿.png](attachment:att_1) 与 [@张伟](agent:agt_9)，末尾 [报告](artifact:art_2)。";
+    let got = extract_refs_with_spans(text);
+    assert_eq!(got.len(), 3);
+
+    for (r, snapshot, span) in &got {
+        let sliced = &text[span.clone()];
+        assert!(sliced.starts_with('['), "span 应含起始 [: {sliced}");
+        assert!(sliced.ends_with(')'), "span 应含闭合 ): {sliced}");
+        assert!(
+            sliced.contains(&format!("{}:", r.scheme)),
+            "span 应含 scheme: {sliced}"
+        );
+        // snapshot 为 normalize 口径（mention 去 @、普通名原样、首尾 trim）
+        assert!(!snapshot.is_empty(), "snapshot 非空: {snapshot}");
+    }
+    // 逐条核对 span 切出的原文与 snapshot
+    assert_eq!(&text[got[0].2.clone()], "[设计稿.png](attachment:att_1)");
+    assert_eq!(got[0].1, "设计稿.png");
+    assert_eq!(&text[got[1].2.clone()], "[@张伟](agent:agt_9)");
+    assert_eq!(got[1].1, "张伟");
+    assert_eq!(&text[got[2].2.clone()], "[报告](artifact:art_2)");
+    assert_eq!(got[2].1, "报告");
+}
+
+#[test]
+fn extract_refs_with_spans_normalizes_empty_snapshot_to_id() {
+    // 空链接文本 → normalize_snapshot 回退 id（与 transform 口径一致），
+    // 而 extract_refs 旧口径保持空串——两个函数口径分离、互不干扰。
+    let text = "[](attachment:att_7)";
+    let with_span = extract_refs_with_spans(text);
+    assert_eq!(with_span.len(), 1);
+    assert_eq!(with_span[0].1, "att_7");
+    assert_eq!(&text[with_span[0].2.clone()], "[](attachment:att_7)");
+
+    let plain = extract_refs(text);
+    assert_eq!(plain.len(), 1);
+    assert_eq!(plain[0].1, "");
+}
+
+#[test]
 fn format_ref_roundtrip_mention_and_generic() {
     // mention 形态与 format_mention 逐字一致（单一事实源复用）
     let m = parse_mention_dest("agent:agt_1").expect("合法提及");

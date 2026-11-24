@@ -16,8 +16,8 @@ use crate::store::directory::use_directory;
 use crate::utils::avatar::avatar_initials;
 use crate::utils::file::format_file_size;
 use crate::utils::message::{
-    MSG_MIXED, MSG_TASK_COMPLETED, MSG_TASK_PENDING_REVIEW, MSG_TEXT, involves_user,
-    is_attachment_message, role_avatar, role_class, role_label,
+    MSG_MIXED, MSG_TEXT, involves_user, is_attachment_message, normalize_markdown_type,
+    role_avatar, role_class, role_label,
 };
 use crate::utils::time::format_message_time;
 
@@ -170,17 +170,11 @@ pub fn MessageBubble(
 /// 附件以 `[文件名](attachment:id)` 并进正文（`Mixed`），走下面 Markdown 渲染
 /// 分支出图，不再产生新的独立附件消息。
 fn render_content(msg: &MessageListItem, collapse_height: u32) -> Element {
-    // 任务完成回执(14) / 任务待验收知会(15) 是动作伴生消息，正文是 Markdown
-    // 表格工作单而非 TaskAssignment 的 JSON 载荷：归一化成 MSG_TEXT，与
-    // chat.rs render_message_content 同范式走同一套 MarkdownRenderer 渲染。
+    // 通知/伴生类消息（14/15 回执 + 10/11/12 系统通知与 Agent 知会 + 7/8 确认）
+    // 正文都是 Markdown，统一归一到 MSG_TEXT 走 MarkdownRenderer。
     // ⚠️ 只归一化**类型局部变量**，不 clone 整条 `MessageListItem`：这个函数在
     // 每条气泡每次重渲染时都会跑，整结构体克隆会拖慢长列表。
-    let message_type =
-        if msg.message_type == MSG_TASK_COMPLETED || msg.message_type == MSG_TASK_PENDING_REVIEW {
-            MSG_TEXT
-        } else {
-            msg.message_type
-        };
+    let message_type = normalize_markdown_type(msg.message_type);
 
     if is_attachment_message(message_type) {
         if let Some(fm) = &msg.file_meta {
@@ -223,11 +217,15 @@ fn render_content(msg: &MessageListItem, collapse_height: u32) -> Element {
             }
         }
     } else {
+        // 兜底也走 Markdown：正文默认即 Markdown，未知/其他类型同样富文本渲染，
+        // 不退回纯文本（否则 markdown 符号原样显示）。
         rsx! {
             CollapsibleContent {
                 len: msg.content.chars().count(),
                 max_height: collapse_height,
-                span { class: "message-text", "{msg.content}" }
+                span { class: "message-text",
+                    MarkdownRenderer { content: msg.content.clone(), compact: true, resolve_attachment_descriptions: true }
+                }
             }
         }
     }

@@ -725,11 +725,26 @@
    气泡本身只给一个足够宽的固定上限（52rem ≈ 832px）：常见列宽下 82% 先触发，
    超宽屏再用它兜住可读性，避免单行过长。 */
 .chat > *:not(.chat-image) {
-  max-width: 82%;
+  max-width: min(82%, 52rem);
+  /* min-width:0 —— .chat 是 grid，item 默认 min-width:auto 会被长内容
+     （代码块 / 长单词 / 大表格）反向撑宽，导致上面 82% 相对「已被撑宽的
+     列」计算，形成循环放大。无头实测：720px 列 + 长文本，缺此规则时
+     group 撑到 682px（应 590px）、气泡撑到 832px；加上后收敛到 590px。 */
+  min-width: 0;
 }
 .chat .chat-bubble {
   width: fit-content;
-  max-width: 52rem;
+  max-width: 100%;
+}
+/* 宽度约束与消息类型无关：主分支气泡包在 .group 里，工具卡 / 任务卡 /
+   附件 / 兜底分支的气泡直挂 .chat。上面的通用规则（相对 .chat 列宽）管住
+   group 包裹层与直挂气泡；但 `.chat .chat-bubble`（0,2,0）定义更晚会覆盖
+   它，故直挂气泡用同等特异性再钉一次 min(82%, 52rem)。包裹气泡的父 group
+   已被限到 min(82%,52rem)，气泡取 100% 即不越界。
+   无头实测窄屏 720 / 中屏 1000 / 宽屏 1600 下，两种结构的所有气泡宽度
+   全部 = min(82%, 52rem)，group 与气泡严格相等（引用块对齐不被破坏）。 */
+.chat > .chat-bubble:not(.chat-image) {
+  max-width: min(82%, 52rem);
 }
 /* 气泡内的 markdown 不应再继承全局 `max-w-none`（详情页/文档页需要铺满），
    而是填满气泡宽度，配合上面的 fit-content 正确换行。 */

@@ -22,10 +22,10 @@ use crate::store::auth::use_auth_state;
 use crate::store::directory::{ensure_agent_name, use_directory};
 use crate::store::toast::{ToastState, use_toast};
 use crate::utils::{
-    MSG_AUDIO, MSG_IMAGE, MSG_MIXED, MSG_TASK_ASSIGNMENT, MSG_TASK_COMPLETED,
-    MSG_TASK_PENDING_REVIEW, MSG_TEXT, MSG_TOOL_CALL_REQUEST, MSG_TOOL_CALL_RESULT, MSG_VIDEO,
-    avatar_initials, format_file_size, format_message_time as format_time, involves_user,
-    is_attachment_message,
+    MSG_AUDIO, MSG_IMAGE, MSG_MIXED, MSG_TASK_ASSIGNMENT, MSG_TEXT, MSG_TOOL_CALL_REQUEST,
+    MSG_TOOL_CALL_RESULT, MSG_VIDEO, avatar_initials, format_file_size,
+    format_message_time as format_time, involves_user, is_attachment_message,
+    normalize_markdown_type,
 };
 
 /// 被引用消息的预览信息（气泡引用块展示用）
@@ -272,14 +272,10 @@ fn render_message_content(
         return render_attachment_message(msg, bubble_class, time_class);
     }
 
-    // 任务完成回执(14) / 任务待验收知会(15) 是动作伴生消息，正文是 Markdown
-    // 表格工作单，不是 TaskAssignment 的 JSON 载荷，按普通文本走同一套 Markdown 渲染。
-    let message_type =
-        if msg.message_type == MSG_TASK_COMPLETED || msg.message_type == MSG_TASK_PENDING_REVIEW {
-            MSG_TEXT
-        } else {
-            msg.message_type
-        };
+    // 通知/伴生类消息（14/15 回执 + 10/11/12 系统通知与 Agent 知会 + 7/8 确认）
+    // 正文都是 Markdown，统一归一到 MSG_TEXT 走 MarkdownRenderer。
+    // 归一化只改局部类型变量，不改消息数据本身（见 normalize_markdown_type）。
+    let message_type = normalize_markdown_type(msg.message_type);
 
     match message_type {
         MSG_TOOL_CALL_REQUEST | MSG_TOOL_CALL_RESULT => render_tool_call_card(
@@ -355,8 +351,12 @@ fn render_message_content(
                 div { class: "{time_class}", "{format_time(msg.created_at)}" }
             }
         }
+        // 兜底也走 Markdown：正文默认即 Markdown，未知/其他类型同样享受富文本渲染，
+        // 避免退回纯文本导致 markdown 符号原样显示（因噎废食）。
         _ => rsx! {
-            div { class: "{bubble_class} break-words whitespace-pre-wrap", "{msg.content}" }
+            div { class: "{bubble_class} break-words",
+                MarkdownRenderer { content: msg.content.clone(), compact: true, resolve_attachment_descriptions: true }
+            }
             div { class: "{time_class}", "{format_time(msg.created_at)}" }
         },
     }
