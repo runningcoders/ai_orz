@@ -17,10 +17,10 @@
 | 文件 | 层级 | 讲什么 | 视图 | 对应知识库模块 |
 |---|---|---|---|---|
 | [ai-orz-architecture.html](./ai-orz-architecture.html) | 容器级总图 | 三级 workspace、四层单向调用、存储与外部系统、认知架构分层 | 主请求路径 / 异步与 Agent 运行时 / 持久化 | 00-总览与架构 |
-| [ai-orz-think-path.html](./ai-orz-think-path.html) | 组件级 | 两阶段唤醒 → 小脑决策契约（entry_gate / entry_pool / chain_reply, close_default）→ 思考中注入新输入 → 三层预算循环（跨周期 RoundCollected 收集）→ 七相位图引擎 → 两段式落盘（增量 + 收尾，TraceFinishGuard 五条退出路径兜底 close 行）→ 前端时间线；轨迹查询走 `.jsonl.idx` 旁车索引（索引过滤 + seek 命中行），返回契约为 PagedResult（items + total，total 取自索引命中数），作用域新增 `without_project` 无项目口径（带 ctx.project_id 时拒绝）；含思考强度判相对偏移、先验与兜底分离 | 一轮思考 / 两阶段唤醒 / 轨迹链路 / 认知分层 | 02-Agent运行时 |
+| [ai-orz-think-path.html](./ai-orz-think-path.html) | 组件级 | 两阶段唤醒 → 小脑决策契约（entry_gate / entry_pool / chain_reply, close_default）→ 思考中注入新输入 → 三层预算循环（跨周期 RoundCollected 收集）→ 七相位图引擎 → 两段式落盘（增量 + 收尾，TraceFinishGuard 五条退出路径兜底 close 行）→ 前端时间线 → 专注浮层实时（RunObserver 骨架事件经 FocusLiveConsumer 出 SSE）；轨迹查询走 `.jsonl.idx` 旁车索引（索引过滤 + seek 命中行），返回契约为 PagedResult（items + total，total 取自索引命中数），作用域新增 `without_project` 无项目口径（带 ctx.project_id 时拒绝）；含思考强度判相对偏移、先验与兜底分离 | 一轮思考 / 两阶段唤醒 / 轨迹链路 / 认知分层 | 02-Agent运行时 |
 | [ai-orz-tools.html](./ai-orz-tools.html) | 组件级 | CoreTool 三协议路由（Builtin / HTTP / MCP）+ 工具级凭据契约与身份注入 + 策略拦截与六态授权 + 技能包装配 | 三层调用 / 策略与授权 / 注册与装配 | 06-工具与技能 |
 | [ai-orz-tool-context.html](./ai-orz-tool-context.html) | 组件级 | 工具调用中的上下文（身份）数据流转：声明（`CredentialKind` 的 `UserInfo` / `AgentInfo` 两个非凭据变体 + `field` 白名单 + `binding` 四注入点）→ 解析（`is_identity` 二元分派 + 未命中按来源分叉）→ 注入（`check` 注入 + `base_env` 九键末位硬 insert）→ 使用（git 子进程 4 个 `GIT_*` / commit-msg hook） | 四层主链路 / 失败语义分叉 / 注入与优先级 / 落点实证 | 06-工具与技能 |
-| [ai-orz-aop.html](./ai-orz-aop.html) | 组件级 | pkg/aop 六 Trait + Registry 单例 + 12 类业务消费者（18 处注册 / 8 Sync + 10 Async）+ 3 类 tick 生产者 + context_carrier 贯穿 | 一次事件流转 / 启动顺序 / 生产者与兜底 | 10-异步基建(AOP) |
+| [ai-orz-aop.html](./ai-orz-aop.html) | 组件级 | pkg/aop 六 Trait + Registry 单例 + 13 类业务消费者（19 处注册 / 9 Sync + 10 Async）+ 3 类 tick 生产者 + context_carrier 贯穿 | 一次事件流转 / 启动顺序 / 生产者与兜底 | 10-异步基建(AOP) |
 | [ai-orz-memory.html](./ai-orz-memory.html) | 组件级 | 四层记忆（Core / Working / Short / Long）+ 两条 JSONL（writer + 旁车索引）+ 三路召回 + 短期记忆索引分层 + 睡眠沉淀 | 四层记忆 / 存储面 / 检索与沉淀 | 03-记忆系统 |
 | [ai-orz-ontology.html](./ai-orz-ontology.html) | 组件级 | 受控词表 TBox + 属性定义与门闩 + 骨架三元组 + 漂移与有效性治理（口径与现网 `get_ontology_drift_dashboard` / `get_property_effectiveness` 同源） | 读侧链路 / 写入门闩 / 治理面 | 00-总览与架构 |
 | [ai-orz-org-federation.html](./ai-orz-org-federation.html) | 组件级 | 多级组织 + UserRole 并查集继承 + JWT 双模式 + 身份凭证 + 配对码建联与跨组织签名 | 组织与角色 / 认证与凭证 / 联邦组网 | 01-组织与权限 |
@@ -561,6 +561,60 @@
 **入口三处核对**：`docs/index.html` 三处 desc、`docs/ARCHITECTURE.md` 专题表三行、本文件清单三行，逐处 `count == 1` 断言通过后替换，只命中应改那一处。
 
 **未做人眼视觉复核**：以上全部是 archify 的自动几何度量，`visualReview` 为 `not-requested`。四道门禁全 pass 只说明「几何与结构不违规」，是否真的好看需人眼确认。
+
+### 2026-11-24 增量同步（3 张重渲染，revision → `44dc3e33`）
+
+**判定口径**：`archify-source-evidence-data` 的 `nodes{}` 引用路径清单 × **本批全量 diff 路径**（`git diff --name-only origin/main...HEAD`，72 条）求交得 per-图 touched 数。命中三档定性：真需刷 / 抽象层不符 / 机械适配。
+
+| 图 | touched | 判定 |
+|---|---|---|
+| think-path | **4** | **真需刷**（命中 `pkg/think_path/engine.rs`、`think_round/runner.rs`、`think_loop.rs`、`handlers/hr/agent/mod.rs`；引擎新增 `RunObserver` 旁路，是本图「七相位引擎」主干的新出口，图里不画就等于漏掉一条真实链路）|
+| aop | **1** | **真需刷**（命中 `src/consumer/mod.rs`；新增 `FocusLiveConsumer` 注册 ⇒ 业务消费者 12 → **13 类**、`register_consumer` 18 → **19 处**、Sync 8 → **9**。这三个数是本图的核心口径，属于「不变就是写错」）|
+| frontend | **4** | **真需刷**（命中 `pages/workspace/mod.rs`、`pages/message/chat.rs`、`build.rs`、`frontend/src/router.rs`；新增 `pages/workspace/live_center.rs` 专注浮层实时中心与 `hooks/use_event_source.rs`，是页面树与数据来源两层的新结构）|
+| task-project | 6 | 不刷（命中三消费者 + `workspace/mod.rs` + `router.rs` + `think_loop.rs`；本批对任务域只是路由注册与消费者内部实现，六态状态机 / 验收闭环 / DAG 唤醒一条没变）|
+| memory / tools | 2 / 3 | 不刷（memory 命中 `hr/agent/mod.rs` 与 `think_loop.rs`，四层记忆结构与两条 JSONL 未变；tools 命中 `tool_exec.rs` / `dao/tool_call/impl.rs` / `think_loop.rs`，本批只是工具开始事件外发，三层调用与授权链未变）|
+| a2a / architecture / data-model / infra / ontology / org-federation / search / stats / testing / tool-context | 0~2 | 不需更（architecture 命中 `consumer/mod.rs` + `router.rs` 属机械适配；org-federation 只有 `router.rs` 一行；stats 只有 `task_event_consumer.rs` 话题名改点；其余交集为空）|
+
+**三张改动摘要**：
+
+- **think-path**：`revision` → `44dc3e33`；`subtitle` 尾部补「→ 专注浮层实时 SSE」；新增组件 `live`「专注浮层实时通道」（`type: messagebus`，sources `src/consumer/focus_live_consumer.rs` + `src/pkg/focus_live.rs`）；新增连线 `tp-live`（think_path → live，「骨架事件观察者」）；新增第 13 张卡「专注浮层：实时思考图（2026-11-24 新增）」7 条。组件 16 → **17**、连线 16 → **17**、卡片 12 → **13**、视图 4（未变）。
+- **aop**：`revision` → `44dc3e33`；`subtitle` 由「12 类业务消费者（18 处注册 / 8 Sync + 10 Async）」改为 **「13 类业务消费者（19 处注册 / 9 Sync + 10 Async）」**，第 5 张卡 4 条 items 同步。组件 / 连线 / 卡片数不变（14 / 14 / 5）。
+- **frontend**：`revision` → `44dc3e33`；`subtitle` 补「SSE 生命周期收进 use_event_source，build.rs 把 docs 与静态资源打进 dist」；新增组件 `livepage`「专注浮层实时中心」（sources `pages/workspace/live_center.rs` + `hooks/use_event_source.rs`）；新增连线 `workbench-live`（workbench → livepage，「专注态右栏」）；`build` 卡补 Tailwind `@source` 扫 Rust 源码一条；新增第 6 张卡「专注浮层实时中心（2026-11-24 新增）」6 条。组件 16 → **17**、连线 16 → **17**、卡片 5 → **6**、视图 3（未变）。
+
+**几何收敛（本轮的真实取舍，必须说明）**：
+
+`live` 与 `livepage` 各有两条真实链路，但**图上只画一条**：
+
+| 图 | 画进画布的边 | 只在卡片叙述的边 | 实测代价 |
+|---|---|---|---|
+| think-path | `tp-live`（think_path → live） | `round-live`（think_round → live，轮次输出）、`live-fe`（live → frontend，SSE 推送） | 画三条：**5 交叉 / 3 超限弯道**；只画 `tp-live` 且 `live` 落 `[940,240]`：**0 交叉 / 0 超限弯道** |
+| frontend | `workbench-live`（workbench → livepage） | `live-api`（livepage → api，EventSource/SSE） | 画两条：**2 交叉 / 3 超限弯道**；只画 `workbench-live` 且 `livepage` 落 `[195,70]`：**1 交叉 / 2 超限弯道**（该 1 交叉 2 弯道全部为**既有** `pages-hr` / `pages-docs` / `workbench_api`，与本次新增无关，即**与基线持平**）|
+
+取舍理由：这三条被略去的边所表达的语义（轮次输出、SSE 推送、前端拉流）**已完整写在各自卡片里**，而画进画布会把 5 条既有链路压成交叉——按「门禁表达的是这个画布容不下这个粒度，回应方式是降粒度不是放宽门禁」，这里选择**降线条粒度、保语义在卡**，而不是把交叉留在图上或调高阈值。think-path 的 0/0 尤其重要：该图在 2026-11-21 视觉专项里刚从 14 交叉做到 0 交叉，本轮不能把它退回去。
+
+**声明值当场实测（2026-11-24 08:2x，HEAD `44dc3e33`）**：
+
+| 声明项 | 实测 |
+|---|---|
+| `register_consumer` 调用处（`src/consumer/mod.rs`） | **19** |
+| 含 `ConsumeMode` 的消费者文件 | **19** |
+| Sync / Async 分布 | **9 / 10**（Sync 新增 `focus_live_consumer.rs`）|
+| AOP 业务消费者类别数 | **13**（新增专注浮层实时通道）|
+
+**门禁（串行单进程，`ARCHIFY_HOME=/Users/aman/Technology/archify/archify`）**：
+
+| 图 | validate | finalize --browser-check | check | 产物字节 | 视觉度量（交叉 / 超限弯道） |
+|---|---|---|---|---|---|
+| think-path | **0**（9 checks） | **0**（四道全 pass，diagnostics=0） | **0** | **877,230** | **0 / 0** |
+| aop | **0**（9 checks） | **0**（四道全 pass，diagnostics=0） | **0** | **857,741** | **0 / 0** |
+| frontend | **0**（9 checks） | **0**（四道全 pass，diagnostics=0） | **0** | **867,001** | 1 / 2（与基线持平） |
+
+三张 `meta.repository.revision` 统一 = `44dc3e3393500526b84b06a20870acfc5c31ade3`（本批已推送分支 tip，非孤儿锚点）；`referenceCount` 分别 22 / 14 / 19，证据路径 MISSING = **0**。`docs/diagrams/*.delivery.json` 实测 **0**（生成回执未入仓）。
+
+**入口三处核对**：`docs/index.html`（aop 卡「7 类」→ 13 类、「18 处注册」→ 19 处、模块表「12 类消费者」→ 13 类；think-path / frontend 两处 desc 各补实时能力）、`docs/ARCHITECTURE.md`（aop 专题行数字）、本文件清单三行，逐处 `count == 1` 断言通过后替换，只命中应改那一处。
+
+**未做人眼视觉复核**：以上交叉/弯道数是 archify 的自动几何度量，`visualReview` 为 `not-requested`。四道门禁全 pass 只说明「几何与结构不违规」，是否真的好看仍需人眼确认。
+
 
 ## 五、维护约定
 
