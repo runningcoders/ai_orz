@@ -12,6 +12,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolExecEvent {
     pub event_id: String,
+    /// 发起本次调用的 Agent（顶层冗余自 `entry.agent_id`）
+    ///
+    /// 冗余的理由：事件消费方（AOP 监控过滤 / 专注浮层 SSE）按顶层字段路由，
+    /// 不应被迫了解 `entry` 的内部结构；`entry` 继续保留完整快照。
+    #[serde(default)]
+    pub agent_id: Option<String>,
     /// 完整的工具调用条目（与原 ToolCallEntry 结构一致）
     pub entry: ToolCallEntry,
     /// 从 ctx 提取的组织 ID（统计用）
@@ -33,8 +39,10 @@ impl ToolExecEvent {
         args_len: u64,
         result_len: u64,
     ) -> Self {
+        let agent_id = entry.agent_id.clone();
         Self {
             event_id: common::id::TimeId::generate().to_string(),
+            agent_id,
             entry,
             organization_id,
             user_id,
@@ -56,7 +64,7 @@ impl Event for ToolExecEvent {
 
     fn order_key(&self) -> &str {
         // 按 agent_id 串行，保证同一 Agent 的工具日志顺序
-        self.entry.agent_id.as_deref().unwrap_or("")
+        self.agent_id.as_deref().unwrap_or("")
     }
 
     fn created_at(&self) -> i64 {

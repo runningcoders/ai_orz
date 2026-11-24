@@ -1,6 +1,6 @@
 //! 任务完成交付消费者（AOP **Sync**）
 //!
-//! 订阅 `task.status_changed`，仅在 `new_status == Completed` 时产出**唯一交付载体**：
+//! 订阅 `task.status.changed`，仅在 `new_status == Completed` 时产出**唯一交付载体**：
 //!
 //! 1. 一条 `TaskCompleted(14)` 交付消息**直达 `root_user_id`**：正文带任务维度关键字段、
 //!    `execution_result` 摘要、关联产物清单（`[名称](artifact:<id>)` 协议）

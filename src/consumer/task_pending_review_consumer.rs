@@ -1,6 +1,6 @@
 //! 任务验收链路消费者（AOP **Sync**）
 //!
-//! 订阅 `task.status_changed`，处理两种转换：
+//! 订阅 `task.status.changed`，处理两种转换：
 //!
 //! 1. `→ PendingReview`：给项目 Owner（owner → initiator fallback）发一条
 //!    `TaskPendingReview(15)` 工作单，正文带验收标准 / 提交说明 / 产物清单 /

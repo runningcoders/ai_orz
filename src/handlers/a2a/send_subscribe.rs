@@ -28,6 +28,7 @@ use common::error::Result;
 
 use crate::handlers::a2a::mapper::{build_a2a_task, extract_text_from_a2a_message};
 use crate::pkg::RequestContext;
+use crate::pkg::http::sse::{CleanupStream, keep_alive, ping_event};
 use crate::service::dal::message_push::SsePushPayload;
 use crate::service::domain::message;
 use crate::service::domain::project::domain as project_domain;
@@ -38,26 +39,26 @@ type SseStream = Pin<Box<dyn Stream<Item = std::result::Result<Event, Infallible
 pub async fn handle_send_subscribe(
     Extension(ctx): Extension<RequestContext>,
     axum::Json(params): axum::Json<SendTaskParams>,
-) -> Sse<SseStream> {
+) -> Sse<impl Stream<Item = std::result::Result<Event, Infallible>>> {
     let user_id = ctx.uid().to_string();
     if user_id.is_empty() {
-        let stream = futures_util::stream::once(async {
+        let stream: SseStream = Box::pin(futures_util::stream::once(async {
             Ok(Event::default()
                 .event("error")
                 .data("A2A 请求缺少用户上下文"))
-        });
-        return Sse::new(Box::pin(stream));
+        }));
+        return Sse::new(stream).keep_alive(keep_alive());
     }
 
     let (project_id, session_id) = match do_create_project_and_message(ctx.clone(), params).await {
         Ok((pid, sid)) => (pid, sid),
         Err(e) => {
-            let stream = futures_util::stream::once(async move {
+            let stream: SseStream = Box::pin(futures_util::stream::once(async move {
                 Ok(Event::default()
                     .event("error")
                     .data(format!("创建任务失败: {}", e)))
-            });
-            return Sse::new(Box::pin(stream));
+            }));
+            return Sse::new(stream).keep_alive(keep_alive());
         }
     };
 
@@ -68,12 +69,12 @@ pub async fn handle_send_subscribe(
     {
         Ok(sr) => sr,
         Err(e) => {
-            let stream = futures_util::stream::once(async move {
+            let stream: SseStream = Box::pin(futures_util::stream::once(async move {
                 Ok(Event::default()
                     .event("error")
                     .data(format!("订阅消息流失败: {}", e)))
-            });
-            return Sse::new(Box::pin(stream));
+            }));
+            return Sse::new(stream).keep_alive(keep_alive());
         }
     };
 
@@ -99,7 +100,7 @@ pub async fn handle_send_subscribe(
                     };
 
                     if payload.project_id.as_deref() != Some(project_id.as_str()) {
-                        return Ok(Event::default().event("ping").data("keep-alive"));
+                        return Ok(ping_event());
                     }
 
                     match build_task_event(ctx, &project_id, &session_id).await {
@@ -107,22 +108,28 @@ pub async fn handle_send_subscribe(
                         Err(e) => Ok(Event::default().event("error").data(format!("{}", e))),
                     }
                 }
-                Err(_) => Ok(Event::default().event("ping").data("keep-alive")),
+                // 消息流没有恢复语义：丢帧时发一条心跳占位，保持连接不断
+                Err(_) => Ok(ping_event()),
             }
         }
     });
 
+    // 客户端断开或服务关闭时，stream 被丢弃 → Drop guard 注销订阅。
+    // 之前用 `tokio::signal::ctrl_c()` 只等进程退出，客户端关页后订阅会一直挂着。
     let ctx_cleanup = ctx.clone();
     let conn_id_cleanup = connection_id.clone();
-    tokio::spawn(async move {
-        let _ = tokio::signal::ctrl_c().await;
-        let _ = message::domain()
-            .delivery()
-            .unsubscribe_sse(ctx_cleanup, &conn_id_cleanup)
-            .await;
-    });
+    let stream: SseStream = Box::pin(CleanupStream::new(Box::pin(stream), move || {
+        let ctx = ctx_cleanup;
+        let conn_id = conn_id_cleanup;
+        tokio::spawn(async move {
+            let _ = message::domain()
+                .delivery()
+                .unsubscribe_sse(ctx, &conn_id)
+                .await;
+        });
+    }));
 
-    Sse::new(Box::pin(stream))
+    Sse::new(stream).keep_alive(keep_alive())
 }
 
 async fn do_create_project_and_message(

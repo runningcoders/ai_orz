@@ -124,7 +124,9 @@ impl ThinkBackend for LegacyBackend {
         .with_progress(&deps.progress)
         .with_collected(&deps.collected)
         .with_thinking_intensity_offset(input.thinking_intensity_offset)
-        .with_force_intensity(input.force_intensity);
+        .with_force_intensity(input.force_intensity)
+        // 影子跑不发布实时观测事件，与根图观测者的开关保持一致
+        .with_silent(deps.shadow);
         if let Some(inbox) = &input.inbox {
             params = params.with_inbox(inbox);
         }

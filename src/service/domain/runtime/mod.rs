@@ -458,6 +458,8 @@ pub mod busy_guard;
 // 映射为 `CancelThinkingResponse`，暴露方式与消息域 `RecallOutcome` 对齐
 pub mod cancel;
 mod cerebellum_router;
+// 思考图观测者：pkg 引擎 → AOP 事件的唯一桥接点（供三条 runner 复用）
+pub(crate) mod focus_graph;
 // ── run 级句柄家族：图前由调用方构造、图内写、图后读（所有权显式，非进程级表）──
 //   `ThinkLoopProgress` / `WakeUsage` → `types.rs`（属入参契约，四个场景通用）
 //   `InboxState`                      → `inbox.rs`（三挂点 + 独立设计文档）

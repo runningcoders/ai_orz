@@ -700,6 +700,8 @@ fn hr_routes() -> Router {
             "/agents/{id}/runtime-status",
             get(handlers::hr::agent::runtime_status_handler),
         )
+        // 专注浮层实时思考图（SSE）：运行时事件流，不落消息库
+        .route("/agents/{id}/live", get(handlers::hr::agent::live_handler))
         .route(
             "/agents/{id}/cancel-thinking",
             post(handlers::hr::agent::cancel_thinking_handler),

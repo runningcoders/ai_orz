@@ -59,12 +59,22 @@ pub async fn run_legacy_settle(deps: Arc<SettleDeps>) -> Result<LegacySettleOutc
         Arc::new(SettleNode::new(Arc::clone(&deps))),
         Arc::new(FinalizeNode::new(Arc::clone(&deps))),
     ];
+    let path_id = blueprint.id.clone();
     let engine = ThinkPathEngine::new(
         blueprint,
         nodes,
         Arbiter::deterministic(),
         build_providers(Arc::clone(&deps)),
-    )?;
+    )?
+    .with_observer(super::super::focus_graph::AopGraphObserver::new(
+        deps.ctx.clone(),
+        agent_id.clone(),
+        "settle",
+        common::id::TimeId::generate().to_string(),
+        path_id,
+        deps.ctx.task_id().cloned(),
+        deps.ctx.project_id().cloned(),
+    ));
 
     let mut run = new_run(&deps);
     if let Err(e) = engine.run_into(&mut run).await {

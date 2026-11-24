@@ -3,6 +3,7 @@ pub mod a2a_task_update;
 pub mod agent_loop;
 pub mod agent_settle;
 pub mod agent_state;
+pub mod cerebellum;
 pub mod cron_trigger;
 pub mod email;
 pub mod federation;
@@ -12,8 +13,11 @@ pub mod message;
 pub mod organization;
 pub mod task_dispatched;
 pub mod task_status;
+pub mod think_graph;
+pub mod think_output;
 pub mod think_round;
 pub mod tool_exec;
+pub mod tool_started;
 pub mod wechat;
 
 pub use a2a_poll::A2aPollRequestedEvent;
@@ -24,6 +28,7 @@ pub use a2a_task_update::{
 pub use agent_loop::AgentLoopEvent;
 pub use agent_settle::AgentSettleEvent;
 pub use agent_state::AgentStateEvent;
+pub use cerebellum::CerebellumDecidedEvent;
 pub use cron_trigger::CronTriggerEvent;
 pub use email::EmailInboundEvent;
 pub use federation::{
@@ -36,6 +41,9 @@ pub use message::MessageCreatedEvent;
 pub use organization::OrganizationChangedEvent;
 pub use task_dispatched::TaskDispatchedEvent;
 pub use task_status::TaskStatusChangedEvent;
+pub use think_graph::ThinkGraphEvent;
+pub use think_output::ThinkOutputEvent;
 pub use think_round::ThinkRoundEvent;
 pub use tool_exec::ToolExecEvent;
+pub use tool_started::ToolStartedEvent;
 pub use wechat::{IlinkMessage, WechatInboundEvent};

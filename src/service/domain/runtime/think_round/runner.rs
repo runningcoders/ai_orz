@@ -66,6 +66,8 @@ pub(crate) struct RoundRun<'a> {
     pub collected: Arc<Mutex<crate::service::domain::runtime::RoundCollected>>,
     /// 与 `run_think_loop` 共享的轨迹信封（收尾去重位同源）
     pub trace_sink: crate::service::domain::runtime::think_trace::TraceSink,
+    /// 静默运行：不挂实时观测者（影子模式）
+    pub silent: bool,
 }
 
 /// 装配并驱动轮级环图，返回循环终止结果
@@ -93,6 +95,7 @@ pub(crate) async fn run(domain: RuntimeDomainImpl, input: RoundRun<'_>) -> Resul
         inbox,
         collected,
         trace_sink,
+        silent,
     } = input;
 
     // 模型标识：事件上报用；与老循环「每轮共用同一份」的口径一致
@@ -114,6 +117,7 @@ pub(crate) async fn run(domain: RuntimeDomainImpl, input: RoundRun<'_>) -> Resul
         force_intensity,
     );
 
+    let graph_id = common::id::TimeId::generate().to_string();
     let deps = Arc::new(RoundDeps {
         domain,
         ctx,
@@ -121,6 +125,7 @@ pub(crate) async fn run(domain: RuntimeDomainImpl, input: RoundRun<'_>) -> Resul
         brain,
         scene,
         call_options,
+        graph_id: graph_id.clone(),
         trace_id: trace_id.to_string(),
         tool_descriptors: tool_descriptors.to_vec(),
         max_rounds,
@@ -144,6 +149,7 @@ pub(crate) async fn run(domain: RuntimeDomainImpl, input: RoundRun<'_>) -> Resul
     let poll_enabled = deps.inbox.is_some();
     let blueprint =
         blueprint::round_blueprint_with_poll(available_rounds, enable_reflect, poll_enabled)?;
+    let path_id = blueprint.id.clone();
     let engine = ThinkPathEngine::new(
         blueprint,
         nodes::build_nodes(&deps),
@@ -151,6 +157,22 @@ pub(crate) async fn run(domain: RuntimeDomainImpl, input: RoundRun<'_>) -> Resul
         Arbiter::deterministic(),
         ProviderSet::new(),
     )?;
+    // 影子模式不挂观测者：影子跑不能引入任何新副作用（含 AOP 事件）
+    let engine = if silent {
+        engine
+    } else {
+        engine.with_observer(
+            crate::service::domain::runtime::focus_graph::AopGraphObserver::new(
+                deps.ctx.clone(),
+                deps.agent.po.id.clone(),
+                deps.scene.as_str(),
+                graph_id,
+                path_id,
+                deps.ctx.task_id().cloned(),
+                deps.ctx.project_id().cloned(),
+            ),
+        )
+    };
 
     let run = engine.run(trace_id, Stimulus::default()).await?;
     persist_trace(&deps, &run);

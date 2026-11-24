@@ -996,36 +996,64 @@ impl BrainDal for BrainDalImpl {
             Ok::<_, common::error::Error>((answers, usage))
         };
 
-        match tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), batch).await {
-            Err(_) => {
-                log_warn!(
-                    ctx,
-                    "brain_decide",
-                    timeout_source = timeout_source,
-                    ignored_provider_timeout_ms = ?ignored_provider_ms,
-                    "cerebellum decide timeout: {}ms, scenes={:?}",
-                    timeout_ms,
-                    scenes
-                );
-                DecisionOutcome::degraded(DegradedReason::Timeout, elapsed_ms())
-            }
-            Ok(Err(e)) => {
-                log_warn!(
-                    ctx,
-                    "brain_decide",
-                    error = ?e,
-                    scenes = ?scenes,
-                    "cerebellum decide failed"
-                );
-                DecisionOutcome::degraded(DegradedReason::CallError, elapsed_ms())
-            }
-            Ok(Ok((answers, usage))) => DecisionOutcome {
+        let outcome =
+            match tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), batch).await {
+                Err(_) => {
+                    log_warn!(
+                        ctx,
+                        "brain_decide",
+                        timeout_source = timeout_source,
+                        ignored_provider_timeout_ms = ?ignored_provider_ms,
+                        "cerebellum decide timeout: {}ms, scenes={:?}",
+                        timeout_ms,
+                        scenes
+                    );
+                    DecisionOutcome::degraded(DegradedReason::Timeout, elapsed_ms())
+                }
+                Ok(Err(e)) => {
+                    log_warn!(
+                        ctx,
+                        "brain_decide",
+                        error = ?e,
+                        scenes = ?scenes,
+                        "cerebellum decide failed"
+                    );
+                    DecisionOutcome::degraded(DegradedReason::CallError, elapsed_ms())
+                }
+                Ok(Ok((answers, usage))) => DecisionOutcome {
+                    answers,
+                    degraded: None,
+                    latency_ms: elapsed_ms(),
+                    usage,
+                },
+            };
+
+        // 观测：把这次小脑结论推给专注浮层（运行时消息，不落库）。
+        // NoProvider 等前置门在更早处已 return，不会走到这里，避免刷屏。
+        let answers = outcome
+            .answers
+            .summary()
+            .into_iter()
+            .map(|(qid, summary)| common::api::focus::CerebellumAnswerBrief { qid, summary })
+            .collect();
+        let outcome_label = outcome
+            .degraded
+            .map(|d| d.as_str().to_string())
+            .unwrap_or_else(|| "ok".to_string());
+        crate::pkg::aop::publish(
+            &ctx,
+            crate::models::events::cerebellum::cerebellum_decided_event(
+                &brain.agent_id,
+                scenes.iter().map(|s| s.to_string()).collect(),
+                &outcome_label,
+                outcome.degraded.map(|d| d.as_str().to_string()),
+                outcome.latency_ms,
                 answers,
-                degraded: None,
-                latency_ms: elapsed_ms(),
-                usage,
-            },
-        }
+            ),
+        )
+        .await;
+
+        outcome
     }
 
     async fn embed_entity(

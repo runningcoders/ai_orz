@@ -258,6 +258,30 @@ fn build_trace_round(
     }
 }
 
+/// 细节层上报：一轮思考的推理摘要 + 助手输出预览
+///
+/// 发布失败不影响主流程（AOP publish 内部吞掉序列化错误），事件也不落库。
+async fn publish_think_output(
+    deps: &RoundDeps,
+    ctx: &crate::pkg::request_context::RequestContext,
+    local_round: usize,
+    reasoning: &[String],
+    content: Option<&str>,
+) {
+    let event = crate::models::events::think_output::think_output_event(
+        &deps.agent.po.id,
+        deps.scene.as_str(),
+        &deps.graph_id,
+        &deps.trace_id,
+        deps.wake_round_index(local_round),
+        reasoning.join("\n"),
+        content
+            .map(|c| truncate_trace_text(c, TRACE_TEXT_MAX_CHARS))
+            .unwrap_or_default(),
+    );
+    crate::pkg::aop::publish(ctx, event).await;
+}
+
 /// 把非空文本截断为可落盘的预览
 fn assistant_preview(content: &str) -> Option<String> {
     let preview = truncate_trace_text(content, TRACE_TEXT_MAX_CHARS);
@@ -449,6 +473,9 @@ async fn run_think(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
             )
             .await;
 
+            // 细节层：把本轮推理 / 输出推给专注浮层（不进消息库）
+            publish_think_output(d, &ctx, round, &reasoning, Some(content.as_str())).await;
+
             // 策略裁决交给 evaluate：这里只登记本轮产出
             let mut state = lock(&d.state)?;
             state.trace_rounds.push(build_trace_round(
@@ -510,6 +537,8 @@ async fn run_think(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
                 usage.cached_tokens,
                 usage.reasoning_tokens,
             );
+            // 细节层：本轮推理 / 助手文本推给专注浮层（工具结果由 dispatch 另行上报）
+            publish_think_output(d, &ctx, round, &reasoning, content.as_deref()).await;
             // 待执行的工具：先记 pending，dispatch 执行后回填 call_id / status / result
             let tool_traces: Vec<crate::service::domain::runtime::think_trace::ThinkTraceToolCall> =
                 tool_calls.iter().map(pending_tool_trace).collect();

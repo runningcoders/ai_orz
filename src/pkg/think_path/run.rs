@@ -46,6 +46,18 @@ pub enum RouteVia {
     Fallback,
 }
 
+impl RouteVia {
+    /// 稳定字符串口径（观测事件 / 落盘轨迹共用，避免 Debug 输出随改名漂移）
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RouteVia::Unique => "unique",
+            RouteVia::Deterministic => "deterministic",
+            RouteVia::Advisor => "advisor",
+            RouteVia::Fallback => "fallback",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct RouteRecord {
     pub step: usize,

@@ -5,6 +5,7 @@ pub mod email_inbound;
 pub mod federation_directory;
 pub mod federation_inbound_task;
 pub mod federation_ws_outbound;
+pub mod focus_live_consumer;
 pub mod lark_inbound;
 pub mod message;
 pub mod message_route_policy;
@@ -124,6 +125,8 @@ pub async fn init() -> Result<()> {
         tool_exec_stats_consumer::ToolExecStatsConsumer::new(),
     ))?;
     aop::registry().register_consumer(Arc::new(agent_loop_consumer::AgentLoopConsumer::new()))?;
+    // 专注浮层：思考图 / 轮次输出 / 工具 / 小脑事件 → 进程内 broadcast → SSE
+    aop::registry().register_consumer(Arc::new(focus_live_consumer::FocusLiveConsumer::new()))?;
     aop::registry().register_consumer(Arc::new(
         think_round_stats_consumer::ThinkRoundStatsConsumer::new(),
     ))?;

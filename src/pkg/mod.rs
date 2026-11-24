@@ -9,6 +9,7 @@ pub mod credential;
 pub mod cron;
 pub mod crypto;
 pub mod external;
+pub mod focus_live;
 pub mod git_workspace;
 pub mod http;
 pub mod identity_dataset;

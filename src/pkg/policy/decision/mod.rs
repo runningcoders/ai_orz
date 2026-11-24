@@ -99,6 +99,21 @@ pub enum DecisionValue {
     },
 }
 
+impl DecisionValue {
+    /// 一行可读描述（日志与前端展示用，禁止作为业务判定依据）
+    pub fn describe(&self) -> String {
+        match self {
+            DecisionValue::Pick {
+                chosen, confidence, ..
+            } => format!("选中 {chosen}（置信 {confidence:.2}）"),
+            DecisionValue::Grade { score, confidence } => {
+                format!("评分 {score:.2}（置信 {confidence:.2}）")
+            }
+            DecisionValue::Presence { value } => format!("概率 {value:.2}"),
+        }
+    }
+}
+
 /// 单选结论（已过阈值过滤）
 ///
 /// 与 [`DecisionValue::Pick`] 的区别：后者是**原始答案**（含全部选项概率），
@@ -152,6 +167,16 @@ impl DecisionAnswers {
     /// 答案题数
     pub fn len(&self) -> usize {
         self.values.len()
+    }
+
+    /// 全部结论的可读摘要（`qid → 一行描述`）
+    ///
+    /// 只用于观测 / 展示，不参与任何判定；排序沿用 BTreeMap 的 qid 顺序。
+    pub fn summary(&self) -> Vec<(String, String)> {
+        self.values
+            .iter()
+            .map(|(qid, value)| (qid.clone(), value.describe()))
+            .collect()
     }
 }
 

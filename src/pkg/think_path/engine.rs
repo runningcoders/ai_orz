@@ -10,17 +10,21 @@ use super::arbiter::{Arbiter, NodePool};
 use super::blueprint::ThinkPathBlueprint;
 use super::bus::ProviderSet;
 use super::node::{NodeContract, NodeOutcome};
+use super::observer::{GraphEdgeSpec, GraphNodeSpec, GraphTrace, RunObserver};
 use super::run::{NodeOccurrence, RouteRecord, RouteVia, RunTrace, ThinkRun};
 use super::types::{LoadFailureMode, NodeId, Stimulus};
 use common::error::{Result, bail_err, err};
 use serde_json::Value;
 use std::sync::Arc;
+use std::time::Instant;
 
 pub struct ThinkPathEngine {
     blueprint: Arc<ThinkPathBlueprint>,
     pool: NodePool,
     arbiter: Arbiter,
     providers: ProviderSet,
+    /// 执行观测者（可选）：把骨架动作实时推出去，不影响主流程
+    observer: Option<Arc<dyn RunObserver>>,
 }
 
 impl ThinkPathEngine {
@@ -36,7 +40,14 @@ impl ThinkPathEngine {
             pool,
             arbiter,
             providers,
+            observer: None,
         })
+    }
+
+    /// 挂执行观测者（链式）
+    pub fn with_observer(mut self, observer: Arc<dyn RunObserver>) -> Self {
+        self.observer = Some(observer);
+        self
     }
 
     pub fn blueprint(&self) -> &ThinkPathBlueprint {
@@ -71,6 +82,36 @@ impl ThinkPathEngine {
     /// 而实例原本就该是这唯一的真相来源。任何需要「异常中断也要留下做过什么」
     /// 的调用方都应该用这个入口（也从若来的中介代理层是按提纲说的直接可用）。
     pub async fn run_into(&self, run: &mut ThinkRun) -> Result<()> {
+        let started = Instant::now();
+        self.emit(
+            &run.run_id,
+            GraphTrace::RunStarted {
+                path_id: self.blueprint.id.clone(),
+                entry: self.blueprint.entry.clone(),
+                nodes: self.graph_nodes(),
+                edges: self.graph_edges(),
+                stimulus_brief: truncate_chars(&run.stimulus.text, 300),
+            },
+        )
+        .await;
+
+        let result = self.drive(run).await;
+
+        let duration_ms = started.elapsed().as_millis() as u64;
+        self.emit(
+            &run.run_id,
+            GraphTrace::RunFinished {
+                steps: run.trace.steps,
+                error: result.as_ref().err().map(|e| e.to_string()),
+                duration_ms,
+            },
+        )
+        .await;
+        result
+    }
+
+    /// 主循环：`ensure_loaded` → 跑节点 → 记 occurrence → 仲裁下一步
+    async fn drive(&self, run: &mut ThinkRun) -> Result<()> {
         let mut current = NodeId::new(self.blueprint.entry.clone());
         loop {
             if run.trace.steps >= self.blueprint.limits.max_steps {
@@ -99,7 +140,38 @@ impl ThinkPathEngine {
             let step_index = run.trace.steps;
             let seq = run.trace.count(&current) + 1;
 
-            let outcome: NodeOutcome = node.run(&mut run.bus).await?;
+            self.emit(
+                &run.run_id,
+                GraphTrace::NodeStarted {
+                    node: current.as_str().to_string(),
+                    phase: node.phase().as_str().to_string(),
+                    step: step_index,
+                    seq,
+                    purpose: node.purpose().to_string(),
+                },
+            )
+            .await;
+
+            let node_started = Instant::now();
+            let outcome: NodeOutcome = match node.run(&mut run.bus).await {
+                Ok(outcome) => outcome,
+                Err(e) => {
+                    self.emit(
+                        &run.run_id,
+                        GraphTrace::NodeFinished {
+                            node: current.as_str().to_string(),
+                            step: step_index,
+                            seq,
+                            signal: None,
+                            failed: true,
+                            duration_ms: node_started.elapsed().as_millis() as u64,
+                        },
+                    )
+                    .await;
+                    return Err(e);
+                }
+            };
+            let node_duration_ms = node_started.elapsed().as_millis() as u64;
             for patch in &outcome.patches {
                 run.overlay.apply(patch.clone());
             }
@@ -109,6 +181,18 @@ impl ThinkPathEngine {
                 step_index,
                 signal: Some(outcome.signal.clone()),
             });
+            self.emit(
+                &run.run_id,
+                GraphTrace::NodeFinished {
+                    node: current.as_str().to_string(),
+                    step: step_index,
+                    seq,
+                    signal: Some(outcome.signal.tag().to_string()),
+                    failed: matches!(outcome.signal, super::types::NodeSignal::Fail(_)),
+                    duration_ms: node_duration_ms,
+                },
+            )
+            .await;
 
             let decided = self
                 .arbiter
@@ -126,6 +210,21 @@ impl ThinkPathEngine {
             if decided.via == RouteVia::Advisor {
                 run.trace.advisor_calls += 1;
             }
+            self.emit(
+                &run.run_id,
+                GraphTrace::RouteDecided {
+                    step: step_index,
+                    candidates: decided
+                        .candidates
+                        .iter()
+                        .map(|c| c.as_str().to_string())
+                        .collect(),
+                    chosen: decided.chosen.as_str().to_string(),
+                    via: decided.via.as_str().to_string(),
+                    reason: decided.reason.clone(),
+                },
+            )
+            .await;
             run.trace.routes.push(RouteRecord {
                 step: step_index,
                 candidates: decided.candidates,
@@ -137,6 +236,40 @@ impl ThinkPathEngine {
         }
 
         Ok(())
+    }
+
+    /// 观测动作出口：无观察者时零开销
+    async fn emit(&self, run_id: &str, trace: GraphTrace) {
+        if let Some(observer) = &self.observer {
+            observer.on_trace(run_id, trace).await;
+        }
+    }
+
+    /// 静态节点目录（run 开始时一次性下发）
+    fn graph_nodes(&self) -> Vec<GraphNodeSpec> {
+        self.blueprint
+            .nodes
+            .iter()
+            .map(|spec| GraphNodeSpec {
+                id: spec.id.clone(),
+                phase: spec.phase.clone(),
+                purpose: spec.purpose.clone(),
+                priority: spec.priority,
+            })
+            .collect()
+    }
+
+    /// 静态边目录
+    fn graph_edges(&self) -> Vec<GraphEdgeSpec> {
+        self.blueprint
+            .edges
+            .iter()
+            .map(|edge| GraphEdgeSpec {
+                from: edge.from.clone(),
+                to: edge.to.clone(),
+                on: edge.on.clone(),
+            })
+            .collect()
     }
 
     /// 惰性加载：已达成深度 ≥ 请求档才跳过
@@ -166,6 +299,15 @@ impl ThinkPathEngine {
             }
         }
         Ok(())
+    }
+}
+
+/// 按字符截断（避免在多字节字符中间切断）
+fn truncate_chars(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        text.to_string()
+    } else {
+        text.chars().take(max_chars).collect()
     }
 }
 

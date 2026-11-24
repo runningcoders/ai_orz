@@ -37,6 +37,7 @@ pub mod blueprint;
 pub mod bus;
 pub mod engine;
 pub mod node;
+pub mod observer;
 pub mod policy;
 pub mod run;
 pub mod strategy;
@@ -60,6 +61,7 @@ pub use engine::ThinkPathEngine;
 pub use node::{
     ActivationBudget, ActivationRule, BusPredicate, NodeContract, NodeOutcome, ThinkNode,
 };
+pub use observer::{GraphEdgeSpec, GraphNodeSpec, GraphTrace, RunObserver};
 pub use policy::{
     ActivationGuard, BudgetPolicy, BusPredicatePolicy, GuardCtx, InSetPolicy, compile_guard,
 };

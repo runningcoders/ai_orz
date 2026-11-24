@@ -1,6 +1,6 @@
 //! Task event consumer (AOP async)
 //!
-//! 订阅 `task.status_changed` 事件，对 `TaskStatus::Completed` 的状态变更只做一件事：
+//! 订阅 `task.status.changed` 事件，对 `TaskStatus::Completed` 的状态变更只做一件事：
 //! **后继就绪补发**：给依赖本任务且前置已全量就绪的后继任务补发 `TaskAssignment`
 //! （DAG 依赖是项目内概念，游离任务跳过）。
 //!
