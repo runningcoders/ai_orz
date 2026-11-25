@@ -59,7 +59,7 @@ fn resolve_owner_user_id(uid: &str, creator_type: CreatorType, creator_id: &str)
 #[register_handler_tool(
     id = "schedule_agent_task",
     name = "Schedule Agent Task",
-    description = "Create a schedule for an agent to autonomously wake up and act at a later time. Provide a title, the full user intent (description), and one time rule: cron_expression (5-field cron), interval_seconds, or run_at (Unix ms). Optionally set start_at/end_at window, agent_id (the responsible agent; defaults to yourself when you are an agent), behavior (AsyncAgentWakeup by default, or AsyncNotify to remind the user instead), and max_runs (positive integer). Identity fields (owner, org, creator) are taken from the request context and cannot be overridden. Returns the created schedule detail with its id.",
+    description = "Create a schedule that fires later: either wake the responsible agent to act (behavior=AsyncAgentWakeup, default) or have that agent notify the owner (behavior=AsyncNotify). Provide a title, the full intent to deliver at fire time (description), and one time rule: cron_expression (5-field cron), interval_seconds, or run_at (one-off, Unix ms). Optional: start_at/end_at window, agent_id (responsible agent; defaults to yourself when you are an agent), max_runs (positive integer). Identity fields (owner, org, creator) are fixed from the request context and cannot be overridden. Returns the created schedule detail with its trigger_id.",
     params = "common::api::ScheduleAgentTaskRequest",
     neural,
     tags = "scheduling,autonomy"

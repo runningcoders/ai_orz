@@ -1,21 +1,22 @@
 # 日程管理（Schedule Management）
 
-让用户「到点提醒我 / 到点自己去做」的诉求按时发生。四个工具：`schedule_agent_task`（建）、`query_schedule`（查）、`update_schedule`（改）、`cancel_schedule`（删）。
+日程像给未来的自己（或用户）贴的一张**闹钟便签**：现在写清「什么时候、做什么、谁来处理」，到点系统自动把便签递出去——递给用户是提醒，递给 Agent 是唤醒执行。没有它，你只能即时响应，用户说「明天提醒我」说完就过去了。
 
-## 何时用
+四个工具：`schedule_agent_task`（建）、`query_schedule`（查）、`update_schedule`（改）、`cancel_schedule`（删）。参数细节看各工具描述，这里只讲**什么意图用哪个、怎么配合**。
 
-- 「明天提醒我…」「每周一早上…」→ 建日程
-- 「这周有什么安排」「下周有没有…」→ 查日程
-- 「改到下午三点」「换个人负责」「不用了」→ 改 / 删日程
+## 意图 → 工具
 
-## 怎么做
+- 「明天提醒我」「每周一早上」→ 建。只提醒用户用 `AsyncNotify`，要让 Agent 到点自己执行用 `AsyncAgentWakeup`（默认）。
+- 「这周有什么安排」「下周有没有…」→ 查，时间词直接传 `date_term`：`today` / `yesterday` / `tomorrow` / `three_days` / `this_week` / `next_week`，服务端按系统时区折算，**不要自己算毫秒时间戳**。
+- 「改到三点」「换个人负责」→ 改；「不用了」→ 删。
 
-1. **建**：`title` 写短标题，`description` 写完整意图（到点原样回灌给 Agent）。时间规则三选一：`cron_expression`（5 字段 cron）、`interval_seconds`、`run_at`（一次性，Unix 毫秒）。默认 `behavior=AsyncAgentWakeup`（唤醒负责 Agent 执行）；只提醒用户用 `AsyncNotify`。`agent_id` 缺省是自己。
-2. **查**：`date_term` 直接传 `today` / `tomorrow` / `this_week` / `next_week` 等，服务端按系统时区折算，**不要自己算毫秒时间戳**。返回的是**实例**：每日重复日程查一周得 7 条，按 `trigger_id` 去重。
-3. **改**：先查到 `trigger_id` 再 `update_schedule`。`start_at` / `end_at` / `max_runs` 是三态：不传=保持，`null`=清除限制，传值=覆盖；传任一时间规则字段=整体替换时间规则。
-4. **删**：`cancel_schedule(trigger_id)` 幂等。只改时间或标题就用改，别删了重建。
+## 怎么配合
+
+- 改 / 删前先 `query_schedule` 拿 `trigger_id`，不要凭空编。
+- 查返回的是**实例不是规则**：每日重复日程查一周得 7 条，共享同一个 `trigger_id`，别当成 7 条日程分别改。
+- 只改时间或标题就用改，别删了重建。
 
 ## 红线
 
 - 只能查、改、删**归属当前用户**的日程；归属用户、组织、创建者由系统从上下文固化，传参改不了。
-- 查到的是展开后的实例而非规则；重复日程的多个实例共享同一个 `trigger_id`。
+- 系统和他人的日程不可见；同一归属下多个 Agent 共享管理权。

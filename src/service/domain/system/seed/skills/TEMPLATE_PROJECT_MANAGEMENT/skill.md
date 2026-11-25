@@ -21,9 +21,9 @@ Project（项目，顶层容器，有 owner_agent_id）
 | 状态 | 值 | 说明 |
 |------|---|------|
 | `Deleted` | 0 | 软删除，**不可通过状态接口设置**，必须走删除 action |
-| `InProgress` | 3 | 进行中（**默认，创建即启动**），创建时自动填入 `start_at` |
-| `Completed` | 4 | 已完成，自动填入 `end_at` |
-| `Archived` | 5 | 已归档 |
+| `InProgress` | 1 | 进行中（**默认，创建即启动**），创建时自动填入 `start_at` |
+| `Completed` | 2 | 已完成，自动填入 `end_at` |
+| `Archived` | 3 | 已归档 |
 
 ```
 InProgress → Completed / Archived
@@ -215,7 +215,9 @@ Completed     → Archived
 
 快照产物 ID 统一回写 description 索引（**替换不追加**），历史沿革靠对应 tags 产物链按时间顺序追溯。
 
-## 附件管理（Finance Domain）
+## 附件管理
+
+工具实现位于 Finance Domain，但可达性分两类：`get_attachment` / `get_attachment_content` / `search_attachments` / `save_attachment_description` 是 **neural 常驻**；`create_text_attachment` / `list_attachments` / `update_attachment_content` / `delete_attachment` 属 `file_management` tag，需装对应工具包。
 
 **关键约束**：文本 ≤64KB；文件名禁 `/` `\` `..` 与绝对路径；文本附件必须 `file_type=Document` + text 类 mime；非 owner 访问返回 `NotFound`（避免泄露存在性）；删除为软删除。工具参数见 Schema（`create_text_attachment` / `get_attachment` / `get_attachment_content` / `list_attachments` / `update_attachment_content` / `delete_attachment`）。
 

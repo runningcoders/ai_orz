@@ -16,7 +16,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "cancel_schedule",
     name = "Cancel Schedule",
-    description = "Cancel a schedule you created. Pass trigger_id (returned by schedule_agent_task or found via query_schedule). Cancelling is idempotent: an already-cancelled schedule returns cancelled=false instead of an error. You can only cancel your own schedules; system maintenance triggers and other users' schedules are not visible. Use update_schedule if you only want to change the time or title.",
+    description = "Cancel a schedule owned by the current user (any agent acting for that user may cancel it; creator does not grant permission). Pass trigger_id from schedule_agent_task or query_schedule. Idempotent: cancelling again returns cancelled=false, not an error. System maintenance triggers and other users' schedules are not visible. Use update_schedule to change only the time or title.",
     params = "common::api::CancelScheduleRequest",
     neural,
     tags = "scheduling,autonomy"
