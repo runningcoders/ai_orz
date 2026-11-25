@@ -2,7 +2,7 @@
 //!
 //! 浏览器原生 `<input type="datetime-local">` 的选择器是亮色系统面板，
 //! 与暗色 HUD 主题割裂（实测在 orz-hud 下是一块刺眼白板）。本组件自绘
-//! 暗色浮层（复用 `.orz-popover` 切角面板），点击输入框任意位置即弹出：
+//! 暗色面板（复用 `.orz-popover` 切角样式），点击输入框任意位置就地展开：
 //! 上/下月切换、今天快捷键、点日期选日、时/分滚轮微调、点「完成」应用。
 //!
 //! 值语义仍为 `"YYYY-MM-DDTHH:MM"` 字符串，与 `utils::time` 的
@@ -11,10 +11,6 @@
 
 use chrono::{Datelike, Duration, Local, NaiveDate, NaiveDateTime, Timelike};
 use dioxus::prelude::*;
-use std::cell::RefCell;
-use std::rc::Rc;
-use wasm_bindgen::JsCast;
-use web_sys::HtmlInputElement;
 
 const VALUE_FORMAT: &str = "%Y-%m-%dT%H:%M";
 
@@ -133,14 +129,13 @@ fn WheelColumn(props: WheelColumnProps) -> Element {
     }
 }
 
-/// 日期时间输入：整框点击弹出 HUD 面板
+/// 日期时间输入：整框点击就地展开 HUD 面板
+///
+/// 面板走文档流（不做 fixed 坐标计算）：弹窗 `.hud-modal` 带 backdrop-filter，
+/// 会让后代 fixed 参照系从视口变成弹窗，叠加弹窗内部滚动后坐标漂移很大。
 #[component]
 pub fn DateTimeInput(props: DateTimeInputProps) -> Element {
     let mut open = use_signal(|| false);
-    // 弹窗（.modal-box）是滚动容器，absolute 面板会被裁 ⇒ 按输入框视口坐标 fixed 定位
-    let input_ref = use_hook(|| Rc::new(RefCell::new(None::<HtmlInputElement>)));
-    let mount_ref = input_ref.clone();
-    let mut panel_pos = use_signal(|| (0.0_f64, 0.0_f64));
     let initial_date = parse_value(&props.value)
         .map(|dt| dt.date())
         .unwrap_or_else(|| Local::now().date_naive());
@@ -182,12 +177,6 @@ pub fn DateTimeInput(props: DateTimeInputProps) -> Element {
                 readonly: true,
                 disabled: props.disabled,
                 value: display_value(&props.value),
-                onmounted: move |evt: MountedEvent| {
-                    if let Some(element) = evt.data().downcast::<web_sys::Element>() {
-                        *mount_ref.borrow_mut() =
-                            Some(element.clone().unchecked_into::<HtmlInputElement>());
-                    }
-                },
                 onclick: move |_| {
                     if props.disabled {
                         return;
@@ -197,21 +186,6 @@ pub fn DateTimeInput(props: DateTimeInputProps) -> Element {
                         draft_date.set(dt.date());
                         draft_hour.set(dt.hour() as i32);
                         draft_minute.set(dt.minute() as i32);
-                    }
-                    // 面板约 450px 高：下方放不下就翻到输入框上方，避免超出视口
-                    if let Some(element) = input_ref.borrow().as_ref() {
-                        let rect = element.get_bounding_client_rect();
-                        let viewport_height = web_sys::window()
-                            .and_then(|window| window.inner_height().ok())
-                            .and_then(|height| height.as_f64())
-                            .unwrap_or(800.0);
-                        const PANEL_HEIGHT: f64 = 450.0;
-                        let top = if rect.bottom() + PANEL_HEIGHT + 8.0 > viewport_height {
-                            rect.top() - PANEL_HEIGHT - 4.0
-                        } else {
-                            rect.bottom() + 4.0
-                        };
-                        panel_pos.set((rect.left(), top.max(4.0)));
                     }
                     open.set(!open());
                 },
@@ -227,14 +201,18 @@ pub fn DateTimeInput(props: DateTimeInputProps) -> Element {
             }
 
             if open() {
-                // 透明遮罩：点面板外关闭；z 档低于 .orz-popover（30）
+                // 点面板外关闭；面板在文档流中就地展开，不计算视口坐标
                 div {
                     class: "fixed inset-0 z-20",
                     onclick: move |_| open.set(false),
                 }
                 div {
-                    class: "orz-popover fixed p-3 w-64",
-                    style: "left: {panel_pos().0}px; top: {panel_pos().1}px;",
+                    class: "orz-popover relative z-30 mt-1 p-3 w-64",
+                    onmounted: move |evt: MountedEvent| {
+                        if let Some(element) = evt.data().downcast::<web_sys::Element>() {
+                            element.scroll_into_view();
+                        }
+                    },
                     div { class: "flex items-center justify-between mb-2",
                         div { class: "flex items-center gap-1",
                             button {
