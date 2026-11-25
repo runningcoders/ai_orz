@@ -11,6 +11,10 @@
 
 use chrono::{Datelike, Duration, Local, NaiveDate, NaiveDateTime, Timelike};
 use dioxus::prelude::*;
+use std::cell::RefCell;
+use std::rc::Rc;
+use wasm_bindgen::JsCast;
+use web_sys::HtmlInputElement;
 
 const VALUE_FORMAT: &str = "%Y-%m-%dT%H:%M";
 
@@ -55,6 +59,12 @@ fn commit(date: NaiveDate, hour: i32, minute: i32, on_change: &EventHandler<Stri
     if let Some(value) = serialize(date, &format!("{hour:02}:{minute:02}")) {
         on_change.call(value);
     }
+}
+
+/// 展开方向：下方放不下且上方更宽敞时向上，否则向下
+fn should_open_up(top: f64, bottom: f64, viewport_height: f64, panel_height: f64) -> bool {
+    let space_below = viewport_height - bottom;
+    space_below < panel_height + 8.0 && top > space_below
 }
 
 /// 滚轮取模：到边界循环（23 往下是 00，59 往上是 00）
@@ -133,9 +143,13 @@ fn WheelColumn(props: WheelColumnProps) -> Element {
 ///
 /// 面板走文档流（不做 fixed 坐标计算）：弹窗 `.hud-modal` 带 backdrop-filter，
 /// 会让后代 fixed 参照系从视口变成弹窗，叠加弹窗内部滚动后坐标漂移很大。
+/// 展开方向按输入框在视口中的上下剩余空间决定：下方放不下则向上展开。
 #[component]
 pub fn DateTimeInput(props: DateTimeInputProps) -> Element {
     let mut open = use_signal(|| false);
+    let mut open_up = use_signal(|| false);
+    let input_ref = use_hook(|| Rc::new(RefCell::new(None::<HtmlInputElement>)));
+    let mount_ref = input_ref.clone();
     let initial_date = parse_value(&props.value)
         .map(|dt| dt.date())
         .unwrap_or_else(|| Local::now().date_naive());
@@ -169,7 +183,7 @@ pub fn DateTimeInput(props: DateTimeInputProps) -> Element {
     let input_class = format!("{} pr-9", props.class);
 
     rsx! {
-        div { class: "relative",
+        div { class: if open() && open_up() { "relative flex flex-col-reverse" } else { "relative flex flex-col" },
             input {
                 class: "{input_class}",
                 id: "{props.id}",
@@ -177,6 +191,12 @@ pub fn DateTimeInput(props: DateTimeInputProps) -> Element {
                 readonly: true,
                 disabled: props.disabled,
                 value: display_value(&props.value),
+                onmounted: move |evt: MountedEvent| {
+                    if let Some(element) = evt.data().downcast::<web_sys::Element>() {
+                        *mount_ref.borrow_mut() =
+                            Some(element.clone().unchecked_into::<HtmlInputElement>());
+                    }
+                },
                 onclick: move |_| {
                     if props.disabled {
                         return;
@@ -186,6 +206,21 @@ pub fn DateTimeInput(props: DateTimeInputProps) -> Element {
                         draft_date.set(dt.date());
                         draft_hour.set(dt.hour() as i32);
                         draft_minute.set(dt.minute() as i32);
+                    }
+                    // 只判断展开方向：下方空间不够且上方更宽敞时向上展开
+                    if let Some(element) = input_ref.borrow().as_ref() {
+                        let rect = element.get_bounding_client_rect();
+                        let viewport_height = web_sys::window()
+                            .and_then(|window| window.inner_height().ok())
+                            .and_then(|height| height.as_f64())
+                            .unwrap_or(800.0);
+                        const PANEL_HEIGHT: f64 = 440.0;
+                        open_up.set(should_open_up(
+                            rect.top(),
+                            rect.bottom(),
+                            viewport_height,
+                            PANEL_HEIGHT,
+                        ));
                     }
                     open.set(!open());
                 },
@@ -207,7 +242,11 @@ pub fn DateTimeInput(props: DateTimeInputProps) -> Element {
                     onclick: move |_| open.set(false),
                 }
                 div {
-                    class: "orz-popover relative z-30 mt-1 p-3 w-64",
+                    class: if open_up() {
+                        "orz-popover relative z-30 mb-1 p-3 w-64"
+                    } else {
+                        "orz-popover relative z-30 mt-1 p-3 w-64"
+                    },
                     onmounted: move |evt: MountedEvent| {
                         if let Some(element) = evt.data().downcast::<web_sys::Element>() {
                             element.scroll_into_view();
@@ -344,6 +383,18 @@ mod tests {
             shift_month(date, 11),
             NaiveDate::from_ymd_opt(2026, 12, 1).unwrap()
         );
+    }
+
+    #[test]
+    fn open_direction_follows_available_space() {
+        // 下方充足：向下
+        assert!(!should_open_up(500.0, 540.0, 1000.0, 440.0));
+        // 下方不足、上方更宽：向上
+        assert!(should_open_up(600.0, 640.0, 1000.0, 440.0));
+        // 两边都不够但上方稍多：仍向上
+        assert!(should_open_up(400.0, 440.0, 700.0, 440.0));
+        // 下方不足、上方更少：留在下方，交给 scrollIntoView 兜底
+        assert!(!should_open_up(40.0, 80.0, 400.0, 440.0));
     }
 
     #[test]
