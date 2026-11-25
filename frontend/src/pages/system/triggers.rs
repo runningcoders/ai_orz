@@ -3,19 +3,24 @@
 use crate::components::hud::{HudPanel, HudSection};
 use dioxus::prelude::*;
 
+use crate::api::hr::{list_agents, search_agents};
 use crate::api::system::{
-    create_cron_trigger, delete_cron_trigger, get_cron_trigger, list_cron_triggers,
-    pause_cron_trigger, query_schedule, resume_cron_trigger, update_cron_trigger,
+    create_cron_trigger, create_schedule, delete_cron_trigger, get_cron_trigger,
+    list_cron_triggers, pause_cron_trigger, query_schedule, resume_cron_trigger,
+    update_cron_trigger, update_schedule,
 };
+use crate::components::SearchableSelect;
 use crate::components::charts::donut_chart::{DonutChart, DonutSlice};
 use crate::components::confirm_dialog::ConfirmDialog;
+use crate::components::date_time_input::DateTimeInput;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{
-    CreateCronTriggerRequest, ListCronTriggersResponseItem, QueryScheduleRequest,
-    QueryScheduleResponse, ScheduleOccurrence, UpdateCronTriggerRequest,
+    CreateCronTriggerRequest, ListAgentsRequest, ListCronTriggersResponseItem,
+    QueryScheduleRequest, QueryScheduleResponse, ScheduleAgentTaskRequest, ScheduleOccurrence,
+    SearchAgentsRequest, UpdateCronTriggerRequest, UpdateScheduleRequest,
 };
 use common::enums::{CreatorType, ScheduleDateTerm, TriggerBehavior, TriggerType};
 use common::schedule::{calendar_day_key, calendar_day_keys, format_time_hm_in_tz};
@@ -208,6 +213,36 @@ fn is_system_shape(behavior: TriggerBehavior) -> bool {
     behavior == TriggerBehavior::SyncMaintenance
 }
 
+/// 表单的业务类型：日程 vs 系统定时任务（两个不同概念，不是时间规则）
+fn shape_of_trigger(t: &ListCronTriggersResponseItem) -> &'static str {
+    // 与列表筛选、Who 列共用同一判据；旧表单建的 trigger_type=Schedule 但
+    // 行为仍是 SyncMaintenance 的记录也按系统项处理（它没有归属用户，不能走日程接口）。
+    if is_system_shape(t.behavior) {
+        "system"
+    } else {
+        "schedule"
+    }
+}
+
+/// 时间规则三选一（cron > interval > run_at）→ 表单单选值
+fn time_rule_of(cron: Option<&str>, interval: Option<i64>, _run_at: Option<i64>) -> &'static str {
+    if cron.is_some_and(|c| !c.trim().is_empty()) {
+        "cron"
+    } else if interval.is_some() {
+        "interval"
+    } else {
+        "once"
+    }
+}
+
+/// Agent 选择组件产出 "名称 (ID)"，反解出 ID 写入表单
+fn agent_id_from_option(selection: &str) -> String {
+    match selection.rfind('(') {
+        Some(i) if selection.ends_with(')') => selection[i + 1..selection.len() - 1].to_string(),
+        _ => selection.to_string(),
+    }
+}
+
 /// 日历实例与列表共用同一套筛选语义。
 ///
 /// 「形态」是行为模板的分区（系统 = `SyncMaintenance`），不是数据维度，
@@ -323,8 +358,9 @@ pub fn SystemTriggers() -> Element {
     let mut schedule_query = use_signal(|| None::<QueryScheduleResponse>);
     let mut calendar_loading = use_signal(|| false);
 
-    // 表单状态
+    // 表单状态：业务类型（日程 / 系统定时任务）与时间规则（cron / interval / once）是两个维度
     let mut form_name = use_signal(String::new);
+    let mut form_shape = use_signal(|| "system".to_string());
     let mut form_type = use_signal(|| "cron".to_string());
     let mut form_cron = use_signal(String::new);
     let mut form_interval = use_signal(|| "300".to_string());
@@ -332,8 +368,13 @@ pub fn SystemTriggers() -> Element {
     let mut form_agent_id = use_signal(String::new);
     let mut form_settle_limit = use_signal(|| "10".to_string());
     let mut form_payload = use_signal(String::new);
-    // 日程一次性触发的本地时间（datetime-local 字符串），提交时解析为毫秒 run_at
+    let mut form_behavior = use_signal(|| "wakeup".to_string());
+    let mut form_description = use_signal(String::new);
+    // 一次性触发的本地时间（datetime-local 字符串），提交时解析为毫秒 run_at
     let mut form_run_at_local = use_signal(String::new);
+    // Agent 选择组件（复用通用 SearchableSelect）：预载列表 + 输入时搜索
+    let mut agent_options = use_signal(Vec::<String>::new);
+    let mut agent_loading = use_signal(|| false);
     let mut json_error = use_signal(String::new);
     let mut submitting = use_signal(|| false);
     let mut loading_detail = use_signal(|| false);
@@ -357,6 +398,53 @@ pub fn SystemTriggers() -> Element {
             loading.set(false);
         });
     });
+
+    // Agent 候选：入场先拉一页，输入时再按关键词搜索（沿用知识图谱页的口径）
+    use_effect(move || {
+        spawn(async move {
+            agent_loading.set(true);
+            match list_agents(ListAgentsRequest::default()).await {
+                Ok(page) => agent_options.set(
+                    page.items
+                        .iter()
+                        .map(|a| format!("{} ({})", a.name, a.id))
+                        .collect(),
+                ),
+                Err(e) => toast.error(format!("加载 Agent 列表失败: {}", e)),
+            }
+            agent_loading.set(false);
+        });
+    });
+
+    let handle_agent_search = move |keyword: String| {
+        let kw = keyword.trim().to_string();
+        spawn(async move {
+            agent_loading.set(true);
+            let result = if kw.is_empty() {
+                list_agents(ListAgentsRequest::default()).await
+            } else {
+                search_agents(&SearchAgentsRequest {
+                    keyword: Some(kw),
+                    ..Default::default()
+                })
+                .await
+            };
+            match result {
+                Ok(page) => agent_options.set(
+                    page.items
+                        .iter()
+                        .map(|a| format!("{} ({})", a.name, a.id))
+                        .collect(),
+                ),
+                Err(e) => toast.error(format!("搜索 Agent 失败: {}", e)),
+            }
+            agent_loading.set(false);
+        });
+    };
+
+    let mut handle_agent_select = move |selection: String| {
+        form_agent_id.set(agent_id_from_option(&selection));
+    };
 
     // 日历视图切换时按日期词拉取展开实例（相对日词由服务端按系统时区折算）
     use_effect(move || {
@@ -387,53 +475,47 @@ pub fn SystemTriggers() -> Element {
     let handle_submit = move |_| {
         let name = form_name().trim().to_string();
         if name.is_empty() {
-            toast.error("触发器名称不能为空");
+            toast.error("名称不能为空");
             return;
         }
 
-        // 构建 payload
-        let payload_str = if form_template() == "agent_rest" {
-            match build_payload(&form_template(), &form_agent_id(), &form_settle_limit()) {
-                Ok(p) => p,
-                Err(e) => {
-                    json_error.set(e.clone());
-                    toast.error(&e);
+        let shape = form_shape();
+        // Action 模板 / payload 只在「系统定时任务」侧有意义；日程走独立入口
+        let payload_str = if shape == "system" {
+            if form_template() == "agent_rest" {
+                match build_payload(&form_template(), &form_agent_id(), &form_settle_limit()) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        json_error.set(e.clone());
+                        toast.error(&e);
+                        return;
+                    }
+                }
+            } else {
+                let p = form_payload();
+                if p.trim().is_empty() {
+                    let msg = "Payload JSON 不能为空";
+                    json_error.set(msg.to_string());
+                    toast.error(msg);
                     return;
+                }
+                match validate_json(&p) {
+                    Ok(_) => p,
+                    Err(e) => {
+                        json_error.set(e.clone());
+                        toast.error(&e);
+                        return;
+                    }
                 }
             }
         } else {
-            let p = form_payload();
-            if p.trim().is_empty() {
-                let msg = "Payload JSON 不能为空";
-                json_error.set(msg.to_string());
-                toast.error(msg);
-                return;
-            }
-            match validate_json(&p) {
-                Ok(_) => p,
-                Err(e) => {
-                    json_error.set(e.clone());
-                    toast.error(&e);
-                    return;
-                }
-            }
+            String::new()
         };
         json_error.set(String::new());
 
-        let form_type_value = form_type();
-        let trigger_type = match form_type_value.as_str() {
-            "once" => TriggerType::Once,
-            "interval" => TriggerType::Interval,
-            "schedule" => TriggerType::Schedule,
-            _ => TriggerType::Cron,
-        };
-
-        // 日程是形态标签：时间规则三选一（cron > interval > run_at），与后端
-        // create_cron_trigger 的优先级一致。cron 输入非空即用它，否则看 interval，
-        // 再否则用 datetime-local 指定的一次性时刻。
-        let cron_expression = if form_type_value == "cron"
-            || (form_type_value == "schedule" && !form_cron().trim().is_empty())
-        {
+        // 时间规则独立成一维，三选一：cron / interval / once（毫秒时间戳）
+        let time_rule = form_type();
+        let cron_expression = if time_rule == "cron" {
             let c = form_cron().trim().to_string();
             if c.is_empty() {
                 toast.error("Cron 表达式不能为空");
@@ -443,12 +525,7 @@ pub fn SystemTriggers() -> Element {
         } else {
             None
         };
-
-        let interval_seconds = if form_type_value == "interval"
-            || (form_type_value == "schedule"
-                && cron_expression.is_none()
-                && !form_interval().trim().is_empty())
-        {
+        let interval_seconds = if time_rule == "interval" {
             match form_interval().trim().parse::<i64>() {
                 Ok(n) if n > 0 => Some(n),
                 _ => {
@@ -459,19 +536,11 @@ pub fn SystemTriggers() -> Element {
         } else {
             None
         };
-
-        let run_at = if form_type_value == "once" {
-            // 单位必须与后端 `run_at` 一致（毫秒）；勿用 Date::now() / 1000（秒），
-            // 否则一次性触发器会被视为 1970 年的历史时间而立即执行。
-            Some(crate::utils::time::now_ms())
-        } else if form_type_value == "schedule"
-            && cron_expression.is_none()
-            && interval_seconds.is_none()
-        {
+        let run_at = if time_rule == "once" {
             match parse_local_datetime_ms(&form_run_at_local()) {
                 Some(ts) => Some(ts),
                 None => {
-                    toast.error("请选择日程执行时间");
+                    toast.error("请选择执行时间");
                     return;
                 }
             }
@@ -479,40 +548,107 @@ pub fn SystemTriggers() -> Element {
             None
         };
 
+        let trigger_type = match time_rule.as_str() {
+            "once" => TriggerType::Once,
+            "interval" => TriggerType::Interval,
+            _ => TriggerType::Cron,
+        };
+        let behavior = if form_behavior() == "notify" {
+            TriggerBehavior::AsyncNotify
+        } else {
+            TriggerBehavior::AsyncAgentWakeup
+        };
+        let description = {
+            let d = form_description().trim().to_string();
+            if d.is_empty() { name.clone() } else { d }
+        };
+        let agent_id = form_agent_id().trim().to_string();
+
         submitting.set(true);
         let mode = edit_mode();
         spawn(async move {
-            let result = match &mode {
-                TriggerEditMode::Create => {
-                    let req = CreateCronTriggerRequest {
-                        name,
-                        trigger_type,
-                        cron_expression,
-                        interval_seconds,
-                        run_at,
-                        payload: payload_str,
-                    };
-                    create_cron_trigger(req).await.map(|_| ())
+            // 两个业务入口：日程走 /schedules（带身份与异步行为），系统定时任务走 CRUD
+            let result = if shape == "schedule" {
+                match &mode {
+                    TriggerEditMode::Create => {
+                        let req = ScheduleAgentTaskRequest {
+                            title: name.clone(),
+                            description,
+                            cron_expression: cron_expression.clone(),
+                            interval_seconds,
+                            run_at,
+                            start_at: None,
+                            end_at: None,
+                            agent_id: if agent_id.is_empty() {
+                                None
+                            } else {
+                                Some(agent_id)
+                            },
+                            behavior: Some(behavior),
+                            action: None,
+                            max_runs: None,
+                        };
+                        create_schedule(req).await.map(|_| ())
+                    }
+                    TriggerEditMode::Edit(id) => {
+                        let req = UpdateScheduleRequest {
+                            trigger_id: id.clone(),
+                            title: Some(name.clone()),
+                            description: Some(description),
+                            cron_expression: cron_expression.clone(),
+                            interval_seconds,
+                            run_at,
+                            start_at: None,
+                            end_at: None,
+                            max_runs: None,
+                            agent_id: if agent_id.is_empty() {
+                                None
+                            } else {
+                                Some(agent_id)
+                            },
+                        };
+                        update_schedule(req).await.map(|_| ())
+                    }
                 }
-                TriggerEditMode::Edit(id) => {
-                    let req = UpdateCronTriggerRequest {
-                        trigger_id: id.clone(),
-                        name: Some(name),
-                        trigger_type: Some(trigger_type),
-                        cron_expression,
-                        interval_seconds,
-                        run_at,
-                        payload: Some(payload_str),
-                    };
-                    update_cron_trigger(req).await.map(|_| ())
+            } else {
+                match &mode {
+                    TriggerEditMode::Create => {
+                        let req = CreateCronTriggerRequest {
+                            name: name.clone(),
+                            trigger_type,
+                            cron_expression,
+                            interval_seconds,
+                            run_at,
+                            payload: payload_str,
+                        };
+                        create_cron_trigger(req).await.map(|_| ())
+                    }
+                    TriggerEditMode::Edit(id) => {
+                        let req = UpdateCronTriggerRequest {
+                            trigger_id: id.clone(),
+                            name: Some(name.clone()),
+                            trigger_type: Some(trigger_type),
+                            cron_expression,
+                            interval_seconds,
+                            run_at,
+                            payload: Some(payload_str),
+                        };
+                        update_cron_trigger(req).await.map(|_| ())
+                    }
                 }
             };
             match result {
                 Ok(_) => {
                     let msg = if matches!(mode, TriggerEditMode::Create) {
-                        "创建触发器成功"
+                        if shape == "schedule" {
+                            "创建日程成功"
+                        } else {
+                            "创建系统定时任务成功"
+                        }
+                    } else if shape == "schedule" {
+                        "更新日程成功"
                     } else {
-                        "更新触发器成功"
+                        "更新系统定时任务成功"
                     };
                     toast.success(msg);
                     show_modal.set(false);
@@ -530,7 +666,7 @@ pub fn SystemTriggers() -> Element {
     };
 
     let triggers_list = triggers.read().clone();
-    let filtered_list: Vec<_> = triggers_list
+    let mut filtered_list: Vec<_> = triggers_list
         .iter()
         .filter(|t| {
             let shape_ok = match shape_filter() {
@@ -548,6 +684,8 @@ pub fn SystemTriggers() -> Element {
         })
         .cloned()
         .collect();
+    // 时间轴：按下次执行时间升序；无有效排期的记录沉底，不污染时间轴头部
+    filtered_list.sort_by_key(|t| (t.next_run_at <= 0, t.next_run_at));
     // 触发器状态分布聚合（前端本地计算）
     let now_ms = crate::utils::time::now_ms();
     let enabled_count = triggers_list.iter().filter(|t| t.is_enabled).count();
@@ -583,9 +721,11 @@ pub fn SystemTriggers() -> Element {
         ("每月 1 号", "0 0 1 * *"),
     ];
 
-    let modal_title = match edit_mode() {
-        TriggerEditMode::Create => "创建触发器".to_string(),
-        TriggerEditMode::Edit(_) => "编辑触发器".to_string(),
+    let modal_title = match (edit_mode(), form_shape().as_str()) {
+        (TriggerEditMode::Create, "schedule") => "新建日程".to_string(),
+        (TriggerEditMode::Create, _) => "新建系统定时任务".to_string(),
+        (TriggerEditMode::Edit(_), "schedule") => "编辑日程".to_string(),
+        (TriggerEditMode::Edit(_), _) => "编辑系统定时任务".to_string(),
     };
 
     let json_placeholder =
@@ -605,7 +745,7 @@ pub fn SystemTriggers() -> Element {
             }
         }
         HudPanel { signal: Some(true),
-            title: Some("定时触发器".to_string()),
+            title: Some("定时任务与日程".to_string()),
             actions: Some(rsx!{
                     button {
                         class: "btn hud-btn btn-ghost btn-sm",
@@ -628,6 +768,7 @@ pub fn SystemTriggers() -> Element {
                         class: "btn hud-btn btn-primary",
                         onclick: move |_| {
                             form_name.set(String::new());
+                            form_shape.set("system".to_string());
                             form_type.set("cron".to_string());
                             form_cron.set(String::new());
                             form_interval.set("300".to_string());
@@ -635,6 +776,8 @@ pub fn SystemTriggers() -> Element {
                             form_agent_id.set(String::new());
                             form_settle_limit.set("10".to_string());
                             form_payload.set(String::new());
+                            form_behavior.set("wakeup".to_string());
+                            form_description.set(String::new());
                             form_run_at_local.set(String::new());
                             // 清掉上一条编辑遗留的只读概览，否则创建弹窗会显示旧日程的四组快照
                             detail_snapshot.set(None);
@@ -642,7 +785,7 @@ pub fn SystemTriggers() -> Element {
                             edit_mode.set(TriggerEditMode::Create);
                             show_modal.set(true);
                         },
-                        "+ 创建触发器"
+                        "+ 新建任务/日程"
                     }
             }),
             // P4 视图切换：规则列表 / 三天 / 周
@@ -684,7 +827,7 @@ pub fn SystemTriggers() -> Element {
             // 「系统触发器」「同步维护」在日历里恒为空，留着只会误导。
             div { class: "flex gap-3 flex-wrap mb-3 items-center",
                 if calendar_view() == CalendarView::List {
-                    span { class: "text-xs text-base-content/60", "形态" }
+                    span { class: "text-xs text-base-content/60", "类型" }
                     select {
                         class: "select select-bordered select-sm",
                         onchange: move |e| {
@@ -695,7 +838,7 @@ pub fn SystemTriggers() -> Element {
                             });
                         },
                         option { value: "all", "全部形态" }
-                        option { value: "system", "系统触发器" }
+                        option { value: "system", "系统定时任务" }
                         option { value: "schedule", "日程" }
                     }
                     span { class: "text-xs text-base-content/60 ml-2", "行为" }
@@ -757,6 +900,10 @@ pub fn SystemTriggers() -> Element {
                             {
                                 list.push((*occ).clone());
                             }
+                        }
+                        // 服务端只保证全局升序；分桶后每天再显式按执行时间升序，形成日时间轴
+                        for (_, list) in buckets.iter_mut() {
+                            list.sort_by_key(|occ| occ.run_at);
                         }
                         rsx! {
                             div { class: "text-xs text-base-content/50 mb-2",
@@ -941,6 +1088,7 @@ pub fn SystemTriggers() -> Element {
                                                     let edit_id = id_edit.clone();
                                                     // 重置表单
                                                     form_name.set(String::new());
+                                                    form_shape.set("system".to_string());
                                                     form_type.set("cron".to_string());
                                                     form_cron.set(String::new());
                                                     form_interval.set("300".to_string());
@@ -948,6 +1096,8 @@ pub fn SystemTriggers() -> Element {
                                                     form_agent_id.set(String::new());
                                                     form_settle_limit.set("10".to_string());
                                                     form_payload.set(String::new());
+                                                    form_behavior.set("wakeup".to_string());
+                                                    form_description.set(String::new());
                                                     form_run_at_local.set(String::new());
                                                     detail_snapshot.set(None);
                                                     json_error.set(String::new());
@@ -959,14 +1109,15 @@ pub fn SystemTriggers() -> Element {
                                                         match get_cron_trigger(&edit_id).await {
                                                             Ok(detail) => {
                                                                 form_name.set(detail.name.clone());
-                                                                let t_str = match detail.trigger_type {
-                                                                    TriggerType::Once => "once",
-                                                                    TriggerType::Cron => "cron",
-                                                                    TriggerType::Interval => "interval",
-                                                                    TriggerType::Schedule => "schedule",
-                                                                };
-                                                                form_type.set(t_str.to_string());
-                                                                // Schedule 三选一：按实际存的字段回填对应的时间输入
+                                                                let shape = shape_of_trigger(&detail);
+                                                                form_shape.set(shape.to_string());
+                                                                // 业务类型与时间规则是两个维度：先定形态，再按实际存的字段回填时间规则
+                                                                let time_rule = time_rule_of(
+                                                                    detail.cron_expression.as_deref(),
+                                                                    detail.interval_seconds,
+                                                                    detail.run_at,
+                                                                );
+                                                                form_type.set(time_rule.to_string());
                                                                 if let Some(c) = &detail.cron_expression {
                                                                     form_cron.set(c.clone());
                                                                 }
@@ -976,15 +1127,29 @@ pub fn SystemTriggers() -> Element {
                                                                 if let Some(r) = detail.run_at {
                                                                     form_run_at_local.set(format_local_datetime(r));
                                                                 }
+                                                                form_behavior.set(
+                                                                    if detail.behavior == TriggerBehavior::AsyncNotify {
+                                                                        "notify"
+                                                                    } else {
+                                                                        "wakeup"
+                                                                    }
+                                                                    .to_string(),
+                                                                );
+                                                                form_description.set(detail.description.clone());
+                                                                if let Some(agent) = &detail.agent_id {
+                                                                    form_agent_id.set(agent.clone());
+                                                                }
                                                                 // P3 四组只读概览
                                                                 detail_snapshot.set(Some(detail.clone()));
-                                                                let (tpl, agent_id, settle_limit) = parse_payload(&detail.payload);
-                                                                form_template.set(tpl.clone());
-                                                                if tpl == "agent_rest" {
-                                                                    form_agent_id.set(agent_id);
-                                                                    form_settle_limit.set(settle_limit);
-                                                                } else {
-                                                                    form_payload.set(detail.payload.clone());
+                                                                if shape == "system" {
+                                                                    let (tpl, agent_id, settle_limit) = parse_payload(&detail.payload);
+                                                                    form_template.set(tpl.clone());
+                                                                    if tpl == "agent_rest" {
+                                                                        form_agent_id.set(agent_id);
+                                                                        form_settle_limit.set(settle_limit);
+                                                                    } else {
+                                                                        form_payload.set(detail.payload.clone());
+                                                                    }
                                                                 }
                                                             }
                                                             Err(e) => {
@@ -1127,7 +1292,7 @@ pub fn SystemTriggers() -> Element {
                         }
                     }
                     div { class: "form-control w-full",
-                        label { class: "form-label", "触发器名称 *" }
+                        label { class: "form-label", "名称 *" }
                         input {
                             class: "input input-bordered w-full",
                             value: "{form_name}",
@@ -1135,17 +1300,32 @@ pub fn SystemTriggers() -> Element {
                             oninput: move |e| form_name.set(e.value())
                         }
                     }
-                    div { class: "form-control w-full",
-                        label { class: "form-label", "触发类型" }
-                        select {
-                            class: "select select-bordered w-full",
-                            value: "{form_type}",
-                            onchange: move |e| form_type.set(e.value()),
-                            option { value: "cron", "Cron 表达式" }
-                            option { value: "interval", "固定间隔" }
-                            option { value: "once", "一次性" }
-                            option { value: "schedule", "日程（三选一）" }
+                    // 两个维度分开选：业务类型是「日程 / 系统定时任务」，时间规则只决定何时触发
+                    div { class: "grid grid-cols-1 md:grid-cols-2 gap-3",
+                        div { class: "form-control w-full",
+                            label { class: "form-label", "类型（业务）" }
+                            select {
+                                class: "select select-bordered w-full",
+                                value: "{form_shape}",
+                                onchange: move |e| form_shape.set(e.value()),
+                                option { value: "system", "系统定时任务" }
+                                option { value: "schedule", "日程" }
+                            }
                         }
+                        div { class: "form-control w-full",
+                            label { class: "form-label", "时间规则" }
+                            select {
+                                class: "select select-bordered w-full",
+                                value: "{form_type}",
+                                onchange: move |e| form_type.set(e.value()),
+                                option { value: "cron", "Cron 表达式" }
+                                option { value: "interval", "固定间隔" }
+                                option { value: "once", "一次性（指定时刻）" }
+                            }
+                        }
+                    }
+                    div { class: "form-hint mb-2",
+                        "系统定时任务 = 同步维护动作；日程 = 归属当前用户、到点提醒或唤醒负责 Agent。时间规则只决定何时触发。"
                     }
                     if form_type() == "cron" {
                         div { class: "form-control w-full",
@@ -1163,9 +1343,7 @@ pub fn SystemTriggers() -> Element {
                                         rsx! {
                                             button {
                                                 class: "btn hud-btn btn-ghost btn-sm cron-preset-btn",
-                                                onclick: move |_| {
-                                                    form_cron.set(expr_clone.clone());
-                                                },
+                                                onclick: move |_| form_cron.set(expr_clone.clone()),
                                                 "{label}"
                                             }
                                         }
@@ -1186,107 +1364,120 @@ pub fn SystemTriggers() -> Element {
                             }
                         }
                     }
-                    if form_type() == "schedule" {
-                        div { class: "form-hint mb-2",
-                            "日程时间规则三选一，优先级：Cron > 间隔 > 指定时间。留空的项不参与判断。手动创建为系统调度规则；Agent 自主日程由工具创建（含执行身份与行为模板）。"
-                        }
+                    if form_type() == "once" {
                         div { class: "form-control w-full",
-                            label { class: "form-label", "Cron 表达式（可选）" }
-                            input {
-                                class: "form-input font-mono",
-                                value: "{form_cron}",
-                                placeholder: "0 9 * * *",
-                                oninput: move |e| form_cron.set(e.value())
+                            label { class: "form-label", "执行时刻 *" }
+                            DateTimeInput {
+                                value: form_run_at_local(),
+                                on_change: move |v| form_run_at_local.set(v),
                             }
-                            div { class: "cron-presets",
-                                for (label, expr) in cron_presets.iter() {
-                                    {
-                                        let expr_clone = expr.to_string();
-                                        rsx! {
-                                            button {
-                                                class: "btn hud-btn btn-ghost btn-sm cron-preset-btn",
-                                                onclick: move |_| form_cron.set(expr_clone.clone()),
-                                                "{label}"
-                                            }
-                                        }
+                        }
+                    }
+                    if form_shape() == "schedule" {
+                        div { class: "form-control w-full",
+                            label { class: "form-label", "说明（到点回灌的内容，留空用名称）" }
+                            textarea {
+                                class: "form-textarea",
+                                style: "min-height: 70px;",
+                                value: "{form_description}",
+                                oninput: move |e| form_description.set(e.value())
+                            }
+                        }
+                        div { class: "grid grid-cols-1 md:grid-cols-2 gap-3",
+                            div { class: "form-control w-full",
+                                label { class: "form-label", "行为" }
+                                select {
+                                    class: "select select-bordered w-full",
+                                    value: "{form_behavior}",
+                                    onchange: move |e| form_behavior.set(e.value()),
+                                    option { value: "wakeup", "唤醒 Agent 执行" }
+                                    option { value: "notify", "提醒归属用户" }
+                                }
+                            }
+                            div { class: "form-control w-full",
+                                label { class: "form-label", "负责 Agent" }
+                                SearchableSelect {
+                                    placeholder: "选择负责 Agent（可搜索）...".to_string(),
+                                    selected: None,
+                                    options: agent_options(),
+                                    on_select: move |selection: String| handle_agent_select(selection),
+                                    on_search: Some(EventHandler::new(move |kw: String| handle_agent_search(kw))),
+                                    loading: agent_loading(),
+                                }
+                                div { class: "form-hint",
+                                    if form_agent_id().is_empty() {
+                                        "唤醒执行必须指定；仅提醒用户时可留空"
+                                    } else {
+                                        "已选 Agent ID：{form_agent_id()}"
                                     }
                                 }
                             }
-                        }
-                        div { class: "form-control w-full",
-                            label { class: "form-label", "间隔秒数（可选）" }
-                            input {
-                                class: "input input-bordered w-full",
-                                r#type: "number",
-                                value: "{form_interval}",
-                                placeholder: "300",
-                                oninput: move |e| form_interval.set(e.value())
-                            }
-                        }
-                        div { class: "form-control w-full",
-                            label { class: "form-label", "指定时间（当前两项都留空时生效）" }
-                            input {
-                                class: "input input-bordered w-full",
-                                r#type: "datetime-local",
-                                value: "{form_run_at_local}",
-                                oninput: move |e| form_run_at_local.set(e.value())
-                            }
-                        }
-                    }
-                    div { class: "form-control w-full",
-                        label { class: "form-label", "Action 模板" }
-                        select {
-                            class: "select select-bordered w-full",
-                            value: "{form_template}",
-                            onchange: move |e| form_template.set(e.value()),
-                            option { value: "agent_rest", "agent_rest（Agent 休息与沉淀）" }
-                            option { value: "custom", "自定义 JSON" }
-                        }
-                    }
-                    if form_template() == "agent_rest" {
-                        div { class: "form-control w-full",
-                            label { class: "form-label", "Agent ID *" }
-                            input {
-                                class: "input input-bordered w-full",
-                                value: "{form_agent_id}",
-                                placeholder: "Agent 的唯一 ID",
-                                oninput: move |e| form_agent_id.set(e.value())
-                            }
-                        }
-                        div { class: "form-control w-full",
-                            label { class: "form-label", "settle_limit（沉淀上限）" }
-                            input {
-                                class: "input input-bordered w-full",
-                                r#type: "number",
-                                value: "{form_settle_limit}",
-                                placeholder: "10",
-                                oninput: move |e| form_settle_limit.set(e.value())
-                            }
-                            div { class: "form-hint", "单次沉淀的短期记忆条数上限，默认 10" }
                         }
                     } else {
                         div { class: "form-control w-full",
-                            label { class: "form-label", "Payload JSON *" }
-                            textarea {
-                                class: "form-textarea font-mono",
-                                style: "min-height: 120px;",
-                                value: "{form_payload}",
-                                placeholder: "{json_placeholder}",
-                                oninput: move |e| {
-                                    let v = e.value();
-                                    if v.trim().is_empty() {
-                                        json_error.set(String::new());
+                            label { class: "form-label", "Action 模板" }
+                            select {
+                                class: "select select-bordered w-full",
+                                value: "{form_template}",
+                                onchange: move |e| form_template.set(e.value()),
+                                option { value: "agent_rest", "agent_rest（Agent 休息与沉淀）" }
+                                option { value: "custom", "自定义 JSON" }
+                            }
+                        }
+                        if form_template() == "agent_rest" {
+                            div { class: "form-control w-full",
+                                label { class: "form-label", "执行 Agent *" }
+                                SearchableSelect {
+                                    placeholder: "选择 Agent（可搜索）...".to_string(),
+                                    selected: None,
+                                    options: agent_options(),
+                                    on_select: move |selection: String| handle_agent_select(selection),
+                                    on_search: Some(EventHandler::new(move |kw: String| handle_agent_search(kw))),
+                                    loading: agent_loading(),
+                                }
+                                div { class: "form-hint",
+                                    if form_agent_id().is_empty() {
+                                        "从列表选择 Agent，支持按名称或 ID 搜索"
                                     } else {
-                                        match validate_json(&v) {
-                                            Ok(_) => json_error.set(String::new()),
-                                            Err(err) => json_error.set(err),
-                                        }
+                                        "已选 Agent ID：{form_agent_id()}"
                                     }
-                                    form_payload.set(v);
                                 }
                             }
-                            if !json_error().is_empty() {
-                                div { class: "json-error", "{json_error()}" }
+                            div { class: "form-control w-full",
+                                label { class: "form-label", "settle_limit（沉淀上限）" }
+                                input {
+                                    class: "input input-bordered w-full",
+                                    r#type: "number",
+                                    value: "{form_settle_limit}",
+                                    placeholder: "10",
+                                    oninput: move |e| form_settle_limit.set(e.value())
+                                }
+                                div { class: "form-hint", "单次沉淀的短期记忆条数上限，默认 10" }
+                            }
+                        } else {
+                            div { class: "form-control w-full",
+                                label { class: "form-label", "Payload JSON *" }
+                                textarea {
+                                    class: "form-textarea font-mono",
+                                    style: "min-height: 120px;",
+                                    value: "{form_payload}",
+                                    placeholder: "{json_placeholder}",
+                                    oninput: move |e| {
+                                        let v = e.value();
+                                        if v.trim().is_empty() {
+                                            json_error.set(String::new());
+                                        } else {
+                                            match validate_json(&v) {
+                                                Ok(_) => json_error.set(String::new()),
+                                                Err(err) => json_error.set(err),
+                                            }
+                                        }
+                                        form_payload.set(v);
+                                    }
+                                }
+                                if !json_error().is_empty() {
+                                    div { class: "json-error", "{json_error()}" }
+                                }
                             }
                         }
                     }
@@ -1319,5 +1510,23 @@ pub fn SystemTriggers() -> Element {
             }
         }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn time_rule_of_uses_single_rule_not_shape() {
+        assert_eq!(time_rule_of(Some("0 9 * * *"), Some(300), Some(1)), "cron");
+        assert_eq!(time_rule_of(Some("  "), Some(300), Some(1)), "interval");
+        assert_eq!(time_rule_of(None, None, Some(1)), "once");
+    }
+
+    #[test]
+    fn agent_id_from_option_parses_label_and_plain_id() {
+        assert_eq!(agent_id_from_option("研发 Agent (agent-42)"), "agent-42");
+        assert_eq!(agent_id_from_option("agent-7"), "agent-7");
     }
 }

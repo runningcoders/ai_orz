@@ -4,6 +4,7 @@ use crate::models::agent::Agent;
 use crate::models::skill::Skill;
 use crate::models::tool::Tool;
 use crate::pkg::RequestContext;
+use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
 use crate::service::dao::agent::AgentQuery;
 use crate::service::domain::hr::agent_profile;
 use crate::service::domain::hr::{AgentManage, HrDomainImpl};
@@ -799,6 +800,9 @@ impl AgentManage for HrDomainImpl {
         let ctx = enrich_ctx!(&ctx, agent);
         self.agent_dal.delete(ctx, agent).await?;
         agent_profile::invalidate_ids();
+        // 运行时条目不受 DB 软删影响，必须显式注销；否则 list_runtime_agents
+        // 会继续把它读成在役席位（展示层按 HR 名单过滤仅是兜底）。
+        AgentRuntimeStateManager::global().remove(agent.id());
         Ok(())
     }
 

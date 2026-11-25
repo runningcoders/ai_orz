@@ -22,6 +22,7 @@
 
 use dioxus::prelude::*;
 
+use crate::components::date_time_input::DateTimeInput;
 use crate::utils::time::{
     format_datetime, ms_to_datetime_local_value, now_ms, parse_datetime_local_to_ms,
 };
@@ -247,20 +248,18 @@ pub fn TimeRangePicker(props: TimeRangePickerProps) -> Element {
                 div { class: "flex flex-wrap items-center gap-1.5",
                     // 「起 ~ 止」作为不可拆分组：窄容器整体换行，不会把起止时间拆散
                     div { class: "{group_class}",
-                        input {
-                            class: "{input_class}",
-                            r#type: "datetime-local",
-                            value: "{draft_start}",
-                            oninput: move |e| draft_start.set(e.value())
+                        DateTimeInput {
+                            class: input_class.to_string(),
+                            value: draft_start(),
+                            on_change: move |v| draft_start.set(v),
                         }
                         if !props.compact {
                             span { class: "text-xs text-base-content/40", "~" }
                         }
-                        input {
-                            class: "{input_class}",
-                            r#type: "datetime-local",
-                            value: "{draft_end}",
-                            oninput: move |e| draft_end.set(e.value())
+                        DateTimeInput {
+                            class: input_class.to_string(),
+                            value: draft_end(),
+                            on_change: move |v| draft_end.set(v),
                         }
                     }
                     button {

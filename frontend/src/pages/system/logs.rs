@@ -8,6 +8,7 @@ use crate::api::log_stats::{
 use crate::api::system::{LogEntry, QueryLogsResponse, query_logs};
 use crate::components::charts::donut_chart::{DonutChart, DonutSlice};
 use crate::components::charts::line_chart::LineChart;
+use crate::components::date_time_input::DateTimeInput;
 use crate::components::hud::{HudPanel, HudSection};
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
@@ -358,20 +359,16 @@ pub fn SystemLogs() -> Element {
                     }
                     div { class: "filter-item",
                         label { class: "form-label", "开始时间" }
-                        input {
-                            class: "input input-bordered w-full",
-                            r#type: "datetime-local",
-                            value: "{form_start}",
-                            oninput: move |e| form_start.set(e.value())
+                        DateTimeInput {
+                            value: form_start(),
+                            on_change: move |v| form_start.set(v),
                         }
                     }
                     div { class: "filter-item",
                         label { class: "form-label", "结束时间" }
-                        input {
-                            class: "input input-bordered w-full",
-                            r#type: "datetime-local",
-                            value: "{form_end}",
-                            oninput: move |e| form_end.set(e.value())
+                        DateTimeInput {
+                            value: form_end(),
+                            on_change: move |v| form_end.set(v),
                         }
                     }
                 }

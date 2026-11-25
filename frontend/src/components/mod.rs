@@ -18,6 +18,7 @@ pub mod create_tool_http;
 pub mod create_tool_shell;
 pub mod credential_form;
 pub mod credential_requirements;
+pub mod date_time_input;
 pub mod edge_style;
 pub mod force_layout;
 pub mod gauge;

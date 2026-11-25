@@ -178,6 +178,26 @@ fn test_cancel_thinking_returns_false_when_not_thinking() {
     assert!(!mgr.cancel_thinking("agent-1"));
 }
 
+/// 软删 Agent 后的运行时注销：条目消失，且在跑的思考先收到取消信号
+#[test]
+fn test_remove_drops_entry_and_cancels_thinking() {
+    let mgr = AgentRuntimeStateManager::new();
+    assert!(!mgr.remove("agent-1"), "不存在的条目无可注销");
+
+    mgr.set_busy("agent-1", "msg-1", None, None);
+    let tr = Arc::new(AgentThinkRuntime::new("agent-1".into(), "trace-1".into()));
+    let flag = tr.cancel_flag();
+    mgr.set_think_runtime("agent-1", tr);
+
+    assert!(mgr.remove("agent-1"));
+    assert!(mgr.get("agent-1").is_none());
+    assert!(mgr.list_runtime_agents(None, None, None).is_empty());
+    assert!(
+        flag.load(Ordering::Relaxed),
+        "注销时必须要先取消在跑的思考，否则思考循环拿着已失效的运行时继续跑"
+    );
+}
+
 #[test]
 fn test_report_round_updates_snapshot() {
     let mgr = AgentRuntimeStateManager::new();

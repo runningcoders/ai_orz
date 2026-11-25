@@ -31,6 +31,20 @@ pub async fn query_schedule(
     api_post("/api/v1/system/schedules/query", &req).await
 }
 
+/// 创建带身份的日程（与系统定时任务的 create_cron_trigger 是两个业务入口）
+pub async fn create_schedule(
+    req: common::api::ScheduleAgentTaskRequest,
+) -> Result<common::api::ScheduleAgentTaskResponse, ApiError> {
+    api_post("/api/v1/system/schedules", &req).await
+}
+
+/// 更新当前用户归属的日程（时间规则整体替换，其它字段按需传）
+pub async fn update_schedule(
+    req: common::api::UpdateScheduleRequest,
+) -> Result<common::api::UpdateScheduleResponse, ApiError> {
+    api_post("/api/v1/system/schedules/update", &req).await
+}
+
 pub async fn get_cron_trigger(id: &str) -> Result<common::api::GetCronTriggerResponse, ApiError> {
     api_get(&format!("/api/v1/system/cron-triggers/{}", id)).await
 }

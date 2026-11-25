@@ -2425,3 +2425,105 @@
   -webkit-mask-image: none;
   mask-image: none;
 }
+
+/* ============================================================
+ * HUD 日期选择器（DateTimeInput）：挂在 .orz-popover 切角浮层内。
+ * 日历格沿用 HUD 玻璃语言：hover 微亮、今天发丝边、选中 primary 填充。
+ * 全部走 --color-* 语义变量，随 data-theme 自动换肤。
+ * ============================================================ */
+.hud-datepicker-week,
+.hud-datepicker-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+.hud-datepicker-week span {
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: .08em;
+  color: color-mix(in oklab, var(--color-base-content) 45%, transparent);
+  padding-bottom: 4px;
+}
+.hud-datepicker-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-family: var(--font-family-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-base-content);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color .12s, border-color .12s, color .12s;
+}
+.hud-datepicker-cell:hover {
+  background: color-mix(in oklab, var(--color-base-content) 10%, transparent);
+}
+.hud-datepicker-cell.is-outside { opacity: .32; }
+.hud-datepicker-cell.is-today {
+  border-color: color-mix(in oklab, var(--color-primary) 55%, transparent);
+}
+.hud-datepicker-cell.is-selected,
+.hud-datepicker-cell.is-selected:hover {
+  background: color-mix(in oklab, var(--color-primary) 85%, transparent);
+  color: var(--color-primary-content);
+  border-color: color-mix(in oklab, var(--color-primary) 65%, transparent);
+}
+
+/* 时/分滚轮列：中间高亮为当前值，鼠标滚轮与上下相邻格均可调节 */
+.hud-wheel-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.hud-wheel-label {
+  font-size: 10px;
+  letter-spacing: .08em;
+  color: color-mix(in oklab, var(--color-base-content) 45%, transparent);
+}
+.hud-wheel-strip {
+  display: flex;
+  flex-direction: column;
+  width: 54px;
+  height: 130px;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklab, var(--color-base-content) 14%, transparent);
+  border-radius: 4px;
+  background: color-mix(in oklab, var(--color-base-200) 55%, transparent);
+  user-select: none;
+}
+.hud-wheel-item {
+  display: flex;
+  flex: 0 0 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: color-mix(in oklab, var(--color-base-content) 38%, transparent);
+  font-family: var(--font-family-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.hud-wheel-item:hover {
+  color: var(--color-base-content);
+  background: color-mix(in oklab, var(--color-base-content) 8%, transparent);
+}
+.hud-wheel-item.is-current,
+.hud-wheel-item.is-current:hover {
+  background: color-mix(in oklab, var(--color-primary) 85%, transparent);
+  color: var(--color-primary-content);
+}
+.hud-wheel-sep {
+  align-self: flex-end;
+  padding-bottom: 8px;
+  font-family: var(--font-family-mono);
+  font-size: 14px;
+  color: color-mix(in oklab, var(--color-base-content) 40%, transparent);
+}

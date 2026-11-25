@@ -570,9 +570,10 @@ impl MessageConsumer {
         let mut agent = match agent_result {
             Ok(Some(a)) => a,
             Ok(None) => {
-                // Agent 不存在：永久错误，不应无限重试
-                // 释放 Busy 状态并返回非重试错误
-                AgentRuntimeStateManager::global().set_idle(agent_id);
+                // Agent 不存在（含已软删）：永久错误，不应无限重试。
+                // 这里必须注销而不是 set_idle —— set_idle 用 entry().or_default()，
+                // 会给一个根本不在 HR 名单里的 id 再建一条 Idle 残留。
+                AgentRuntimeStateManager::global().remove(agent_id);
                 return Err(Error::not_found(format!(
                     "Agent {} not found, message will not be retried",
                     agent_id

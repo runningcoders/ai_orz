@@ -277,6 +277,19 @@ impl AgentRuntimeStateManager {
         INSTANCE.get_or_init(|| Arc::new(Self::new())).clone()
     }
 
+    /// 注销 Agent 的运行时条目（软删 Agent / 目标已不存在时调用）
+    ///
+    /// `set_idle` / `set_busy` / `record_*` 等写入口一律 `entry().or_default()`，
+    /// 只要拿 id 调一次就会凭空建条目；原本又没有删除入口，条目只能随进程退出
+    /// 消失 —— 已删 Agent 的 Idle 残留会被 `list_runtime_agents` 读成幽灵席位。
+    ///
+    /// 若该 Agent 正在思考，先发取消信号再移除，避免思考循环拿着已失效的运行时
+    /// 继续跑（cancel flag 随条目一起被丢掉）。返回移除前是否存在该条目。
+    pub fn remove(&self, agent_id: &str) -> bool {
+        self.cancel_thinking(agent_id);
+        self.states.remove(agent_id).is_some()
+    }
+
     /// 设置 Agent 为空闲状态
     pub fn set_idle(&self, agent_id: &str) {
         let from_state = self.get_state(agent_id);
