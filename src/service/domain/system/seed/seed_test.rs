@@ -353,9 +353,9 @@ mod tests {
         assert_eq!(snapshot.model_providers.len(), 2);
         // 预置 3 个基础员工：前台接待 / 招聘官 / 图谱专家
         assert_eq!(snapshot.agents.len(), 3);
-        // 预置 12 个技能（7 个 neural + 1 个 project_management + 1 个 git_branch_workflow
+        // 预置 13 个技能（8 个 neural + 1 个 project_management + 1 个 git_branch_workflow
         // + 1 个 agent_recruitment + 1 个 user_reception + 1 个 thinking_method）
-        assert_eq!(snapshot.skills.len(), 12);
+        assert_eq!(snapshot.skills.len(), 13);
         assert_eq!(
             snapshot.agents[0].model_provider_id,
             "TEMPLATE_CHAT_PROVIDER"
@@ -509,8 +509,10 @@ mod tests {
         assert!(ids.contains(&"TEMPLATE_ONTOLOGY_COGNITION"));
         // 思维方法元技能（category=thinking_method，检索侧按该 tag 召回，设计 §3.6）
         assert!(ids.contains(&"TEMPLATE_PROBLEM_SOLVING"));
+        assert!(ids.contains(&"TEMPLATE_SCHEDULE_MANAGEMENT"));
 
-        // 全部 7 个神经技能必须包含 neural tag（含自我进化 / 项目上下文 / 本体认知三个新技能）
+        // 下列神经技能必须包含 neural tag（含日程管理：工具侧 neural 保证可达，
+        // 技能侧 neural 保证出生自带，两侧缺一不可）
         //
         // ⚠️ 技能侧 neural 的真实语义是「**出生自带**」：`BASE_AGENT_PACKS` 含 neural ⇒
         // create_agent / train_agent 阶段 1 会装 neural 技能包 ⇒ 装上所有 tags 含 neural
@@ -530,6 +532,7 @@ mod tests {
             "TEMPLATE_SELF_EVOLUTION",
             "TEMPLATE_PROJECT_CONTEXT_COGNITION",
             "TEMPLATE_ONTOLOGY_COGNITION",
+            "TEMPLATE_SCHEDULE_MANAGEMENT",
         ];
         for skill in &snapshot.skills {
             if neural_ids.contains(&skill.id.as_str()) {

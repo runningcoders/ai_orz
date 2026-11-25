@@ -1,6 +1,6 @@
 //! 技能库管理
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::components::hud::HudPanel;
 use crate::components::hud::PageHeader;
@@ -71,6 +71,8 @@ pub fn HrSkills() -> Element {
     let mut sync_preview = use_signal(|| Option::<common::api::PreviewPresetSkillsResponse>::None);
     let mut sync_strategy = use_signal(|| PresetSkillSyncStrategy::Overwrite);
     let mut sync_installed = use_signal(|| false);
+    // 本次要同步的预置技能 ID；打开弹窗拉取预览后默认全选，用户可逐项勾选
+    let mut sync_selected_ids = use_signal(BTreeSet::<String>::new);
     let mut sync_loading = use_signal(|| false);
     let mut syncing = use_signal(|| false);
     // 轮询到的后台任务进度文案（同步中显示）
@@ -220,7 +222,10 @@ pub fn HrSkills() -> Element {
         sync_loading.set(true);
         spawn(async move {
             match preview_preset_skills().await {
-                Ok(v) => sync_preview.set(Some(v)),
+                Ok(v) => {
+                    sync_selected_ids.set(v.items.iter().map(|i| i.id.clone()).collect());
+                    sync_preview.set(Some(v));
+                }
                 Err(e) => toast.error(format!("加载预置技能清单失败: {}", e)),
             }
             sync_loading.set(false);
@@ -232,6 +237,7 @@ pub fn HrSkills() -> Element {
         let req = SyncPresetSkillsRequest {
             strategy: sync_strategy(),
             sync_installed_copies: sync_installed(),
+            skill_ids: Some(sync_selected_ids().into_iter().collect()),
         };
         syncing.set(true);
         sync_progress.set("正在提交同步任务...".to_string());
@@ -256,8 +262,8 @@ pub fn HrSkills() -> Element {
                                     p.result.and_then(|v| serde_json::from_value(v).ok());
                                 match resp {
                                     Some(r) => toast.success(format!(
-                                        "同步完成：新增 {}、覆盖 {}、跳过 {}，同步副本 {}（seed 共 {} 项）",
-                                        r.created, r.updated, r.skipped, r.updated_copies, r.total
+                                        "同步完成：新增 {}、覆盖 {}、跳过 {}，同步副本 {}（本次选中 {} / seed 共 {} 项）",
+                                        r.created, r.updated, r.skipped, r.updated_copies, r.selected, r.total
                                     )),
                                     None => toast.success("同步完成"),
                                 }
@@ -906,7 +912,8 @@ pub fn HrSkills() -> Element {
             on_close: move |_| show_sync_modal.set(false),
             footer: rsx! {
                 button { class: "btn hud-btn btn-ghost", onclick: move |_| show_sync_modal.set(false), "取消" }
-                button { class: "btn hud-btn btn-primary", disabled: syncing() || sync_loading(),
+                button { class: "btn hud-btn btn-primary",
+                    disabled: syncing() || sync_loading() || sync_selected_ids().is_empty(),
                     onclick: confirm_sync,
                     if syncing() { "同步中..." } else { "确认同步" }
                 }
@@ -968,34 +975,75 @@ pub fn HrSkills() -> Element {
                     Loading {}
                 } else if let Some(preview) = sync_preview() {
                     {
-                        // 汇总文案在 rsx 外计算：嵌套 if 表达式放进 format! 会破坏 rsx 解析
+                        // 汇总按**选中项**计算；策略文案先取值，避免嵌套 if 破坏 rsx 解析
                         let overwrite = sync_strategy() == PresetSkillSyncStrategy::Overwrite;
+                        let selected = sync_selected_ids();
+                        let selected_items: Vec<_> = preview
+                            .items
+                            .iter()
+                            .filter(|i| selected.contains(&i.id))
+                            .collect();
+                        let missing = selected_items.iter().filter(|i| !i.exists).count();
+                        let existing = selected_items.len() - missing;
+                        let copies: usize = selected_items.iter().map(|i| i.installed_copies).sum();
                         let summary = format!(
-                            "seed 共 {} 项：缺失 {} 项将新增，已存在 {} 项{}，涉及已安装副本 {} 个",
+                            "已选 {} / {} 项：缺失 {} 项将新增，已存在 {} 项{}，涉及已安装副本 {} 个",
+                            selected_items.len(),
                             preview.items.len(),
-                            preview.missing_count,
-                            preview.existing_count,
+                            missing,
+                            existing,
                             if overwrite { "将被覆盖" } else { "将保留" },
-                            preview.total_installed_copies
+                            copies
                         );
+                        let all_ids: BTreeSet<String> =
+                            preview.items.iter().map(|i| i.id.clone()).collect();
                         rsx! {
                             div {
-                                div { class: "text-sm mb-2", "{summary}" }
+                                div { class: "flex items-center justify-between gap-2 mb-2",
+                                    div { class: "text-sm", "{summary}" }
+                                    div { class: "flex gap-1",
+                                        button { class: "btn btn-ghost btn-xs", onclick: move |_| sync_selected_ids.set(all_ids.clone()), "全选" }
+                                        button { class: "btn btn-ghost btn-xs", onclick: move |_| sync_selected_ids.set(BTreeSet::new()), "清空" }
+                                    }
+                                }
                                 div { class: "max-h-56 overflow-y-auto",
                                     for item in preview.items.iter() {
-                                        div { class: "flex items-center justify-between gap-2 py-1.5 border-b border-base-300 last:border-0",
-                                            div { class: "min-w-0 flex-1",
-                                                div { class: "text-sm font-medium truncate", "{item.name}" }
-                                                div { class: "text-xs text-base-content/50 font-mono truncate", "{item.id}" }
-                                            }
-                                            div { class: "flex items-center gap-1 shrink-0",
-                                                if item.installed_copies > 0 {
-                                                    span { class: "badge orz-tag badge-sm", "副本 {item.installed_copies}" }
-                                                }
-                                                if item.exists {
-                                                    span { class: "badge orz-tag badge-sm", "将覆盖" }
-                                                } else {
-                                                    span { class: "badge orz-tag badge-sm", "将新增" }
+                                        {
+                                            let id = item.id.clone();
+                                            let checked = selected.contains(&id);
+                                            rsx! {
+                                                label { class: "flex cursor-pointer select-none items-center gap-3 py-1.5 border-b border-base-300 last:border-0",
+                                                    input {
+                                                        class: "checkbox checkbox-sm checkbox-primary",
+                                                        r#type: "checkbox",
+                                                        checked: checked,
+                                                        onchange: move |e| {
+                                                            let checked = e.checked();
+                                                            sync_selected_ids.with_mut(|set| {
+                                                                if checked {
+                                                                    set.insert(id.clone());
+                                                                } else {
+                                                                    set.remove(&id);
+                                                                }
+                                                            });
+                                                        },
+                                                    }
+                                                    div { class: "min-w-0 flex-1",
+                                                        div { class: "text-sm font-medium truncate", "{item.name}" }
+                                                        div { class: "text-xs text-base-content/50 font-mono truncate", "{item.id}" }
+                                                    }
+                                                    div { class: "flex items-center gap-1 shrink-0",
+                                                        if item.installed_copies > 0 {
+                                                            span { class: "badge orz-tag badge-sm", "副本 {item.installed_copies}" }
+                                                        }
+                                                        if item.exists && overwrite {
+                                                            span { class: "badge orz-tag badge-sm", "将覆盖" }
+                                                        } else if item.exists {
+                                                            span { class: "badge orz-tag badge-sm", "将保留" }
+                                                        } else {
+                                                            span { class: "badge orz-tag badge-sm", "将新增" }
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }

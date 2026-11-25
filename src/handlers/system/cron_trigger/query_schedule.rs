@@ -49,6 +49,7 @@ fn to_query(params: QueryScheduleRequest) -> Result<ScheduleQuery> {
     name = "Query Schedule",
     description = "Query the caller's own schedules within a time range. Pass date_term (yesterday / today / tomorrow / this_week / next_week) to ask about relative days like tomorrow or next week — the server resolves calendar-day boundaries in the system timezone, so do NOT compute Unix timestamps yourself. For an exact range, pass from and to together as Unix milliseconds. Optional keyword filters by title/description/action, behavior filters by notification vs agent-wakeup, is_enabled filters state. Returns individual occurrences sorted by time: a daily repeating schedule queried for a week returns seven entries. Only schedules owned by the calling user are visible.",
     params = "common::api::QueryScheduleRequest",
+    neural,
     tags = "query,scheduling,autonomy"
 )]
 #[generate_http_handler]

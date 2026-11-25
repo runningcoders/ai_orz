@@ -36,6 +36,7 @@ fn to_update(params: UpdateScheduleRequest) -> ScheduleUpdate {
     name = "Update Schedule",
     description = "Update a schedule you created. Pass trigger_id plus any fields to change: title, description, cron_expression (5-field cron), interval_seconds, run_at (Unix ms), start_at/end_at window, max_runs (positive integer), agent_id (reassign the responsible agent). start_at / end_at / max_runs are tri-state: omit to keep the current value, pass null to clear the limit, pass a value to override. If you provide any time rule field (cron_expression / interval_seconds / run_at), the whole time rule is replaced with the values you pass, and next_run_at is recomputed from the new rule. Owner, behavior template and run statistics cannot be changed. Only your own async schedules are visible.",
     params = "common::api::UpdateScheduleRequest",
+    neural,
     tags = "scheduling,autonomy"
 )]
 #[generate_http_handler]

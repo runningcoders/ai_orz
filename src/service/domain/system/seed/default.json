@@ -310,6 +310,22 @@
       "status": 1,
       "content_path": "skills/TEMPLATE_PROBLEM_SOLVING",
       "package": "skills/TEMPLATE_PROBLEM_SOLVING.zip"
+    },
+    {
+      "id": "TEMPLATE_SCHEDULE_MANAGEMENT",
+      "name": "日程管理",
+      "description": "用户说「明天提醒我」「每周一早上」或问「这周有什么安排」时必读：四个日程工具怎么选、date_term 直接传不要自己算时间戳、查询返回实例而非规则、三态更新与归属身份边界",
+      "tags": [
+        "neural",
+        "scheduling"
+      ],
+      "category": "system",
+      "parent_skill_id": "",
+      "author_id": "TEMPLATE_ADMIN",
+      "author_type": 0,
+      "status": 1,
+      "content_path": "skills/TEMPLATE_SCHEDULE_MANAGEMENT",
+      "package": "skills/TEMPLATE_SCHEDULE_MANAGEMENT.zip"
     }
   ],
   "ontology": {

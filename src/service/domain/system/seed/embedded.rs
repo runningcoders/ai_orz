@@ -64,6 +64,10 @@ static EMBEDDED_SKILL_FILES: &[(&str, &str)] = &[
         "skills/TEMPLATE_PROBLEM_SOLVING/skill.md",
         include_str!("skills/TEMPLATE_PROBLEM_SOLVING/skill.md"),
     ),
+    (
+        "skills/TEMPLATE_SCHEDULE_MANAGEMENT/skill.md",
+        include_str!("skills/TEMPLATE_SCHEDULE_MANAGEMENT/skill.md"),
+    ),
 ];
 
 /// 全部内嵌技能文件条目（`(相对路径, 文件内容)`）
@@ -98,6 +102,7 @@ mod tests {
             ("TEMPLATE_ONTOLOGY_COGNITION", Some("本体认知")),
             ("TEMPLATE_PROJECT_CONTEXT_COGNITION", Some("项目上下文认知")),
             ("TEMPLATE_PROBLEM_SOLVING", Some("问题求解策略")),
+            ("TEMPLATE_SCHEDULE_MANAGEMENT", Some("日程管理")),
         ];
 
         for (skill_id, marker) in markers {
