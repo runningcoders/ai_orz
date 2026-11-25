@@ -292,6 +292,9 @@ enum RouteMatcher {
 const OWNER_BRIEFING_MESSAGE_TYPES: &[MessageType] = &[
     MessageType::ProjectFollowupNotification,
     MessageType::TaskDispatchNotification,
+    // 日程唤醒：系统触发、无对等回复方，Agent 执行结论应交给归属用户，
+    // 否则 Final 命中 system_origin → Discard，日程产出被静默丢弃。
+    MessageType::ScheduleTrigger,
 ];
 
 impl RouteMatcher {

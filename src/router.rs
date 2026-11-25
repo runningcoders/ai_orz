@@ -1231,6 +1231,25 @@ fn system_routes() -> Router {
             "/cron-triggers/{trigger_id}/resume",
             post(handlers::system::cron_trigger::resume_cron_trigger_handler),
         )
+        // 日程（统一调度器的异步形态）：Agent 自主创建，身份从 ctx 固化
+        .route(
+            "/schedules",
+            post(handlers::system::cron_trigger::schedule_agent_task_handler),
+        )
+        // 日程查询：把规则按区间展开成实例（相对日期词由服务端按系统时区折算）
+        .route(
+            "/schedules/query",
+            post(handlers::system::cron_trigger::query_schedule_handler),
+        )
+        // 日程修改：Agent 工具与 HTTP 共用同一 handler，身份从 ctx 固化
+        .route(
+            "/schedules/cancel",
+            post(handlers::system::cron_trigger::cancel_schedule_handler),
+        )
+        .route(
+            "/schedules/update",
+            post(handlers::system::cron_trigger::update_schedule_handler),
+        )
         // Backup routes - 创建/列出/删除/恢复脚本
         .route(
             "/backups",

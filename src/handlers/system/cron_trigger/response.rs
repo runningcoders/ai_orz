@@ -5,6 +5,7 @@
 //! 既有 `super::response::*` 导入路径保持不变。
 
 use crate::models::cron_trigger::CronTriggerPo;
+use common::enums::CreatorType;
 
 pub use common::api::cron_trigger::*;
 
@@ -24,5 +25,18 @@ pub(super) fn to_detail(trigger: &CronTriggerPo) -> common::api::CronTriggerDeta
         updated_at: trigger.updated_at,
         created_by: trigger.created_by.clone(),
         updated_by: trigger.updated_by.clone(),
+        start_at: trigger.start_at,
+        end_at: trigger.end_at,
+        org_id: trigger.org_id.clone(),
+        owner_user_id: trigger.owner_user_id.clone(),
+        creator_type: trigger.creator_type.map(CreatorType::from),
+        creator_id: trigger.creator_id.clone(),
+        agent_id: trigger.agent_id.clone(),
+        description: trigger.description.clone(),
+        action: trigger.resolved_action(),
+        behavior: trigger.behavior,
+        max_runs: trigger.max_runs,
+        total_runs: trigger.total_runs,
+        last_error: trigger.last_error.clone(),
     }
 }

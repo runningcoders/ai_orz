@@ -84,6 +84,8 @@ pub const MSG_TASK_COMPLETED: i32 = 14;
 pub const MSG_TASK_PENDING_REVIEW: i32 = 15;
 /// 混排消息（文本+资源引用混排，对应 common MessageType::Mixed=13；批3 混排主线）
 pub const MSG_MIXED: i32 = 13;
+/// 日程触发通知（对应 common MessageType::ScheduleTrigger=16；15 已被待验收占用）
+pub const MSG_SCHEDULE_TRIGGER: i32 = 16;
 
 /// 判断是否为附件消息（图片/文件/音频/视频）
 pub fn is_attachment_message(msg_type: i32) -> bool {
@@ -109,7 +111,8 @@ pub fn normalize_markdown_type(msg_type: i32) -> i32 {
         | MSG_PROJECT_FOLLOWUP_NOTIFICATION
         | MSG_AGENT_NOTIFY
         | MSG_TASK_COMPLETED
-        | MSG_TASK_PENDING_REVIEW => MSG_TEXT,
+        | MSG_TASK_PENDING_REVIEW
+        | MSG_SCHEDULE_TRIGGER => MSG_TEXT,
         other => other,
     }
 }

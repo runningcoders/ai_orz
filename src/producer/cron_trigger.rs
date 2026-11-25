@@ -10,6 +10,10 @@ use std::time::Duration;
 /// 轮询间隔（秒）
 const POLL_INTERVAL_SECS: u64 = 60;
 
+/// 租约时长（毫秒）：5 分钟 > 60s 轮询 + 单轮最坏消费时间。
+/// 领取后进程崩溃：最多等 5 分钟由下一个 tick 重新领取，不会永久丢失。
+const LEASE_MS: i64 = 5 * 60 * 1000;
+
 /// cron 触发器生产者
 ///
 /// 自管 60s 轮询：列出到期的触发器 → 逐个 `emit` 一个 [`CronTriggerEvent`]。
@@ -34,6 +38,8 @@ pub struct CronTriggerProducer {
     loop_ctl: Arc<ProducerLoop>,
     /// 自管 loop 的句柄：`stop()` 靠它「等 loop 真正退出」
     handle: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// 本实例租约标识：进程内稳定，多实例之间唯一
+    instance_id: String,
 }
 
 impl Default for CronTriggerProducer {
@@ -47,6 +53,7 @@ impl CronTriggerProducer {
         Self {
             loop_ctl: Arc::new(ProducerLoop::new()),
             handle: Mutex::new(None),
+            instance_id: format!("cron-producer-{}", common::new_id!(CronTrigger)),
         }
     }
 
@@ -55,32 +62,37 @@ impl CronTriggerProducer {
     /// ⚠️ **不要在这里加回 `mark_trigger_executed`** —— 见 [`CronTriggerProducer`] 的
     /// P3 说明：Sync 消费者的业务失败不会让 `emit` 返回 Err，在这里标记等于
     /// 「失败也算已执行」。
-    async fn tick(sink: &EventSink) -> Result<()> {
+    async fn tick(sink: &EventSink, instance_id: &str) -> Result<()> {
         let ctx = RequestContext::new_system();
         let now = common::constants::utils::current_timestamp_ms();
 
+        // 原子领取：只有成功写入租约的记录才进入本轮 emit。
+        // 多实例部署时，同一条到期记录在租约期内只会被一个实例领取。
         let triggers = system::domain()
             .cron_manager()
-            .list_due_triggers(ctx.clone(), now, 100)
+            .claim_due_triggers(ctx.clone(), now, instance_id, now + LEASE_MS, 100)
             .await?;
 
         if triggers.is_empty() {
             return Ok(());
         }
 
-        log_debug!("cron producer found {} due triggers", triggers.len());
+        log_debug!("cron producer claimed {} due triggers", triggers.len());
 
         for trigger in &triggers {
-            let event = CronTriggerEvent {
-                event_id: format!("{}-{}", trigger.id, now),
-                trigger_id: trigger.id.clone(),
-                trigger_name: trigger.name.clone(),
-                payload: trigger.payload.clone(),
-                created_at: common::constants::utils::current_timestamp_ms(),
-            };
+            let event = build_event(trigger, now, instance_id);
 
             // 发布句柄只能发本 producer 的 topic（`cron.trigger`）
-            sink.emit(&ctx, event).await?;
+            if let Err(e) = sink.emit(&ctx, event).await {
+                // emit 失败不清租约：等租约过期后由下个 tick 重新领取，
+                // 语义与「失败不 mark → 下轮重捞」一致。
+                log_error!(
+                    "[cron_trigger] emit failed for {} (id: {}): {}; lease will expire",
+                    trigger.name,
+                    trigger.id,
+                    e
+                );
+            }
         }
 
         log_info!("cron producer published {} trigger events", triggers.len());
@@ -135,12 +147,13 @@ impl Producer for CronTriggerProducer {
     /// （不报错，只是永远起不来）。
     async fn start(&self, sink: EventSink) -> Result<()> {
         let loop_ctl = Arc::clone(&self.loop_ctl);
+        let instance_id = self.instance_id.clone();
 
         let handle = tokio::spawn(async move {
             sys_info!("[cron_trigger] producer loop started");
 
             loop {
-                if let Err(e) = CronTriggerProducer::tick(&sink).await {
+                if let Err(e) = CronTriggerProducer::tick(&sink, &instance_id).await {
                     sys_error!("[cron_trigger] tick error: {}", e);
                 }
 
@@ -179,6 +192,34 @@ impl Producer for CronTriggerProducer {
     }
 }
 
+/// 把一条已领取的触发器记录转成事件载荷（纯函数，便于单测钉住字段口径）。
+///
+/// `created_at` 用领取时刻 `now` 而非当前时刻：`on_consumed` 拿它当 `executed_at`
+/// 推进 `next_run_at`，若用回调时刻会把 Interval 触发器的下次时间越推越晚。
+fn build_event(
+    trigger: &crate::models::cron_trigger::CronTriggerPo,
+    now: i64,
+    instance_id: &str,
+) -> CronTriggerEvent {
+    CronTriggerEvent {
+        event_id: format!("{}-{}", trigger.id, now),
+        trigger_id: trigger.id.clone(),
+        trigger_name: trigger.name.clone(),
+        payload: trigger.payload.clone(),
+        created_at: now,
+        trigger_type: trigger.trigger_type.to_i32(),
+        behavior: trigger.behavior.to_i32(),
+        action: trigger.resolved_action(),
+        description: trigger.description.clone(),
+        org_id: trigger.org_id.clone(),
+        owner_user_id: trigger.owner_user_id.clone(),
+        creator_type: trigger.creator_type,
+        creator_id: trigger.creator_id.clone(),
+        agent_id: trigger.agent_id.clone(),
+        lease_owner: Some(instance_id.to_string()),
+    }
+}
+
 /// 从事件封套里取「本次触发」的两个幂等要素：`trigger_id` + 触发时刻
 ///
 /// 单独抽出来是为了能被纯单测覆盖 —— `on_consumed` 本体要走 `system::domain()`
@@ -192,6 +233,7 @@ fn fired_at_of(event: &serde_json::Value) -> Result<(String, i64)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pkg::aop::Event;
 
     /// P3 的落点：`on_consumed` 必须能从封套里拿到 `trigger_id` 与**触发时刻**
     ///
@@ -212,6 +254,34 @@ mod tests {
             fired_at_of(&event).expect("合法封套应可提取 trigger_id / executed_at");
         assert_eq!(trigger_id, "trigger-1");
         assert_eq!(executed_at, fired_at);
+    }
+
+    /// 扩展字段必须完整进入事件：消费侧不再回查表
+    #[test]
+    fn test_build_event_carries_all_groups() {
+        let mut trigger = crate::models::cron_trigger::CronTriggerPo::new(
+            "t-1".to_string(),
+            "daily".to_string(),
+            common::enums::TriggerType::Schedule,
+            1000,
+            None,
+        );
+        trigger.action = Some("agent_schedule".to_string());
+        trigger.owner_user_id = Some("user-1".to_string());
+        trigger.agent_id = Some("agent-1".to_string());
+        trigger.description = "每天汇总".to_string();
+        trigger.behavior = common::enums::TriggerBehavior::AsyncAgentWakeup;
+
+        let event = build_event(&trigger, 2000, "instance-a");
+        assert_eq!(event.created_at, 2000);
+        assert_eq!(event.behavior, 2);
+        assert_eq!(event.trigger_type, 3);
+        assert_eq!(event.action.as_deref(), Some("agent_schedule"));
+        assert_eq!(event.owner_user_id.as_deref(), Some("user-1"));
+        assert_eq!(event.agent_id.as_deref(), Some("agent-1"));
+        assert_eq!(event.description, "每天汇总");
+        assert_eq!(event.lease_owner.as_deref(), Some("instance-a"));
+        assert_eq!(event.order_key(), "t-1");
     }
 
     /// 封套缺字段 → 返回 Err（由框架记日志），**不能**静默当成功

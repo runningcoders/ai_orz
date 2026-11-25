@@ -24,6 +24,13 @@ pub async fn list_cron_triggers() -> Result<common::api::ListCronTriggersRespons
     api_get_or_default("/api/v1/system/cron-triggers").await
 }
 
+/// 查询日程实例（相对日期词或显式区间），用于三天 / 周视图
+pub async fn query_schedule(
+    req: common::api::QueryScheduleRequest,
+) -> Result<common::api::QueryScheduleResponse, ApiError> {
+    api_post("/api/v1/system/schedules/query", &req).await
+}
+
 pub async fn get_cron_trigger(id: &str) -> Result<common::api::GetCronTriggerResponse, ApiError> {
     api_get(&format!("/api/v1/system/cron-triggers/{}", id)).await
 }

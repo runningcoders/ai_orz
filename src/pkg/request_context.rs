@@ -567,9 +567,15 @@ impl RequestContext {
     /// 规则与 `message_sender_id` 对齐：`agent_id` 有值即视为 Agent 发送（后台唤醒
     /// 场景 `caller_type` 是 System 但执行者是被唤醒的 Agent，from_id 已是真实
     /// Agent，from_role 若仍落 System 会出现「Agent ID + System 角色」的错位记录）。
-    /// 无 `agent_id` 时回退 `caller_role()`（User / System 原样）。
+    /// ⚠️ 角色必须跟 [`Self::message_sender_id`] 实际取到的 ID 对齐：ID 落 `system`
+    /// 哨兵（调用方缺 ID）时恒为 `System`，否则写出 `from_id=system + from_role=User`
+    /// / `Agent` 的错位记录。其余场景按 ID 来源判：`agent_id` 有值即 `Agent`，
+    /// 无则回退 `caller_role()`（User / System 原样）。
     pub fn message_sender_role(&self) -> MessageRole {
-        if self.agent_id.is_some() {
+        let sender_id = self.message_sender_id();
+        if common::constants::message::is_system_sender(&sender_id) {
+            MessageRole::System
+        } else if self.agent_id.is_some() {
             MessageRole::Agent
         } else {
             self.caller_role()
@@ -1086,6 +1092,25 @@ mod sender_id_tests {
             .user_id("user-3")
             .build();
         assert_eq!(ctx.message_sender_role(), MessageRole::User);
+    }
+
+    /// 回归：`caller_type=User` 却没带 `user_id` ⇒ ID 落 `system` 哨兵，角色必须
+    /// 同步回 System，不能写出 `from_id=system + from_role=User` 的错位记录。
+    #[tokio::test]
+    async fn message_sender_role_matches_system_sentinel_when_user_id_missing() {
+        init().await;
+        let ctx = RequestContext::builder()
+            .caller_type(CallerType::User)
+            .build();
+        assert_eq!(ctx.message_sender_id(), "system");
+        assert_eq!(ctx.message_sender_role(), MessageRole::System);
+
+        // Agent 调用方同样可能缺 ID：ID 落哨兵时角色也不能停在 Agent
+        let ctx = RequestContext::builder()
+            .caller_type(CallerType::Agent)
+            .build();
+        assert_eq!(ctx.message_sender_id(), "system");
+        assert_eq!(ctx.message_sender_role(), MessageRole::System);
     }
 }
 

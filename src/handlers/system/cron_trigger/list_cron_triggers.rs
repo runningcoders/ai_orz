@@ -14,10 +14,12 @@ pub async fn list_cron_triggers(
     ctx: RequestContext,
     params: ListCronTriggersRequest,
 ) -> Result<ListCronTriggersResponse> {
+    // 过滤条件可被 DAO Query 完整表达，直接复用（同 project/task 范式）
     let query = CronTriggerQuery {
         trigger_type: params.trigger_type,
         is_enabled: params.is_enabled,
         limit: params.limit,
+        ..Default::default()
     };
 
     let triggers = domain().cron_manager().list_triggers(ctx, query).await?;

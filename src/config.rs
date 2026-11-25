@@ -23,6 +23,14 @@ pub fn try_get() -> Option<Arc<AppConfig>> {
     CONFIG.get().cloned()
 }
 
+/// 系统时区（`server.timezone`）。
+///
+/// 调度器与日程的时间换算统一用这个口径；纯时间算法在 `common::schedule`，
+/// 这里只负责把配置值读出来注入，不掺任何时间计算逻辑。
+pub fn timezone() -> String {
+    get().server.timezone.clone()
+}
+
 /// 初始化 Agent DAL
 pub fn init() -> Result<()> {
     // 加载配置（默认配置嵌入在二进制中，不存在就自动生成）

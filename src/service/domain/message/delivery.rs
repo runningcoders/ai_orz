@@ -15,6 +15,7 @@ use crate::service::domain::message::{
 };
 use std::collections::HashSet;
 
+use common::constants::message::is_system_sender;
 use common::enums::{MessageRole, MessageType};
 use common::error::{Result, bail_err, err};
 use serde_json::json;
@@ -192,6 +193,20 @@ impl MessageDomainImpl {
 
 #[async_trait::async_trait]
 impl MessageDelivery for MessageDomainImpl {
+    async fn resolve_role_by_id(&self, ctx: RequestContext, id: &str) -> Result<MessageRole> {
+        if id.is_empty() || is_system_sender(id) {
+            return Ok(MessageRole::System);
+        }
+        if self.user_dal.find_by_id(ctx.clone(), id).await?.is_some() {
+            return Ok(MessageRole::User);
+        }
+        if self.agent_dal.find_by_id(ctx, id).await?.is_some() {
+            return Ok(MessageRole::Agent);
+        }
+        // 历史调用方传的多是真实 Agent ID；脏 ID 回退 Agent 不打断消息链路
+        Ok(MessageRole::Agent)
+    }
+
     async fn send_to_agent(
         &self,
         ctx: RequestContext,
@@ -414,13 +429,19 @@ impl MessageDelivery for MessageDomainImpl {
             None => (id.clone(), None, None),
         };
 
+        // 兜底：命令里没有 from_role 字段（只有 from_agent_id），角色未知，
+        // 由 domain 按 ID 推导。system 哨兵 / 用户 / Agent 都能落对，不能写死 Agent。
+        // 对照 send_to_agent：那条命令上层已传角色，本域信任、不覆盖。
+        let from_role = self
+            .resolve_role_by_id(ctx.clone(), cmd.from_agent_id)
+            .await?;
         let mut po = MessagePo::new(
             id.clone(),
             project_id,
             task_id,
             cmd.from_agent_id.to_string(),
             cmd.to_user_id.to_string(),
-            MessageRole::Agent,
+            from_role,
             MessageRole::User,
             message_type,
             cmd.content.to_string(),

@@ -75,6 +75,22 @@ pub fn normalize_project_id(project_id: Option<&str>) -> Option<&str> {
 /// 不带附件时必须原样保留。
 pub const IMAGE_ONLY_PLACEHOLDER: &str = "[图片]";
 
+/// 系统发送者的保留 ID。
+///
+/// `users` / `agents` 两张表里都不存在这个 ID（用户与 Agent 的 ID 都是 UUIDv7），
+/// 因此它可以安全地作为「无实体发送者」的哨兵：系统通知、框架派发、日程提醒
+/// 等场景用它表达「发送者是系统，不是某个 Agent，也不是某个用户」。
+///
+/// ⚠️ 写消息时必须与 `MessageRole::System` 配套使用。历史上 `send_to_user`
+/// 把发送者角色硬编码成 `Agent`，导致 `from_role=Agent, from_id=system` 的错位
+/// 记录——角色必须由发送者 ID 推导，不能由调用入口写死。
+pub const SYSTEM_SENDER_ID: &str = "system";
+
+/// 判断发送者 ID 是否是系统哨兵
+pub fn is_system_sender(id: &str) -> bool {
+    id == SYSTEM_SENDER_ID
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

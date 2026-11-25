@@ -1424,6 +1424,62 @@ async fn test_send_to_user_allows_unknown_user_id(pool: SqlitePool) {
     assert_eq!(sent.po.to_role, MessageRole::User);
 }
 
+/// 发送者身份按 ID 推导：`system` 哨兵 → `from_role=System`。
+///
+/// 回归「Agent/system」错位：`send_to_user` 曾把 `from_role` 硬编码为 Agent，
+/// 日程提醒在无负责 Agent 时用 `system` 发送，落库就是角色与 ID 互斥的记录。
+#[sqlx::test]
+async fn test_send_to_user_resolves_system_sender_role(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+
+    let sent = domain
+        .delivery()
+        .send_to_user(
+            ctx.clone(),
+            SendToUserCommand {
+                from_agent_id: common::constants::message::SYSTEM_SENDER_ID,
+                to_user_id: "user-any",
+                content: "日程提醒",
+                project_id: None,
+                task_id: None,
+                reply_to_id: None,
+            },
+        )
+        .await
+        .expect("系统哨兵发送者应放行");
+
+    assert_eq!(
+        sent.po.from_id,
+        common::constants::message::SYSTEM_SENDER_ID
+    );
+    assert_eq!(sent.po.from_role, MessageRole::System);
+}
+
+/// 发送者 ID 命中 users 表 → `from_role=User`（兼容未来的「用户代发」场景）。
+#[sqlx::test]
+async fn test_send_to_user_resolves_user_sender_role(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+    seed_user(&ctx, "user-proxy", "代发用户").await;
+
+    let sent = domain
+        .delivery()
+        .send_to_user(
+            ctx.clone(),
+            SendToUserCommand {
+                from_agent_id: "user-proxy",
+                to_user_id: "user-target",
+                content: "代发消息",
+                project_id: None,
+                task_id: None,
+                reply_to_id: None,
+            },
+        )
+        .await
+        .expect("用户身份发送者应放行");
+
+    assert_eq!(sent.po.from_role, MessageRole::User);
+}
+
 /// 门闩③：用户 ID 当 `to_agent_id` → 报错（反向误用同样产生死信）
 #[sqlx::test]
 async fn test_send_to_agent_rejects_user_id(pool: SqlitePool) {

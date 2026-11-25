@@ -278,6 +278,31 @@ impl Consumer for TaskCompletionConsumer {
 
             let notice =
                 build_task_completion_notice(&event.task_title, &event.task_id, artifacts.len());
+            // 知会必须唤醒 Owner 核对，不能把角色改成 System（非 ToolCallRequest 的
+            // System 消息在 `handle_system_message` 里直接丢弃）；没有真实 Agent
+            // 发送者时跳过知会，用户侧交付消息上面已投递，不受影响。
+            let sender_ok = crate::consumer::is_agent_sender(&ctx, from_agent_id)
+                .await
+                .inspect_err(|e| {
+                    log_warn!(
+                        &ctx,
+                        "task_completion_delivery",
+                        task_id = %event.task_id,
+                        error = ?e,
+                        "完成知会发送者身份反查失败"
+                    );
+                })
+                .unwrap_or(false);
+            if !sender_ok {
+                log_warn!(
+                    &ctx,
+                    "task_completion_delivery",
+                    task_id = %event.task_id,
+                    from_id = from_agent_id,
+                    "完成知会无合法 Agent 发送者，跳过知会（用户交付已投递）"
+                );
+                return Ok(());
+            }
             let cmd = SendToAgentCommand {
                 from_id: from_agent_id,
                 from_role: MessageRole::Agent,

@@ -23,6 +23,8 @@ pub mod models;
 pub mod ontology;
 pub mod ontology_property;
 pub mod redaction;
+/// 前后端共用的时间算法：cron 解析、日期词折算、规则在任意区间的实例展开。
+pub mod schedule;
 
 #[cfg(test)]
 mod error_test;

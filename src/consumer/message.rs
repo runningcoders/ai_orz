@@ -1943,6 +1943,8 @@ impl MessageConsumer {
             // 任务完成回执是框架派发的动作伴生消息，不是工具结果：落到
             // `_ => ToolResult` 会触发协作压力**回血**、把疲劳度洗白。
             MessageType::TaskCompleted | MessageType::TaskPendingReview => Novelty::None,
+            // 日程触发同样是框架派发的动作伴生消息，不参与协作压力回血
+            MessageType::ScheduleTrigger => Novelty::None,
             _ => Novelty::ToolResult,
         }
     }
@@ -2183,6 +2185,7 @@ fn chain_type_label(message_type: MessageType) -> &'static str {
         MessageType::File => "文件消息",
         MessageType::Audio => "音频消息",
         MessageType::Video => "视频消息",
+        MessageType::ScheduleTrigger => "日程触发通知",
         _ => "其它消息",
     }
 }

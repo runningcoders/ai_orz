@@ -17,7 +17,7 @@ use crate::pkg::aop::Event;
 use crate::pkg::aop::{ConsumeMode, Consumer, RetryDecision, Subscription};
 use crate::service::dal::message::RepublishOutcome;
 use crate::service::domain::runtime::domain as runtime_domain;
-use common::enums::EventTopic;
+use common::enums::{EventTopic, TriggerBehavior};
 use common::error::{Error, Result};
 
 // ==================== 消费者实现 ====================
@@ -68,7 +68,7 @@ impl Consumer for CronTriggerConsumer {
     /// 一次瞬时 DB 抖动就能让一个日级触发器**丢掉一整天**。
     ///
     /// 返回 `Retry` 的语义是「交给下一次机会」：本消费者是 Sync，投递结论没有重投
-    /// 驱动者 —— 真正的重试驱动是「没 mark → 下个 tick 又被 `list_due_triggers` 捞到」。
+    /// 驱动者 —— 真正的重试驱动是「没 mark → 下个 tick 又被 `claim_due_triggers` 捞到」。
     fn decide_retry(&self, _err: &str, _attempt: u32) -> RetryDecision {
         RetryDecision::Retry
     }
@@ -91,18 +91,51 @@ impl Consumer for CronTriggerConsumer {
             ))
         })?;
 
+        // 顶层 action 列优先，存量记录回落 payload.action（A-设计 §2.3 兼容路径）。
+        // 行为模板从事件读取（默认 SyncMaintenance），不回查表。
+        let action = resolve_action(event.action.as_deref(), &payload.action);
+        let behavior = TriggerBehavior::from(event.behavior);
+
         sys_info!(
-            "cron trigger fired: {} (trigger_id: {}, action: {})",
+            "cron trigger fired: {} (trigger_id: {}, action: {}, behavior: {:?})",
             event.trigger_name,
             event.trigger_id,
-            payload.action
+            action,
+            behavior
         );
 
+        match behavior {
+            TriggerBehavior::SyncMaintenance => {
+                self.dispatch_sync_maintenance(&event, action, &payload)
+                    .await?;
+            }
+            TriggerBehavior::AsyncNotify => {
+                self.dispatch_async_notify(&event, action).await?;
+            }
+            TriggerBehavior::AsyncAgentWakeup => {
+                self.dispatch_async_agent_wakeup(&event, action).await?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// ==================== 业务编排（调用 domain 层）====================
+
+impl CronTriggerConsumer {
+    /// 同步维护模板：现有 6 个 action 分支原样保留，零行为回归。
+    async fn dispatch_sync_maintenance(
+        &self,
+        event: &CronTriggerEvent,
+        action: &str,
+        payload: &CronTriggerPayload,
+    ) -> Result<()> {
         let params = payload.action_params();
 
-        match payload.action.as_str() {
+        match action {
             "agent_rest" => {
-                if let Err(e) = self.handle_agent_rest(&event, &params).await {
+                if let Err(e) = self.handle_agent_rest(event, &params).await {
                     // 单次触发失败只告警不上抛：避免 nack 重试风暴（下个周期会重新沉淀）
                     sys_error!(
                         "agent_rest action failed for trigger {} (id: {}): {}",
@@ -122,7 +155,7 @@ impl Consumer for CronTriggerConsumer {
             _ => {
                 sys_warn!(
                     "unknown action '{}' for trigger {} (id: {})",
-                    payload.action,
+                    action,
                     event.trigger_name,
                     event.trigger_id
                 );
@@ -131,11 +164,114 @@ impl Consumer for CronTriggerConsumer {
 
         Ok(())
     }
-}
 
-// ==================== 业务编排（调用 domain 层）====================
+    /// 异步通知模板：给用户提醒（不唤醒 Agent），走 `send_to_user` → `message.created`。
+    ///
+    /// ⚠️ 受众是 `owner_user_id`（归属用户），发送者是 `agent_id`（负责 Agent）——
+    /// 推送面 = 受众，不能用创建者冒充发送者（用户经 HTTP 建日程时创建者是用户，
+    /// 硬当成 Agent 发送会造出 role 与 id 不一致的消息）。
+    /// ctx 用 `new_system()` + `enrich_org_from_project_user` 补 root_user_id：
+    /// 少了这一步 `MessagePo.root_user_id=""` → SSE 不推、Final 路由丢失。
+    async fn dispatch_async_notify(&self, event: &CronTriggerEvent, action: &str) -> Result<()> {
+        use crate::service::domain::message::SendToUserCommand;
+        use crate::service::domain::message::domain as message_domain;
 
-impl CronTriggerConsumer {
+        let to_user_id = event.owner_user_id.as_deref().unwrap_or_default();
+        if to_user_id.is_empty() {
+            // 配置错误不会自愈：上抛会让每 60s 无限重试，告警后 Ok 跳过更稳。
+            sys_error!(
+                "schedule trigger {} (behavior=AsyncNotify) has no owner_user_id; skipping",
+                event.trigger_id
+            );
+            return Ok(());
+        }
+
+        let ctx = RequestContext::new_system();
+        let ctx = crate::consumer::enrich_org_from_project_user(&ctx, to_user_id).await;
+        let content = build_schedule_notify_content(event, action);
+        // 负责 Agent 发起提醒；纯用户提醒（未指定负责 Agent）用系统哨兵，
+        // 由 `send_to_user` 按 ID 推导出 `from_role=System`（不再落成 Agent/system）。
+        let from_agent_id = event
+            .agent_id
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(common::constants::message::SYSTEM_SENDER_ID);
+
+        let cmd = SendToUserCommand {
+            from_agent_id,
+            to_user_id,
+            content: &content,
+            project_id: None,
+            task_id: None,
+            reply_to_id: None,
+        };
+        let sent = message_domain().delivery().send_to_user(ctx, cmd).await?;
+        sys_info!(
+            "schedule notify delivered: trigger={}, message={}",
+            event.trigger_id,
+            sent.po.id
+        );
+        Ok(())
+    }
+
+    /// Agent 唤醒模板：定时日程到点唤醒目标 Agent 执行动作。
+    ///
+    /// 走 `send_to_agent` → `message.created` → Async `agent.awakening`，
+    /// 白拿 busy 抢占 / 唤醒门闩 / `order_key=agent_id` 串行 / 去重 / 滞留重投 /
+    /// Final 路由六套机制。本消费者是 Sync，只到「消息落库 + 事件发布」为止。
+    ///
+    /// ⚠️ `external_key` 用 `trigger_id + created_at` 做幂等：租约崩溃重捞时
+    /// 同一封套会再次投递，`send_to_agent` 靠它直接返回既有消息，不重复唤醒。
+    async fn dispatch_async_agent_wakeup(
+        &self,
+        event: &CronTriggerEvent,
+        action: &str,
+    ) -> Result<()> {
+        use crate::service::domain::message::SendToAgentCommand;
+        use crate::service::domain::message::domain as message_domain;
+        use common::enums::{MessageRole, MessageType};
+
+        let to_agent_id = event.agent_id.as_deref().unwrap_or_default();
+        if to_agent_id.is_empty() {
+            sys_error!(
+                "schedule trigger {} (behavior=AsyncAgentWakeup) has no agent_id; skipping",
+                event.trigger_id
+            );
+            return Ok(());
+        }
+
+        let owner = event.owner_user_id.as_deref().unwrap_or_default();
+        let ctx = RequestContext::new_system();
+        let ctx = crate::consumer::enrich_org_from_project_user(&ctx, owner).await;
+        let content = build_schedule_wakeup_content(event, action);
+        let external_key = format!("schedule:{}:{}", event.trigger_id, event.created_at);
+        let external = common::models::ExternalMessageContext {
+            external_key: Some(external_key.clone()),
+            ..Default::default()
+        };
+
+        let cmd = SendToAgentCommand {
+            from_id: "system",
+            from_role: MessageRole::System,
+            to_agent_id,
+            content: &content,
+            project_id: None,
+            task_id: None,
+            reply_to_id: None,
+            external,
+            attachment_ids: None,
+            message_type: MessageType::ScheduleTrigger,
+        };
+        let sent = message_domain().delivery().send_to_agent(ctx, cmd).await?;
+        sys_info!(
+            "schedule wakeup delivered: trigger={}, agent={}, message={}",
+            event.trigger_id,
+            to_agent_id,
+            sent.po.id
+        );
+        Ok(())
+    }
+
     /// agent_rest 动作：**只派发沉淀请求**，不在此处执行沉淀
     ///
     /// 作用域：payload 指定 `agent_id` 时只派发该 Agent；**缺省（系统默认触发器）
@@ -630,6 +766,89 @@ struct CronTriggerPayload {
     extra: Value,
 }
 
+/// 动作标签归一：顶层 `action` 列优先，空值/缺失回落 payload 内 action。
+/// 存量 6 条系统触发器只有 payload.action，新记录两者都有且以顶层为准。
+fn resolve_action<'a>(top_level: Option<&'a str>, payload_action: &'a str) -> &'a str {
+    match top_level {
+        Some(action) if !action.is_empty() => action,
+        _ => payload_action,
+    }
+}
+
+/// 构造 Agent 唤醒正文：至少含日程 ID、用户原始意图、期望动作、完成后如何汇报。
+///
+/// 抽成纯函数是为了能单测口径——Agent 靠正文判断「该做什么」，这是日程链路
+/// 唯一的行为载体（`message_type` 只影响路由/话术/去重，不携带指令语义）。
+fn build_schedule_wakeup_content(event: &CronTriggerEvent, action: &str) -> String {
+    let intent = if event.description.trim().is_empty() {
+        "(未填写意图说明)"
+    } else {
+        event.description.trim()
+    };
+    let expected = if action.trim().is_empty() {
+        "按日程标题执行"
+    } else {
+        action.trim()
+    };
+    // 身份三字段要随唤醒正文一起交给 Agent：它需要知道「谁安排的、算谁的、
+    // 自己是谁」，才能判断要不要以委托人口径汇报、以及能不能代表其行事。
+    // 只落库不传递，Agent 到点就只剩一句 description，「谁安排的」等于没建。
+    format!(
+        "【日程触发】{}\n\
+         - 日程 ID：{}\n\
+         - 安排者：{}\n\
+         - 归属用户：{}\n\
+         - 负责 Agent：{}\n\
+         - 用户原始意图：{}\n\
+         - 期望动作：{}\n\
+         请根据原始意图执行上述动作；完成后通过消息向归属用户汇报结果。",
+        event.trigger_name,
+        event.trigger_id,
+        creator_label(event),
+        or_dash(event.owner_user_id.as_deref()),
+        or_dash(event.agent_id.as_deref()),
+        intent,
+        expected
+    )
+}
+
+/// 安排者可读身份：`用户/xxx`、`Agent/xxx` 或 `系统`
+fn creator_label(event: &CronTriggerEvent) -> String {
+    use common::enums::CreatorType;
+    let kind = event
+        .creator_type
+        .map(CreatorType::from)
+        .unwrap_or(CreatorType::System);
+    let name = match kind {
+        CreatorType::User => "用户",
+        CreatorType::Agent => "Agent",
+        CreatorType::System => "系统",
+    };
+    match event.creator_id.as_deref().filter(|s| !s.is_empty()) {
+        Some(id) => format!("{name}/{id}"),
+        None => name.to_string(),
+    }
+}
+
+fn or_dash(value: Option<&str>) -> &str {
+    value.filter(|s| !s.is_empty()).unwrap_or("-")
+}
+
+/// 构造用户提醒正文：不含唤醒话术，只告知到点要做的事。
+fn build_schedule_notify_content(event: &CronTriggerEvent, action: &str) -> String {
+    let detail = if event.description.trim().is_empty() {
+        action.trim()
+    } else {
+        event.description.trim()
+    };
+    let detail = if detail.is_empty() {
+        "到点提醒"
+    } else {
+        detail
+    };
+    format!("【日程提醒】{}：{}", event.trigger_name, detail)
+}
+
 impl CronTriggerPayload {
     /// 动作参数（保证拿到的是对象，缺省/`null` 归一为空对象）
     fn action_params(&self) -> Value {
@@ -652,6 +871,71 @@ struct AgentRestPayload {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 唤醒正文必须带齐身份三字段：Agent 到点执行时要知道「谁安排的、
+    /// 算谁的、自己是谁」，否则「谁安排的」只落库不进执行上下文。
+    #[test]
+    fn wakeup_content_carries_identity() {
+        let event = CronTriggerEvent {
+            event_id: "e-1".into(),
+            trigger_id: "t-1".into(),
+            trigger_name: "晨间简报".into(),
+            payload: "{}".into(),
+            created_at: 0,
+            trigger_type: 3,
+            behavior: 2,
+            action: Some("daily_brief".into()),
+            description: "汇总昨日进度".into(),
+            org_id: None,
+            owner_user_id: Some("user-1".into()),
+            creator_type: Some(1), // CreatorType::Agent
+            creator_id: Some("agent-1".into()),
+            agent_id: Some("agent-2".into()),
+            lease_owner: None,
+        };
+        let content = build_schedule_wakeup_content(&event, "daily_brief");
+        assert!(content.contains("安排者：Agent/agent-1"), "{content}");
+        assert!(content.contains("归属用户：user-1"), "{content}");
+        assert!(content.contains("负责 Agent：agent-2"), "{content}");
+        assert!(content.contains("用户原始意图：汇总昨日进度"), "{content}");
+    }
+
+    /// 旧事件没有 creator 字段：显示「系统」，其余缺省显示 `-`，不能 panic。
+    #[test]
+    fn wakeup_content_handles_missing_identity() {
+        let event = CronTriggerEvent {
+            event_id: "e-2".into(),
+            trigger_id: "t-2".into(),
+            trigger_name: "旧日程".into(),
+            payload: "{}".into(),
+            created_at: 0,
+            trigger_type: 0,
+            behavior: 0,
+            action: None,
+            description: String::new(),
+            org_id: None,
+            owner_user_id: None,
+            creator_type: None,
+            creator_id: None,
+            agent_id: None,
+            lease_owner: None,
+        };
+        let content = build_schedule_wakeup_content(&event, "");
+        assert!(content.contains("安排者：系统"), "{content}");
+        assert!(content.contains("归属用户：-"), "{content}");
+        assert!(content.contains("负责 Agent：-"), "{content}");
+    }
+
+    /// 顶层 action 优先；存量记录（顶层为 None/空）回落 payload.action
+    #[test]
+    fn test_resolve_action_prefers_top_level() {
+        assert_eq!(
+            resolve_action(Some("agent_schedule"), "agent_rest"),
+            "agent_schedule"
+        );
+        assert_eq!(resolve_action(None, "agent_rest"), "agent_rest");
+        assert_eq!(resolve_action(Some(""), "agent_rest"), "agent_rest");
+    }
 
     /// 系统默认触发器的 payload **没有 agent_id**——历史版本因 AgentRestPayload
     /// 必填 agent_id 导致 agent_rest 每次触发都在解析阶段失败（沉淀从未执行）。

@@ -8,6 +8,7 @@ use crate::service::dao::cron_trigger;
 use crate::service::dao::cron_trigger::{CronTriggerDao, CronTriggerQuery};
 use common::enums::TriggerType;
 use common::error::{Result, err};
+use common::schedule::effective_type;
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例管理 ====================
@@ -61,16 +62,21 @@ pub trait CronTriggerDal: Send + Sync {
     /// 恢复
     async fn resume(&self, ctx: RequestContext, id: &str) -> Result<()>;
 
-    /// 获取到期触发器
-    async fn list_due(
+    /// 原子领取到期触发器（短租约）
+    async fn claim_due(
         &self,
         ctx: RequestContext,
         now: i64,
+        lease_owner: &str,
+        lease_until: i64,
         limit: i32,
     ) -> Result<Vec<CronTriggerPo>>;
 
-    /// 计算并更新下次执行时间
+    /// 计算并更新下次执行时间（含清租约 + 累计次数）
     async fn mark_executed(&self, ctx: RequestContext, id: &str, executed_at: i64) -> Result<()>;
+
+    /// 记录执行错误（不清租约）
+    async fn record_failure(&self, ctx: RequestContext, id: &str, error: &str) -> Result<()>;
 }
 
 // ==================== DAL 实现 ====================
@@ -128,13 +134,17 @@ impl CronTriggerDal for CronTriggerDalImpl {
         self.cron_trigger_dao.update(ctx, &trigger).await
     }
 
-    async fn list_due(
+    async fn claim_due(
         &self,
         ctx: RequestContext,
         now: i64,
+        lease_owner: &str,
+        lease_until: i64,
         limit: i32,
     ) -> Result<Vec<CronTriggerPo>> {
-        self.cron_trigger_dao.list_due(ctx, now, limit).await
+        self.cron_trigger_dao
+            .claim_due(ctx, now, lease_owner, lease_until, limit)
+            .await
     }
 
     async fn mark_executed(&self, ctx: RequestContext, id: &str, executed_at: i64) -> Result<()> {
@@ -144,14 +154,17 @@ impl CronTriggerDal for CronTriggerDalImpl {
             .await?
             .ok_or_else(|| err!(ResourceNotFound, "Trigger not found: {}", id))?;
 
-        match trigger.trigger_type {
-            TriggerType::Once => {
-                let mut trigger = trigger;
-                trigger.is_enabled = 0;
-                trigger.last_run_at = Some(executed_at);
-                trigger.touch(Some(ctx.uid()));
-                self.cron_trigger_dao.update(ctx, &trigger).await
+        // 计算下一次触发时间。Schedule 是形态标签：时间规则由三选一字段给出。
+        // 判定与日程展开共用 common::schedule::effective_type，避免两处口径漂移。
+        let effective_type = match trigger.trigger_type {
+            TriggerType::Schedule => {
+                effective_type(trigger.cron_expression.as_deref(), trigger.interval_seconds)
             }
+            other => other,
+        };
+
+        let next_run_at = match effective_type {
+            TriggerType::Once => None, // 一次性：执行后禁用
             TriggerType::Interval => {
                 let interval = trigger.interval_seconds.ok_or_else(|| {
                     err!(
@@ -160,27 +173,78 @@ impl CronTriggerDal for CronTriggerDalImpl {
                         id
                     )
                 })?;
-                let next_run_at = executed_at + interval * 1000;
-                self.cron_trigger_dao
-                    .update_next_run_at(ctx, id, next_run_at, executed_at)
-                    .await
+                // 与两个创建入口同一套受检乘加：interval<=0 或极端值直接报错，
+                // 不能 wrap 成过去时间（那会让调度器下一轮立刻再领一次，无限空转）。
+                Some(common::schedule::interval_next_run_at(
+                    executed_at,
+                    interval,
+                )?)
             }
             TriggerType::Cron => {
-                let expression = trigger.cron_expression.ok_or_else(|| {
+                let expression = trigger.cron_expression.as_deref().ok_or_else(|| {
                     err!(
                         InvalidRequest,
                         "Cron trigger missing cron_expression: {}",
                         id
                     )
                 })?;
-                let timezone = crate::pkg::cron::system_timezone();
+                let timezone = crate::config::timezone();
                 let from = chrono::DateTime::<chrono::Utc>::from_timestamp(executed_at / 1000, 0)
                     .unwrap_or_else(chrono::Utc::now);
-                let next_run_at = crate::pkg::cron::next_run_at(&expression, &timezone, from)?;
-                self.cron_trigger_dao
-                    .update_next_run_at(ctx, id, next_run_at, executed_at)
-                    .await
+                Some(common::schedule::next_run_at(expression, &timezone, from)?)
             }
+            TriggerType::Schedule => unreachable!("Schedule 已被归一为具体时间规则"),
+        };
+
+        // 终态：一次性 / 本次执行后次数用尽 / 下次已越过生效窗口终点。
+        //
+        // - 次数：`total_runs` 尚未含本次，所以判「本次之后是否耗尽」；
+        // - 窗口：`end_at` 是闭区间上界（`within_window` / SQL / 展开都用 `<=`），
+        //   只有 `next > end` 才越界；用 `>=` 会把窗口内最后一点跳过。
+        let completed = next_run_at.is_none()
+            || trigger.exhausts_after_current_run()
+            || trigger
+                .end_at
+                .is_some_and(|end| next_run_at.is_some_and(|next| next > end));
+
+        if completed {
+            // 终态收尾走专用原子语句：通用 update 不再触碰运行时列，
+            // 否则并发「读-改-写」会把租约与累计次数覆盖掉。
+            self.cron_trigger_dao
+                .complete_run(ctx, id, executed_at)
+                .await
+        } else {
+            self.cron_trigger_dao
+                .update_next_run_at(
+                    ctx,
+                    id,
+                    next_run_at.expect("completed=false 时 next_run_at 必有值"),
+                    executed_at,
+                )
+                .await
         }
+    }
+
+    async fn record_failure(&self, ctx: RequestContext, id: &str, error: &str) -> Result<()> {
+        self.cron_trigger_dao.record_failure(ctx, id, error).await
+    }
+}
+
+/// Schedule 形态的时间规则三选一：cron > interval > run_at（Once 语义）。
+///
+/// 若三者皆无，回落 Once 让记录禁用而不是无限重触发（防御僵尸记录）。
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_schedule_time_rule_priority() {
+        // 判定已下沉 common::schedule::effective_type，这里守住 DAL 调用口径
+        assert_eq!(effective_type(None, None), TriggerType::Once);
+        assert_eq!(effective_type(None, Some(60)), TriggerType::Interval);
+        assert_eq!(
+            effective_type(Some("0 4 * * *"), Some(60)),
+            TriggerType::Cron
+        );
     }
 }
