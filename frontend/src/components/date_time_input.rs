@@ -4,6 +4,7 @@
 //! 与暗色 HUD 主题割裂（实测在 orz-hud 下是一块刺眼白板）。本组件自绘
 //! 暗色面板（复用 `.orz-popover` 切角样式），点击输入框任意位置就地展开：
 //! 上/下月切换、今天快捷键、点日期选日、时/分滚轮微调、点「完成」应用。
+//! 面板内日期网格在左、时间滚轮在右（竖向发丝线分隔），比上下排布更紧凑。
 //!
 //! 值语义仍为 `"YYYY-MM-DDTHH:MM"` 字符串，与 `utils::time` 的
 //! `parse_datetime_local_to_ms` / `ms_to_datetime_local_value` 直接互通；
@@ -17,6 +18,9 @@ use wasm_bindgen::JsCast;
 use web_sys::HtmlInputElement;
 
 const VALUE_FORMAT: &str = "%Y-%m-%dT%H:%M";
+
+/// 面板估算高度（左右排布后约 320）：用于判断向上/向下展开
+const PANEL_HEIGHT: f64 = 320.0;
 
 #[derive(Props, Clone, PartialEq)]
 pub struct DateTimeInputProps {
@@ -214,7 +218,6 @@ pub fn DateTimeInput(props: DateTimeInputProps) -> Element {
                             .and_then(|window| window.inner_height().ok())
                             .and_then(|height| height.as_f64())
                             .unwrap_or(800.0);
-                        const PANEL_HEIGHT: f64 = 440.0;
                         open_up.set(should_open_up(
                             rect.top(),
                             rect.bottom(),
@@ -243,9 +246,9 @@ pub fn DateTimeInput(props: DateTimeInputProps) -> Element {
                 }
                 div {
                     class: if open_up() {
-                        "orz-popover relative z-30 mb-1 p-3 w-64"
+                        "orz-popover relative z-30 mb-1 p-3 w-[25rem] max-w-full"
                     } else {
-                        "orz-popover relative z-30 mt-1 p-3 w-64"
+                        "orz-popover relative z-30 mt-1 p-3 w-[25rem] max-w-full"
                     },
                     onmounted: move |evt: MountedEvent| {
                         if let Some(element) = evt.data().downcast::<web_sys::Element>() {
@@ -278,58 +281,62 @@ pub fn DateTimeInput(props: DateTimeInputProps) -> Element {
                         }
                     }
 
-                    div { class: "hud-datepicker-week",
-                        for label in ["日", "一", "二", "三", "四", "五", "六"] {
-                            span { "{label}" }
-                        }
-                    }
-                    div { class: "hud-datepicker-grid",
-                        for date in cells {
-                            button {
-                                key: "{date}",
-                                class: {
-                                    let mut classes = String::from("hud-datepicker-cell");
-                                    if date.month() != month { classes.push_str(" is-outside"); }
-                                    if date == today { classes.push_str(" is-today"); }
-                                    if selected_date == date { classes.push_str(" is-selected"); }
-                                    classes
-                                },
-                                onclick: move |_| {
-                                    // 选日后留在面板里继续用滚轮调时间，值即时提交
-                                    draft_date.set(date);
-                                    commit(date, draft_hour(), draft_minute(), &props.on_change);
-                                },
-                                "{date.day()}"
+                    div { class: "flex items-start gap-3",
+                        div { class: "hud-datepicker-calendar",
+                            div { class: "hud-datepicker-week",
+                                for label in ["日", "一", "二", "三", "四", "五", "六"] {
+                                    span { "{label}" }
+                                }
+                            }
+                            div { class: "hud-datepicker-grid",
+                                for date in cells {
+                                    button {
+                                        key: "{date}",
+                                        class: {
+                                            let mut classes = String::from("hud-datepicker-cell");
+                                            if date.month() != month { classes.push_str(" is-outside"); }
+                                            if date == today { classes.push_str(" is-today"); }
+                                            if selected_date == date { classes.push_str(" is-selected"); }
+                                            classes
+                                        },
+                                        onclick: move |_| {
+                                            // 选日后留在面板里继续用滚轮调时间，值即时提交
+                                            draft_date.set(date);
+                                            commit(date, draft_hour(), draft_minute(), &props.on_change);
+                                        },
+                                        "{date.day()}"
+                                    }
+                                }
                             }
                         }
-                    }
 
-                    div { class: "hud-time-wheel mt-3 pt-2 border-t border-base-content/10",
-                        div { class: "flex items-center justify-between mb-1",
-                            span { class: "hud-eyebrow", "TIME · 滚轮调节" }
-                            strong { class: "font-display text-sm tabular-nums",
-                                "{draft_hour():02}:{draft_minute():02}"
+                        div { class: "hud-time-wheel",
+                            div { class: "flex items-center justify-between mb-1",
+                                span { class: "hud-eyebrow", "TIME" }
+                                strong { class: "font-display text-sm tabular-nums",
+                                    "{draft_hour():02}:{draft_minute():02}"
+                                }
                             }
-                        }
-                        div { class: "flex items-center justify-center gap-2",
-                            WheelColumn {
-                                value: draft_hour(),
-                                len: 24,
-                                label: "时",
-                                on_select: move |value| {
-                                    draft_hour.set(value);
-                                    commit(draft_date(), value, draft_minute(), &props.on_change);
-                                },
-                            }
-                            span { class: "hud-wheel-sep", ":" }
-                            WheelColumn {
-                                value: draft_minute(),
-                                len: 60,
-                                label: "分",
-                                on_select: move |value| {
-                                    draft_minute.set(value);
-                                    commit(draft_date(), draft_hour(), value, &props.on_change);
-                                },
+                            div { class: "flex items-center justify-center gap-2",
+                                WheelColumn {
+                                    value: draft_hour(),
+                                    len: 24,
+                                    label: "时",
+                                    on_select: move |value| {
+                                        draft_hour.set(value);
+                                        commit(draft_date(), value, draft_minute(), &props.on_change);
+                                    },
+                                }
+                                span { class: "hud-wheel-sep", ":" }
+                                WheelColumn {
+                                    value: draft_minute(),
+                                    len: 60,
+                                    label: "分",
+                                    on_select: move |value| {
+                                        draft_minute.set(value);
+                                        commit(draft_date(), draft_hour(), value, &props.on_change);
+                                    },
+                                }
                             }
                         }
                     }

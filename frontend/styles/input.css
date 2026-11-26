@@ -2431,6 +2431,14 @@
  * 日历格沿用 HUD 玻璃语言：hover 微亮、今天发丝边、选中 primary 填充。
  * 全部走 --color-* 语义变量，随 data-theme 自动换肤。
  * ============================================================ */
+/* 左右排布：日历占满左列，时间滚轮固定宽靠右并加竖向发丝线分隔 */
+.hud-datepicker-calendar { flex: 1 1 auto; min-width: 0; }
+.hud-time-wheel {
+  flex: 0 0 auto;
+  width: 144px;
+  padding-left: 12px;
+  border-left: 1px solid color-mix(in oklab, var(--color-base-content) 10%, transparent);
+}
 .hud-datepicker-week,
 .hud-datepicker-grid {
   display: grid;
