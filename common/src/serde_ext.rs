@@ -27,10 +27,75 @@ where
     Ok(Some(Option::<T>::deserialize(deserializer)?))
 }
 
+/// GET query 里的「列表参数」：`statuses=enabled,disabled` 或重复/数组形态均可。
+///
+/// `Params` 宏把 query string 解析成 `HashMap<String, String>`，重复 key 会被
+/// 后值覆盖，因此前端统一用逗号分隔；这里同时兼容 JSON 数组与单值，避免
+/// 调用方拼错形态。字段需写 `#[serde(default, deserialize_with = "...")]`。
+pub fn deserialize_comma_list<'de, D, T>(deserializer: D) -> Result<Option<Vec<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: serde::de::DeserializeOwned,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    let raw: Vec<String> = match value {
+        serde_json::Value::String(s) => s
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect(),
+        serde_json::Value::Array(items) => items
+            .into_iter()
+            .filter_map(|v| match v {
+                serde_json::Value::String(s) => Some(s),
+                serde_json::Value::Number(n) => Some(n.to_string()),
+                serde_json::Value::Bool(b) => Some(b.to_string()),
+                _ => None,
+            })
+            .collect(),
+        serde_json::Value::Null => return Ok(None),
+        other => {
+            return Err(serde::de::Error::custom(format!(
+                "列表参数必须是逗号分隔字符串或数组，收到 {other}"
+            )));
+        }
+    };
+    raw.into_iter()
+        .map(|item| {
+            serde_json::from_value::<T>(serde_json::Value::String(item))
+                .map_err(serde::de::Error::custom)
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde::Serialize;
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct ListFixture {
+        #[serde(default, deserialize_with = "deserialize_comma_list")]
+        values: Option<Vec<String>>,
+    }
+
+    #[test]
+    fn comma_list_accepts_query_string_and_array() {
+        let from_query: ListFixture =
+            serde_json::from_str(r#"{"values":"enabled,disabled"}"#).unwrap();
+        assert_eq!(
+            from_query.values,
+            Some(vec!["enabled".into(), "disabled".into()])
+        );
+
+        let from_array: ListFixture = serde_json::from_str(r#"{"values":["enabled"]}"#).unwrap();
+        assert_eq!(from_array.values, Some(vec!["enabled".into()]));
+
+        let absent: ListFixture = serde_json::from_str("{}").unwrap();
+        assert_eq!(absent.values, None);
+    }
 
     #[derive(Debug, Deserialize, Serialize, PartialEq)]
     struct Fixture {

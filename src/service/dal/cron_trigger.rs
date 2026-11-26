@@ -50,6 +50,9 @@ pub trait CronTriggerDal: Send + Sync {
         query: CronTriggerQuery,
     ) -> Result<Vec<CronTriggerPo>>;
 
+    /// 按同一套条件统计总数（不含分页）
+    async fn count(&self, ctx: RequestContext, query: CronTriggerQuery) -> Result<usize>;
+
     /// 更新
     async fn update(&self, ctx: RequestContext, trigger: &CronTriggerPo) -> Result<()>;
 
@@ -102,6 +105,10 @@ impl CronTriggerDal for CronTriggerDalImpl {
         query: CronTriggerQuery,
     ) -> Result<Vec<CronTriggerPo>> {
         self.cron_trigger_dao.list(ctx, query).await
+    }
+
+    async fn count(&self, ctx: RequestContext, query: CronTriggerQuery) -> Result<usize> {
+        self.cron_trigger_dao.count(ctx, query).await
     }
 
     async fn update(&self, ctx: RequestContext, trigger: &CronTriggerPo) -> Result<()> {

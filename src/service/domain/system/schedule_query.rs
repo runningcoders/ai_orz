@@ -141,6 +141,7 @@ pub(crate) fn collect_occurrences(
             creator_id: trigger.creator_id.clone(),
             agent_id: trigger.agent_id.clone(),
             owner_user_id: trigger.owner_user_id.clone(),
+            is_enabled: trigger.is_enabled != 0,
         });
         if occurrences.len() >= limit {
             break;

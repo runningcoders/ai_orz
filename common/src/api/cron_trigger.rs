@@ -1,6 +1,6 @@
 //! Cron Trigger related API request/response DTOs - shared between backend and frontend
 
-use crate::enums::{CreatorType, ScheduleDateTerm, TriggerBehavior, TriggerType};
+use crate::enums::{CreatorType, ScheduleDateTerm, TriggerBehavior, TriggerStatus, TriggerType};
 use ai_orz_macros::Params;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -238,8 +238,12 @@ pub struct QueryScheduleRequest {
     pub keyword: Option<String>,
     /// 按行为模板筛选
     pub behavior: Option<TriggerBehavior>,
-    /// 仅看启用/停用
-    pub is_enabled: Option<bool>,
+    /// 是否连已取消（停用）的日程一起返回。
+    ///
+    /// 默认 `false`：只返回正常可用的日程，Agent 绝大多数查询无需拼这个参数。
+    /// 只有明确要看「曾经取消过什么」时才置 `true`。
+    #[serde(default)]
+    pub include_cancelled: bool,
     /// 返回条数上限（默认 200，硬上限 500）
     pub limit: Option<usize>,
 }
@@ -275,6 +279,14 @@ pub struct ScheduleOccurrence {
     /// Who: 归属用户（算谁的 / 推给谁）
     #[serde(default)]
     pub owner_user_id: Option<String>,
+    /// 该日程当前是否正常可用（false = 已取消 / 停用）；
+    /// 仅在 `include_cancelled=true` 时才会出现 false 的条目。
+    #[serde(default = "default_true")]
+    pub is_enabled: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// 日程查询响应：展开后的实例列表 + 本次解析出的区间
@@ -329,15 +341,26 @@ pub struct GetCronTriggerRequest {
 }
 
 /// List Cron Triggers request
+///
+/// 过滤全部在数据端完成：状态 / 行为都是列表参数（逗号分隔），分页用 offset/limit。
+/// `statuses` 缺省只返回启用项；要同时看取消态必须显式传两个状态。
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct ListCronTriggersRequest {
     /// Filter by trigger type
     #[param(source = "query")]
     pub trigger_type: Option<TriggerType>,
-    /// Filter by enabled state
+    /// 状态列表（enabled / disabled，逗号分隔）；缺省只看 enabled
     #[param(source = "query")]
-    pub is_enabled: Option<bool>,
-    /// Max result count
+    #[serde(default, deserialize_with = "crate::serde_ext::deserialize_comma_list")]
+    pub statuses: Option<Vec<TriggerStatus>>,
+    /// 行为模板列表（Serde 枚举名，逗号分隔）；不传表示全部
+    #[param(source = "query")]
+    #[serde(default, deserialize_with = "crate::serde_ext::deserialize_comma_list")]
+    pub behaviors: Option<Vec<TriggerBehavior>>,
+    /// 分页偏移，默认 0
+    #[param(source = "query")]
+    pub offset: Option<usize>,
+    /// 每页条数，默认 50、硬上限 200
     #[param(source = "query")]
     pub limit: Option<usize>,
 }
@@ -505,5 +528,31 @@ mod tests {
         let serialized = serde_json::to_value(&cleared).unwrap();
         assert!(serialized.get("payload").is_some_and(|v| v.is_null()));
         assert!(serialized.get("start_at").is_some_and(|v| v.is_null()));
+    }
+
+    /// 列表过滤参数必须能从 GET query 的逗号分隔字符串解析，默认由 handler 兜底为启用。
+    #[test]
+    fn list_request_status_and_behavior_lists_parse_from_query_string() {
+        let req: ListCronTriggersRequest = serde_json::from_str(
+            r#"{"statuses":"enabled,disabled","behaviors":"SyncMaintenance,AsyncNotify","offset":50,"limit":20}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            req.statuses,
+            Some(vec![TriggerStatus::Enabled, TriggerStatus::Disabled])
+        );
+        assert_eq!(
+            req.behaviors,
+            Some(vec![
+                TriggerBehavior::SyncMaintenance,
+                TriggerBehavior::AsyncNotify
+            ])
+        );
+        assert_eq!(req.offset, Some(50));
+        assert_eq!(req.limit, Some(20));
+
+        let empty: ListCronTriggersRequest = serde_json::from_str("{}").unwrap();
+        assert_eq!(empty.statuses, None);
+        assert_eq!(empty.behaviors, None);
     }
 }

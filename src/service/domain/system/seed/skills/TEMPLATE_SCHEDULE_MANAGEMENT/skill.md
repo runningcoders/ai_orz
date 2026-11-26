@@ -7,7 +7,7 @@
 ## 意图 → 工具
 
 - 「明天提醒我」「每周一早上」→ 建。只提醒用户用 `AsyncNotify`，要让 Agent 到点自己执行用 `AsyncAgentWakeup`（默认）。
-- 「这周有什么安排」「下周有没有…」→ 查，时间词直接传 `date_term`：`today` / `yesterday` / `tomorrow` / `three_days` / `this_week` / `next_week`，服务端按系统时区折算，**不要自己算毫秒时间戳**。
+- 「这周有什么安排」「下周有没有…」→ 查，时间词直接传 `date_term`：`today` / `yesterday` / `tomorrow` / `three_days` / `this_week` / `next_week`，服务端按系统时区折算，**不要自己算毫秒时间戳**。默认只返回正常日程；只有明确要找「取消过的日程」时才传 `include_cancelled=true`。
 - 「到点把这些上下文也带给负责的 Agent」→ 建 / 改时用 `payload` 附上：这是留给到点自己的**自由信息**，系统原样回灌，由 Agent 自己决定怎么处理；框架不约定任何字段或含义，别当成有协议的动作指令。
 - 「改到三点」「换个人负责」→ 改；「不用了」→ 删。
 

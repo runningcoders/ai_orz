@@ -11,7 +11,10 @@ pub use common::api::{
     WechatPollChannelMetrics, WorkspaceMetricsResponse,
 };
 
-use super::{ApiError, api_delete, api_get, api_get_or_default, api_post, api_post_empty, api_put};
+use super::{
+    ApiError, api_delete, api_get, api_get_or_default, api_post, api_post_empty, api_put,
+    build_query_string,
+};
 
 /// 健康检查（返回纯文本）
 pub async fn check_health() -> Result<String, ApiError> {
@@ -20,8 +23,31 @@ pub async fn check_health() -> Result<String, ApiError> {
 
 // ===== 定时触发器 =====
 
-pub async fn list_cron_triggers() -> Result<common::api::ListCronTriggersResponse, ApiError> {
-    api_get_or_default("/api/v1/system/cron-triggers").await
+pub async fn list_cron_triggers(
+    req: &common::api::ListCronTriggersRequest,
+) -> Result<common::api::ListCronTriggersResponse, ApiError> {
+    // 状态 / 行为列表统一逗号分隔；Params 宏按目标类型反序列化，别名由其 serde 名决定。
+    fn list_param<T: serde::Serialize>(values: &Option<Vec<T>>) -> Option<String> {
+        values.as_ref().filter(|v| !v.is_empty()).map(|items| {
+            items
+                .iter()
+                .filter_map(|v| {
+                    serde_json::to_value(v)
+                        .ok()
+                        .and_then(|value| value.as_str().map(str::to_string))
+                })
+                .collect::<Vec<_>>()
+                .join(",")
+        })
+    }
+    let qs = build_query_string(&[
+        ("trigger_type", req.trigger_type.map(|v| format!("{v:?}"))),
+        ("statuses", list_param(&req.statuses)),
+        ("behaviors", list_param(&req.behaviors)),
+        ("offset", req.offset.map(|v| v.to_string())),
+        ("limit", req.limit.map(|v| v.to_string())),
+    ]);
+    api_get_or_default(&format!("/api/v1/system/cron-triggers{qs}")).await
 }
 
 /// 查询日程实例（相对日期词或显式区间），用于三天 / 周视图

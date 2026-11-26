@@ -41,6 +41,50 @@ const TRIGGER_COLUMNS: &str = concat!(
     "lease_owner, lease_until, is_enabled, last_run_at, created_at, updated_at, created_by, updated_by"
 );
 
+/// 管理端列表与统计共用同一套 WHERE，避免「分页条数」与「总数」口径漂移。
+fn append_filters<'a>(
+    builder: &mut sqlx::QueryBuilder<'a, sqlx::Sqlite>,
+    query: &'a CronTriggerQuery,
+) {
+    if let Some(trigger_type) = query.trigger_type {
+        builder
+            .push(" AND trigger_type = ")
+            .push_bind(trigger_type.to_i32());
+    }
+    if !query.behaviors.is_empty() {
+        builder.push(" AND behavior IN (");
+        let mut separated = builder.separated(", ");
+        for behavior in &query.behaviors {
+            separated.push_bind(behavior.to_i32());
+        }
+        separated.push_unseparated(")");
+    } else if let Some(behavior) = query.behavior {
+        builder
+            .push(" AND behavior = ")
+            .push_bind(behavior.to_i32());
+    }
+    if let Some(org_id) = &query.org_id {
+        builder.push(" AND org_id = ").push_bind(org_id);
+    }
+    if let Some(owner_user_id) = &query.owner_user_id {
+        builder
+            .push(" AND owner_user_id = ")
+            .push_bind(owner_user_id);
+    }
+    if !query.statuses.is_empty() {
+        builder.push(" AND is_enabled IN (");
+        let mut separated = builder.separated(", ");
+        for status in &query.statuses {
+            separated.push_bind(status.to_i32());
+        }
+        separated.push_unseparated(")");
+    } else if let Some(is_enabled) = query.is_enabled {
+        builder
+            .push(" AND is_enabled = ")
+            .push_bind(if is_enabled { 1 } else { 0 });
+    }
+}
+
 #[async_trait::async_trait]
 impl CronTriggerDao for CronTriggerDaoSqliteImpl {
     async fn create(&self, ctx: RequestContext, trigger: &CronTriggerPo) -> Result<()> {
@@ -108,38 +152,31 @@ INSERT INTO cron_triggers (
         let mut builder = sqlx::QueryBuilder::new(format!(
             "SELECT {TRIGGER_COLUMNS} FROM cron_triggers WHERE 1=1"
         ));
-
-        if let Some(trigger_type) = query.trigger_type {
-            builder
-                .push(" AND trigger_type = ")
-                .push_bind(trigger_type.to_i32());
-        }
-        if let Some(behavior) = query.behavior {
-            builder
-                .push(" AND behavior = ")
-                .push_bind(behavior.to_i32());
-        }
-        if let Some(org_id) = query.org_id {
-            builder.push(" AND org_id = ").push_bind(org_id);
-        }
-        if let Some(owner_user_id) = query.owner_user_id {
-            builder
-                .push(" AND owner_user_id = ")
-                .push_bind(owner_user_id);
-        }
-        if let Some(is_enabled) = query.is_enabled {
-            builder
-                .push(" AND is_enabled = ")
-                .push_bind(if is_enabled { 1 } else { 0 });
-        }
+        append_filters(&mut builder, &query);
 
         builder.push(" ORDER BY created_at DESC");
         if let Some(limit) = query.limit {
             builder.push(" LIMIT ").push_bind(limit as i64);
+        } else if query.offset.is_some_and(|offset| offset > 0) {
+            // SQLite 的 OFFSET 必须跟在 LIMIT 后；无 limit 时用 -1 表示不限条数。
+            builder.push(" LIMIT -1");
+        }
+        if let Some(offset) = query.offset
+            && offset > 0
+        {
+            builder.push(" OFFSET ").push_bind(offset as i64);
         }
 
         let rows = builder.build_query_as().fetch_all(pool).await?;
         Ok(rows)
+    }
+
+    async fn count(&self, ctx: RequestContext, query: CronTriggerQuery) -> Result<usize> {
+        let pool = ctx.db_pool();
+        let mut builder = sqlx::QueryBuilder::new("SELECT COUNT(*) FROM cron_triggers WHERE 1=1");
+        append_filters(&mut builder, &query);
+        let (count,): (i64,) = builder.build_query_as().fetch_one(pool).await?;
+        Ok(count as usize)
     }
 
     async fn update(&self, ctx: RequestContext, trigger: &CronTriggerPo) -> Result<()> {

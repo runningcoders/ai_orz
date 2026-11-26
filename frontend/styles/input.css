@@ -2003,6 +2003,9 @@
     background: color-mix(in oklab, var(--color-primary) 8%, transparent);
     box-shadow: inset 2px 0 0 0 var(--color-primary);
   }
+  /* 触发器操作列：长名称不得把三个按钮挤成竖排 */
+  .hud-trigger-actions { min-width: max-content; }
+  .hud-trigger-actions .btn { flex: 0 0 auto; white-space: nowrap; }
 
   /* 弹窗皮肤：覆盖 DaisyUI .modal 背景 + .modal-box（渐变发丝边 + 切角投影） */
   .hud-modal { background: color-mix(in oklab, var(--color-base-100) 32%, transparent); backdrop-filter: blur(4px); }

@@ -3,17 +3,24 @@
 use crate::models::cron_trigger::CronTriggerPo;
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
-use common::enums::{TriggerBehavior, TriggerType};
+use common::enums::{TriggerBehavior, TriggerStatus, TriggerType};
 use common::error::Result;
 
 /// Cron Trigger 查询参数。
 #[derive(Debug, Clone, Default)]
 pub struct CronTriggerQuery {
     pub trigger_type: Option<TriggerType>,
+    /// 单值行为过滤（领域内部使用，如日程查询）
     pub behavior: Option<TriggerBehavior>,
+    /// 多值行为过滤（管理端形态/行为筛选），优先于 `behavior`
+    pub behaviors: Vec<TriggerBehavior>,
     pub org_id: Option<String>,
     pub owner_user_id: Option<String>,
+    /// 单值启用过滤（领域内部使用），优先于 `statuses`
     pub is_enabled: Option<bool>,
+    /// 多值状态过滤（管理端列表），优先于 `is_enabled`
+    pub statuses: Vec<TriggerStatus>,
+    pub offset: Option<usize>,
     pub limit: Option<usize>,
 }
 
@@ -32,6 +39,9 @@ pub trait CronTriggerDao: Send + Sync + std::fmt::Debug {
         ctx: RequestContext,
         query: CronTriggerQuery,
     ) -> Result<Vec<CronTriggerPo>>;
+
+    /// 按同一套过滤条件统计总数（不含分页），供管理端分页使用。
+    async fn count(&self, ctx: RequestContext, query: CronTriggerQuery) -> Result<usize>;
 
     /// 更新触发器配置（**只写配置列**）。
     ///

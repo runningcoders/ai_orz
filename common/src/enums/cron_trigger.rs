@@ -48,6 +48,31 @@ impl TriggerType {
     }
 }
 
+/// 触发器的可用状态（列表过滤用）。
+///
+/// 表里没有独立 status 列：启用/取消就是 `is_enabled` 的 1/0。这里把它变成
+/// 具名状态，供管理端列表以「状态列表」形式传参（默认只看启用），避免前端
+/// 拉全量再本地过滤。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TriggerStatus {
+    /// 正常可用
+    #[default]
+    Enabled,
+    /// 已取消 / 暂停
+    Disabled,
+}
+
+impl TriggerStatus {
+    /// 映射到 `is_enabled` 的数据库取值。
+    pub fn to_i32(&self) -> i32 {
+        match self {
+            Self::Enabled => 1,
+            Self::Disabled => 0,
+        }
+    }
+}
+
 /// 日程查询的相对日期词。
 ///
 /// 模型只负责选择语义（"明天"、"下周"），**不负责换算毫秒时间戳**；

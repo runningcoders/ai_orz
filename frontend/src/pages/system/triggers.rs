@@ -18,12 +18,12 @@ use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{
-    CreateCronTriggerRequest, ListAgentsRequest, ListCronTriggersResponseItem,
-    QueryScheduleRequest, QueryScheduleResponse, SYSTEM_ACTION_TEMPLATES, ScheduleAgentTaskRequest,
-    ScheduleOccurrence, SearchAgentsRequest, SystemActionTemplate, UpdateCronTriggerRequest,
-    UpdateScheduleRequest, system_action_template,
+    CreateCronTriggerRequest, ListAgentsRequest, ListCronTriggersRequest,
+    ListCronTriggersResponseItem, QueryScheduleRequest, QueryScheduleResponse,
+    SYSTEM_ACTION_TEMPLATES, ScheduleAgentTaskRequest, ScheduleOccurrence, SearchAgentsRequest,
+    SystemActionTemplate, UpdateCronTriggerRequest, UpdateScheduleRequest, system_action_template,
 };
-use common::enums::{CreatorType, ScheduleDateTerm, TriggerBehavior, TriggerType};
+use common::enums::{CreatorType, ScheduleDateTerm, TriggerBehavior, TriggerStatus, TriggerType};
 use common::schedule::{calendar_day_key, calendar_day_keys, format_time_hm_in_tz};
 
 /// 时间戳格式化（**毫秒级**时间戳 → "YYYY-MM-DD HH:MM:SS"）
@@ -343,16 +343,96 @@ enum BehaviorFilter {
     Wakeup,
 }
 
+/// 列表状态筛选：默认只显示启用（运行中），取消/暂停项需显式切换才可见
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum StatusFilter {
+    Enabled,
+    Disabled,
+    All,
+}
+
+/// 管理端每页条数（与后端默认/上限口径一致）
+const TRIGGER_PAGE_SIZE: usize = 50;
+
+/// UI 状态选择 → 后端状态列表：默认只取启用，避免拉全量再本地过滤。
+fn status_values(filter: StatusFilter) -> Vec<TriggerStatus> {
+    match filter {
+        StatusFilter::Enabled => vec![TriggerStatus::Enabled],
+        StatusFilter::Disabled => vec![TriggerStatus::Disabled],
+        StatusFilter::All => vec![TriggerStatus::Enabled, TriggerStatus::Disabled],
+    }
+}
+
+/// 形态 + 行为两个下拉合成后端行为列表（取交集），过滤留在数据端。
+fn behavior_values(shape: ShapeFilter, behavior: BehaviorFilter) -> Vec<TriggerBehavior> {
+    let allowed = match shape {
+        ShapeFilter::All => vec![
+            TriggerBehavior::SyncMaintenance,
+            TriggerBehavior::AsyncNotify,
+            TriggerBehavior::AsyncAgentWakeup,
+        ],
+        ShapeFilter::System => vec![TriggerBehavior::SyncMaintenance],
+        ShapeFilter::Schedule => vec![
+            TriggerBehavior::AsyncNotify,
+            TriggerBehavior::AsyncAgentWakeup,
+        ],
+    };
+    let picked = match behavior {
+        BehaviorFilter::All => None,
+        BehaviorFilter::Sync => Some(TriggerBehavior::SyncMaintenance),
+        BehaviorFilter::Notify => Some(TriggerBehavior::AsyncNotify),
+        BehaviorFilter::Wakeup => Some(TriggerBehavior::AsyncAgentWakeup),
+    };
+    allowed
+        .into_iter()
+        .filter(|item| picked.is_none_or(|p| p == *item))
+        .collect()
+}
+
+fn list_request(
+    status: StatusFilter,
+    shape: ShapeFilter,
+    behavior: BehaviorFilter,
+    page: usize,
+) -> ListCronTriggersRequest {
+    ListCronTriggersRequest {
+        statuses: Some(status_values(status)),
+        behaviors: Some(behavior_values(shape, behavior)),
+        offset: Some(page * TRIGGER_PAGE_SIZE),
+        limit: Some(TRIGGER_PAGE_SIZE),
+        ..Default::default()
+    }
+}
+
+/// 统一写回分页结果：总数用于分页条，越界页回退后由 effect 自动重拉。
+fn apply_list(
+    list: common::api::ListCronTriggersResponse,
+    mut page: Signal<usize>,
+    mut triggers: Signal<Vec<ListCronTriggersResponseItem>>,
+    mut total: Signal<usize>,
+) {
+    let pages = list.total.div_ceil(TRIGGER_PAGE_SIZE).max(1);
+    if page() >= pages {
+        page.set(pages - 1);
+    }
+    total.set(list.total);
+    triggers.set(list.triggers);
+}
+
 #[component]
 pub fn SystemTriggers() -> Element {
-    let mut triggers = use_signal(Vec::<ListCronTriggersResponseItem>::new);
+    let triggers = use_signal(Vec::<ListCronTriggersResponseItem>::new);
     let mut loading = use_signal(|| true);
     let mut show_modal = use_signal(|| false);
     let mut edit_mode = use_signal(|| TriggerEditMode::Create);
 
-    // P3 列表筛选：形态（系统/日程）+ 行为模板
+    // P3 列表筛选：形态（系统/日程）+ 行为模板 + 状态（默认只看启用）
     let mut shape_filter = use_signal(|| ShapeFilter::All);
     let mut behavior_filter = use_signal(|| BehaviorFilter::All);
+    let mut status_filter = use_signal(|| StatusFilter::Enabled);
+    // 列表分页：过滤/分页全下推数据端，本地只持有当前页与过滤后的总数
+    let trigger_total = use_signal(|| 0usize);
+    let mut page = use_signal(|| 0usize);
 
     // P4 日程日历视图：列表 / 三天 / 周
     let mut calendar_view = use_signal(|| CalendarView::List);
@@ -394,8 +474,15 @@ pub fn SystemTriggers() -> Element {
     use_effect(move || {
         loading.set(true);
         spawn(async move {
-            match list_cron_triggers().await {
-                Ok(list) => triggers.set(list.triggers),
+            match list_cron_triggers(&list_request(
+                status_filter(),
+                shape_filter(),
+                behavior_filter(),
+                page(),
+            ))
+            .await
+            {
+                Ok(list) => apply_list(list, page, triggers, trigger_total),
                 Err(e) => toast.error(format!("加载触发器列表失败: {}", e)),
             }
             loading.set(false);
@@ -658,8 +745,15 @@ pub fn SystemTriggers() -> Element {
                     };
                     toast.success(msg);
                     show_modal.set(false);
-                    match list_cron_triggers().await {
-                        Ok(list) => triggers.set(list.triggers),
+                    match list_cron_triggers(&list_request(
+                        status_filter(),
+                        shape_filter(),
+                        behavior_filter(),
+                        page(),
+                    ))
+                    .await
+                    {
+                        Ok(list) => apply_list(list, page, triggers, trigger_total),
                         Err(e) => toast.error(format!("刷新列表失败: {}", e)),
                     }
                 }
@@ -672,26 +766,11 @@ pub fn SystemTriggers() -> Element {
     };
 
     let triggers_list = triggers.read().clone();
-    let mut filtered_list: Vec<_> = triggers_list
-        .iter()
-        .filter(|t| {
-            let shape_ok = match shape_filter() {
-                ShapeFilter::All => true,
-                ShapeFilter::System => is_system_shape(t.behavior),
-                ShapeFilter::Schedule => !is_system_shape(t.behavior),
-            };
-            let behavior_ok = match behavior_filter() {
-                BehaviorFilter::All => true,
-                BehaviorFilter::Sync => t.behavior == TriggerBehavior::SyncMaintenance,
-                BehaviorFilter::Notify => t.behavior == TriggerBehavior::AsyncNotify,
-                BehaviorFilter::Wakeup => t.behavior == TriggerBehavior::AsyncAgentWakeup,
-            };
-            shape_ok && behavior_ok
-        })
-        .cloned()
-        .collect();
-    // 时间轴：按下次执行时间升序；无有效排期的记录沉底，不污染时间轴头部
+    // 状态 / 形态 / 行为过滤与分页都由后端完成，这里只做展示排序。
+    let mut filtered_list: Vec<_> = triggers_list.clone();
     filtered_list.sort_by_key(|t| (t.next_run_at <= 0, t.next_run_at));
+    let total_pages = trigger_total().div_ceil(TRIGGER_PAGE_SIZE).max(1);
+    let current_page = page().min(total_pages - 1);
     // 触发器状态分布聚合（前端本地计算）
     let now_ms = crate::utils::time::now_ms();
     let enabled_count = triggers_list.iter().filter(|t| t.is_enabled).count();
@@ -758,9 +837,9 @@ pub fn SystemTriggers() -> Element {
                         onclick: move |_| {
                             loading.set(true);
                             spawn(async move {
-                                match list_cron_triggers().await {
+                                match list_cron_triggers(&list_request(status_filter(), shape_filter(), behavior_filter(), page())).await {
                                     Ok(list) => {
-                                        triggers.set(list.triggers);
+                                        apply_list(list, page, triggers, trigger_total);
                                         toast.success("刷新成功");
                                     }
                                     Err(e) => toast.error(format!("刷新失败: {}", e)),
@@ -842,6 +921,7 @@ pub fn SystemTriggers() -> Element {
                                 "schedule" => ShapeFilter::Schedule,
                                 _ => ShapeFilter::All,
                             });
+                            page.set(0);
                         },
                         option { value: "all", "全部形态" }
                         option { value: "system", "系统定时任务" }
@@ -857,11 +937,27 @@ pub fn SystemTriggers() -> Element {
                                 "wakeup" => BehaviorFilter::Wakeup,
                                 _ => BehaviorFilter::All,
                             });
+                            page.set(0);
                         },
                         option { value: "all", "全部行为" }
                         option { value: "sync", "同步维护" }
                         option { value: "notify", "异步通知" }
                         option { value: "wakeup", "Agent 唤醒" }
+                    }
+                    span { class: "text-xs text-base-content/60 ml-2", "状态" }
+                    select {
+                        class: "select select-bordered select-sm",
+                        onchange: move |e| {
+                            status_filter.set(match e.value().as_str() {
+                                "disabled" => StatusFilter::Disabled,
+                                "all" => StatusFilter::All,
+                                _ => StatusFilter::Enabled,
+                            });
+                            page.set(0);
+                        },
+                        option { value: "enabled", selected: status_filter() == StatusFilter::Enabled, "启用" }
+                        option { value: "disabled", selected: status_filter() == StatusFilter::Disabled, "取消 / 暂停" }
+                        option { value: "all", selected: status_filter() == StatusFilter::All, "全部状态" }
                     }
                 } else {
                     span { class: "text-xs text-base-content/60",
@@ -869,7 +965,7 @@ pub fn SystemTriggers() -> Element {
                     }
                 }
                 span { class: "text-xs text-base-content/50 ml-auto",
-                    "共 {filtered_list.len()} 条 / 总 {triggers_list.len()} 条"
+                    "本页 {filtered_list.len()} 条 / 共 {trigger_total()} 条"
                 }
             }
             if calendar_view() != CalendarView::List {
@@ -992,6 +1088,7 @@ pub fn SystemTriggers() -> Element {
                     },
                 }
             } else {
+                div { class: "overflow-x-auto",
                 table { class: "table hud-table table-zebra",
                     thead { tr {
                         th { "名称 / What" }
@@ -1088,6 +1185,7 @@ pub fn SystemTriggers() -> Element {
                                             }
                                         }
                                         td { "data-label": "操作",
+                                            div { class: "hud-trigger-actions flex flex-nowrap justify-end gap-1",
                                             button {
                                                 class: "btn hud-btn btn-ghost btn-sm",
                                                 onclick: move |_| {
@@ -1177,8 +1275,8 @@ pub fn SystemTriggers() -> Element {
                                                             match pause_cron_trigger(&pid).await {
                                                                 Ok(_) => {
                                                                     toast.success("已暂停");
-                                                                    match list_cron_triggers().await {
-                                                                        Ok(list) => triggers.set(list.triggers),
+                                                                    match list_cron_triggers(&list_request(status_filter(), shape_filter(), behavior_filter(), page())).await {
+                                                                        Ok(list) => apply_list(list, page, triggers, trigger_total),
                                                                         Err(e) => toast.error(format!("刷新列表失败: {}", e)),
                                                                     }
                                                                 }
@@ -1197,8 +1295,8 @@ pub fn SystemTriggers() -> Element {
                                                             match resume_cron_trigger(&rid).await {
                                                                 Ok(_) => {
                                                                     toast.success("已恢复");
-                                                                    match list_cron_triggers().await {
-                                                                        Ok(list) => triggers.set(list.triggers),
+                                                                    match list_cron_triggers(&list_request(status_filter(), shape_filter(), behavior_filter(), page())).await {
+                                                                        Ok(list) => apply_list(list, page, triggers, trigger_total),
                                                                         Err(e) => toast.error(format!("刷新列表失败: {}", e)),
                                                                     }
                                                                 }
@@ -1217,10 +1315,31 @@ pub fn SystemTriggers() -> Element {
                                                 },
                                                 "删除"
                                             }
+                                            }
                                         }
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+                }
+            }
+            if calendar_view() == CalendarView::List && total_pages > 1 {
+                div { class: "flex justify-center mt-4",
+                    div { class: "join",
+                        button {
+                            class: "join-item btn btn-sm",
+                            disabled: current_page == 0,
+                            onclick: move |_| page.set(current_page.saturating_sub(1)),
+                            "«"
+                        }
+                        button { class: "join-item btn btn-sm", "第 {current_page + 1} 页 / {total_pages}" }
+                        button {
+                            class: "join-item btn btn-sm",
+                            disabled: current_page + 1 >= total_pages,
+                            onclick: move |_| page.set(current_page + 1),
+                            "»"
                         }
                     }
                 }
@@ -1511,8 +1630,8 @@ pub fn SystemTriggers() -> Element {
                     match delete_cron_trigger(&id).await {
                         Ok(_) => {
                             toast.success("删除成功");
-                            match list_cron_triggers().await {
-                                Ok(list) => triggers.set(list.triggers),
+                            match list_cron_triggers(&list_request(status_filter(), shape_filter(), behavior_filter(), page())).await {
+                                Ok(list) => apply_list(list, page, triggers, trigger_total),
                                 Err(e) => toast.error(format!("刷新列表失败: {}", e)),
                             }
                         }

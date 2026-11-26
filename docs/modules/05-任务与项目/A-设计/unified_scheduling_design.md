@@ -383,6 +383,7 @@ Active ──到期+领取成功──▶ Dispatched ──消费成功──▶
 
 - **原位改造、组件复用**：沿用 `frontend/src/pages/system/triggers.rs` 现有页面与 `/system/triggers` 路由，不新建日程模块路由。表格、筛选、分页、创建/编辑弹窗、状态标签、Cron 预设等组件全部复用，只按四组模型调整字段分组与展示文案。
 - **同页分形态**：系统维度触发器（Who 组为 NULL，`SyncMaintenance`）与用户/Agent 日程（Who 组完整，异步模板）在同一列表内用 `trigger_type` / `behavior` 标签区分与筛选；系统项保留 readonly 语义，不因改造放开编辑。
+- **过滤与分页一律在数据端**：管理端列表的 `statuses` / `behaviors` 走列表参数（`enabled,disabled` 逗号分隔），`offset` / `limit` 下推 SQL；`statuses` 缺省只看启用，总数由同一 WHERE 的 `COUNT(*)` 给出。前端不做本地过滤、不拉全量，只有展示排序与日历展开可留在前端。
 - **展示按改造后模型**：详情页字段按 When / Who / What / How 四组重排，`payload.action` 提升为顶层 `action` 展示；`behavior` 以可读标签（同步维护 / 异步通知 / Agent 唤醒）呈现，不暴露枚举裸值。
 - **不引入日历组件**：P3 只做列表与表单的字段升级；日历/月视图属于后续独立需求，不在本次边界内（见 §11）。
 

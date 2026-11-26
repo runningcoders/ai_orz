@@ -139,6 +139,8 @@ pub trait CronManager: Send + Sync {
         ctx: RequestContext,
         query: CronTriggerQuery,
     ) -> Result<Vec<CronTriggerPo>>;
+    /// 按同一条件统计触发器总数（不含分页）
+    async fn count_triggers(&self, ctx: RequestContext, query: CronTriggerQuery) -> Result<usize>;
 
     /// 查询某用户在指定时间范围的日程实例。
     ///
@@ -278,6 +280,10 @@ impl CronManager for SystemDomainImpl {
         query: CronTriggerQuery,
     ) -> Result<Vec<CronTriggerPo>> {
         self.cron_trigger_dal.list(ctx, query).await
+    }
+
+    async fn count_triggers(&self, ctx: RequestContext, query: CronTriggerQuery) -> Result<usize> {
+        self.cron_trigger_dal.count(ctx, query).await
     }
 
     async fn query_schedules(

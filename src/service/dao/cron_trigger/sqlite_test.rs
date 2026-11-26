@@ -3,7 +3,7 @@
 use crate::models::cron_trigger::CronTriggerPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::cron_trigger::{self, CronTriggerDao, CronTriggerQuery};
-use common::enums::{TriggerBehavior, TriggerType};
+use common::enums::{TriggerBehavior, TriggerStatus, TriggerType};
 use common::error::Result;
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -342,6 +342,50 @@ async fn test_update_next_run_at_clears_lease_and_counts(pool: SqlitePool) -> Re
     assert_eq!(found.total_runs, 1);
     assert_eq!(found.lease_owner, None);
     assert_eq!(found.lease_until, None);
+
+    Ok(())
+}
+
+/// 管理端「状态列表 + 分页」必须在 SQL 层完成：总数不含分页，第二页不得混入取消项。
+#[sqlx::test(migrations = "./migrations")]
+async fn test_list_statuses_with_pagination_and_count(pool: SqlitePool) -> Result<()> {
+    let (dao, ctx) = init_test_env(pool);
+    for i in 1..=4 {
+        dao.create(
+            ctx.clone(),
+            &create_test_trigger(
+                &format!("trigger-{i}"),
+                &format!("job-{i}"),
+                TriggerType::Cron,
+                i * 1000,
+            ),
+        )
+        .await?;
+    }
+    dao.delete(ctx.clone(), "trigger-4").await?;
+
+    let enabled = CronTriggerQuery {
+        statuses: vec![TriggerStatus::Enabled],
+        ..Default::default()
+    };
+    assert_eq!(dao.count(ctx.clone(), enabled.clone()).await?, 3);
+
+    let page2 = CronTriggerQuery {
+        offset: Some(2),
+        limit: Some(2),
+        ..enabled.clone()
+    };
+    let rows = dao.list(ctx.clone(), page2).await?;
+    assert_eq!(rows.len(), 1);
+    // created_at 同毫秒时行序不稳定，只断言分页确实取到启用项且不含取消项。
+    assert_eq!(rows[0].is_enabled, 1);
+
+    let all = CronTriggerQuery {
+        statuses: vec![TriggerStatus::Enabled, TriggerStatus::Disabled],
+        ..Default::default()
+    };
+    assert_eq!(dao.count(ctx.clone(), all.clone()).await?, 4);
+    assert_eq!(dao.list(ctx.clone(), all).await?.len(), 4);
 
     Ok(())
 }

@@ -3,7 +3,7 @@
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
   "total": 683,
-  "total_bytes": 14437454,
+  "total_bytes": 14437799,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -1919,7 +1919,7 @@
           "path": "05-任务与项目/A-设计/unified_scheduling_design.md",
           "name": "unified_scheduling_design",
           "title": "统一定时调度器与日程设计",
-          "bytes": 34551,
+          "bytes": 34896,
           "status": "草案",
           "scope": [
             "src/models/cron_trigger.rs",

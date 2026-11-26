@@ -34,7 +34,14 @@ fn to_query(params: QueryScheduleRequest) -> Result<ScheduleQuery> {
         to: params.to,
         keyword: params.keyword,
         behavior: params.behavior,
-        is_enabled: params.is_enabled,
+        // 默认只返回正常可用日程：include_cancelled=false → 只看启用（Some(true)）；
+        // 显式 true → 不过滤状态（None），连已取消的一起返回。
+        // 把「是否显示取消态」收成一个布尔开关，Agent 无需知道 is_enabled 三态语义。
+        is_enabled: if params.include_cancelled {
+            None
+        } else {
+            Some(true)
+        },
         // 接口约定默认 200、硬上限 500；领域内再 clamp 一次防绕过
         limit: params.limit.unwrap_or(200).min(500),
     })
@@ -47,7 +54,7 @@ fn to_query(params: QueryScheduleRequest) -> Result<ScheduleQuery> {
 #[register_handler_tool(
     id = "query_schedule",
     name = "Query Schedule",
-    description = "Query the caller's own schedules within a time range. Pass date_term (yesterday / today / tomorrow / this_week / next_week) to ask about relative days like tomorrow or next week — the server resolves calendar-day boundaries in the system timezone, so do NOT compute Unix timestamps yourself. For an exact range, pass from and to together as Unix milliseconds. Optional keyword filters by title/description/label, behavior filters by notification vs agent-wakeup, is_enabled filters state. Returns individual occurrences sorted by time: a daily repeating schedule queried for a week returns seven entries. Only schedules owned by the calling user are visible.",
+    description = "Query the caller's own schedules within a time range. Pass date_term (yesterday / today / tomorrow / this_week / next_week) to ask about relative days like tomorrow or next week — the server resolves calendar-day boundaries in the system timezone, so do NOT compute Unix timestamps yourself. For an exact range, pass from and to together as Unix milliseconds. Optional keyword filters by title/description/label, behavior filters by notification vs agent-wakeup. By default only active schedules are returned; pass include_cancelled=true only when you explicitly need to see cancelled/disabled ones (each occurrence carries is_enabled). Returns individual occurrences sorted by time: a daily repeating schedule queried for a week returns seven entries. Only schedules owned by the calling user are visible.",
     params = "common::api::QueryScheduleRequest",
     neural,
     tags = "query,scheduling,autonomy"
@@ -73,6 +80,19 @@ mod tests {
         let q = to_query(QueryScheduleRequest::default()).unwrap();
         assert_eq!(q.date_term, ScheduleDateTerm::Today);
         assert_eq!(q.limit, 200);
+        // 默认只返回正常可用日程：已取消（is_enabled=0）不进结果
+        assert_eq!(q.is_enabled, Some(true));
+    }
+
+    #[test]
+    fn include_cancelled_lifts_state_filter() {
+        let q = to_query(QueryScheduleRequest {
+            include_cancelled: true,
+            ..Default::default()
+        })
+        .unwrap();
+        // 显式要看取消态 → 不过滤状态，启用与停用一起返回
+        assert_eq!(q.is_enabled, None);
     }
 
     #[test]
