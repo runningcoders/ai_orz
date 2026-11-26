@@ -158,6 +158,8 @@ pub fn SystemTriggerDetail(id: String) -> Element {
     let mut form_max_runs = use_signal(String::new);
     let mut form_agent_id = use_signal(String::new);
     let mut initialized = use_signal(|| false);
+    // 编辑态：默认只读，点「编辑」才展开表单；再次展开时强制回填最新详情
+    let mut editing = use_signal(|| false);
     let mut saving = use_signal(|| false);
 
     // 响应式 :id：路由切换时必须清空上一项的表单/分页状态，否则会把 A 的内容
@@ -168,6 +170,7 @@ pub fn SystemTriggerDetail(id: String) -> Element {
     {
         rid.set(route_id.clone());
         initialized.set(false);
+        editing.set(false);
         exec_page.set(0);
         stats_res.restart();
         form_name.set(String::new());
@@ -342,6 +345,7 @@ pub fn SystemTriggerDetail(id: String) -> Element {
             match result {
                 Ok(_) => {
                     toast.success("保存成功");
+                    editing.set(false);
                     detail_res.restart();
                     exec_res.restart();
                     stats_res.restart();
@@ -405,6 +409,16 @@ pub fn SystemTriggerDetail(id: String) -> Element {
                                         "恢复"
                                     }
                                 }
+                                button {
+                                    class: "btn hud-btn btn-primary btn-sm",
+                                    onclick: move |_| {
+                                        // 复位回填锁：每次进入编辑都从当前详情重新填一遍，
+                                        // 避免上一次未保存的改动被带进新一轮编辑。
+                                        initialized.set(false);
+                                        editing.set(true);
+                                    },
+                                    "编辑"
+                                }
                             }),
                             div { class: "grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-sm",
                                 div { class: "flex gap-2", span { class: "text-base-content/50 w-12", "类型" } span { "{trigger_type_text(detail.trigger_type)}" } }
@@ -431,54 +445,59 @@ pub fn SystemTriggerDetail(id: String) -> Element {
                             }
                         }
 
-                        // ② 编辑（安全字段）：公共字段复用 TriggerBasicFields
-                        HudPanel {
-                            title: Some("编辑".to_string()),
-                            eyebrow: Some("EDIT".to_string()),
-                            signal: None,
-                            actions: None,
-                            div { class: "flex flex-col gap-3",
-                                TriggerBasicFields {
-                                    name: form_name,
-                                    rule: form_rule,
-                                    cron: form_cron,
-                                    interval: form_interval,
-                                    run_at_local: form_run_at_local,
-                                    name_placeholder: "触发器名称".to_string(),
-                                }
-                                div { class: "form-control w-full",
-                                    label { class: "form-label", "Payload（JSON）" }
-                                    textarea { class: "textarea textarea-bordered w-full font-mono", rows: 3, value: "{form_payload}", oninput: move |e| form_payload.set(e.value()) }
-                                }
-                                if is_schedule {
+                        // ② 编辑（安全字段）：默认收起，点「编辑」才展开。
+                        // 公共字段复用 TriggerBasicFields。
+                        if editing() {
+                            HudPanel {
+                                title: Some("编辑".to_string()),
+                                eyebrow: Some("EDIT".to_string()),
+                                signal: None,
+                                actions: Some(rsx! {
+                                    button { class: "btn hud-btn btn-ghost btn-sm", onclick: move |_| editing.set(false), "取消" }
+                                }),
+                                div { class: "flex flex-col gap-3",
+                                    TriggerBasicFields {
+                                        name: form_name,
+                                        rule: form_rule,
+                                        cron: form_cron,
+                                        interval: form_interval,
+                                        run_at_local: form_run_at_local,
+                                        name_placeholder: "触发器名称".to_string(),
+                                    }
                                     div { class: "form-control w-full",
-                                        label { class: "form-label", "说明（回灌给 Agent 的意图）" }
-                                        textarea { class: "textarea textarea-bordered w-full", rows: 2, value: "{form_description}", oninput: move |e| form_description.set(e.value()) }
+                                        label { class: "form-label", "Payload（JSON）" }
+                                        textarea { class: "textarea textarea-bordered w-full font-mono", rows: 3, value: "{form_payload}", oninput: move |e| form_payload.set(e.value()) }
                                     }
-                                    div { class: "grid grid-cols-1 md:grid-cols-2 gap-3",
+                                    if is_schedule {
                                         div { class: "form-control w-full",
-                                            label { class: "form-label", "生效起点（留空=清除）" }
-                                            DateTimeInput { value: form_start_at_local(), on_change: move |v| form_start_at_local.set(v) }
+                                            label { class: "form-label", "说明（回灌给 Agent 的意图）" }
+                                            textarea { class: "textarea textarea-bordered w-full", rows: 2, value: "{form_description}", oninput: move |e| form_description.set(e.value()) }
                                         }
-                                        div { class: "form-control w-full",
-                                            label { class: "form-label", "生效终点（留空=清除）" }
-                                            DateTimeInput { value: form_end_at_local(), on_change: move |v| form_end_at_local.set(v) }
+                                        div { class: "grid grid-cols-1 md:grid-cols-2 gap-3",
+                                            div { class: "form-control w-full",
+                                                label { class: "form-label", "生效起点（留空=清除）" }
+                                                DateTimeInput { value: form_start_at_local(), on_change: move |v| form_start_at_local.set(v) }
+                                            }
+                                            div { class: "form-control w-full",
+                                                label { class: "form-label", "生效终点（留空=清除）" }
+                                                DateTimeInput { value: form_end_at_local(), on_change: move |v| form_end_at_local.set(v) }
+                                            }
+                                        }
+                                        div { class: "grid grid-cols-1 md:grid-cols-2 gap-3",
+                                            div { class: "form-control w-full",
+                                                label { class: "form-label", "最大触发次数（留空=不限）" }
+                                                input { class: "input input-bordered w-full", r#type: "number", value: "{form_max_runs}", placeholder: "10", oninput: move |e| form_max_runs.set(e.value()) }
+                                            }
+                                            div { class: "form-control w-full",
+                                                label { class: "form-label", "负责 Agent ID（留空=不改）" }
+                                                input { class: "input input-bordered w-full font-mono", value: "{form_agent_id}", placeholder: "留空保留当前负责 Agent", oninput: move |e| form_agent_id.set(e.value()) }
+                                            }
                                         }
                                     }
-                                    div { class: "grid grid-cols-1 md:grid-cols-2 gap-3",
-                                        div { class: "form-control w-full",
-                                            label { class: "form-label", "最大触发次数（留空=不限）" }
-                                            input { class: "input input-bordered w-full", r#type: "number", value: "{form_max_runs}", placeholder: "10", oninput: move |e| form_max_runs.set(e.value()) }
+                                    div { class: "flex gap-2 justify-end",
+                                        button { class: "btn hud-btn btn-primary btn-sm", disabled: saving(), onclick: on_save,
+                                            if saving() { "保存中..." } else { "保存" }
                                         }
-                                        div { class: "form-control w-full",
-                                            label { class: "form-label", "负责 Agent ID（留空=不改）" }
-                                            input { class: "input input-bordered w-full font-mono", value: "{form_agent_id}", placeholder: "留空保留当前负责 Agent", oninput: move |e| form_agent_id.set(e.value()) }
-                                        }
-                                    }
-                                }
-                                div { class: "flex gap-2 justify-end",
-                                    button { class: "btn hud-btn btn-primary btn-sm", disabled: saving(), onclick: on_save,
-                                        if saving() { "保存中..." } else { "保存" }
                                     }
                                 }
                             }

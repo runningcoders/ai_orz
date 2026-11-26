@@ -429,18 +429,14 @@ pub fn SystemTriggers() -> Element {
     let mut show_delete_confirm = use_signal(|| false);
     let mut pending_delete_id = use_signal(String::new);
 
-    // 初始加载
+    // 列表查询入口：过滤条件/分页变更自动重查。
+    // ⚠️ 信号必须在 effect 同步段读取——Dioxus 只追踪闭包同步执行期间的读取，
+    // 放进 spawn(async{...}) 里读会脱离响应式上下文，过滤/分页变化就不会触发重查。
     use_effect(move || {
+        let req = list_request(status_filter(), shape_filter(), behavior_filter(), page());
         loading.set(true);
         spawn(async move {
-            match list_cron_triggers(&list_request(
-                status_filter(),
-                shape_filter(),
-                behavior_filter(),
-                page(),
-            ))
-            .await
-            {
+            match list_cron_triggers(&req).await {
                 Ok(list) => apply_list(list, page, triggers, trigger_total),
                 Err(e) => toast.error(format!("加载触发器列表失败: {}", e)),
             }
@@ -736,21 +732,19 @@ pub fn SystemTriggers() -> Element {
             title: Some("定时任务与日程".to_string()),
             actions: Some(rsx!{
                     button {
-                        class: "btn hud-btn btn-ghost btn-sm",
+                        class: "btn hud-btn btn-outline",
                         onclick: move |_| {
+                            let req = list_request(status_filter(), shape_filter(), behavior_filter(), page());
                             loading.set(true);
                             spawn(async move {
-                                match list_cron_triggers(&list_request(status_filter(), shape_filter(), behavior_filter(), page())).await {
-                                    Ok(list) => {
-                                        apply_list(list, page, triggers, trigger_total);
-                                        toast.success("刷新成功");
-                                    }
-                                    Err(e) => toast.error(format!("刷新失败: {}", e)),
+                                match list_cron_triggers(&req).await {
+                                    Ok(list) => apply_list(list, page, triggers, trigger_total),
+                                    Err(e) => toast.error(format!("查询失败: {}", e)),
                                 }
                                 loading.set(false);
                             });
                         },
-                        "🔄 刷新"
+                        "🔍 查询"
                     }
                     button {
                         class: "btn hud-btn btn-primary",
@@ -989,7 +983,7 @@ pub fn SystemTriggers() -> Element {
                 }
             } else {
                 div { class: "overflow-x-auto",
-                table { class: "table hud-table table-zebra",
+                table { class: "table hud-table hud-trigger-table table-zebra",
                     thead { tr {
                         th { "名称 / What" }
                         th { "形态 / How" }
@@ -1029,7 +1023,7 @@ pub fn SystemTriggers() -> Element {
                                 rsx! {
                                     tr { key: "{id}",
                                         td { class: "detail-table-value-bold", "data-label": "名称 / What",
-                                            div { "{name}" }
+                                            div { class: "hud-trigger-name", title: "{name}", "{name}" }
                                             if !description.is_empty() {
                                                 div { class: "text-xs text-base-content/60 max-w-xs truncate",
                                                     title: "{description}",
@@ -1064,7 +1058,7 @@ pub fn SystemTriggers() -> Element {
                                             }
                                         }
                                         td { "data-label": "Who",
-                                            span { class: "text-xs text-base-content/70", "{who}" }
+                                            span { class: "hud-trigger-who text-xs text-base-content/70", title: "{who}", "{who}" }
                                         }
                                         td { "data-label": "状态",
                                             if is_enabled {

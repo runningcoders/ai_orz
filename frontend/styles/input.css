@@ -2003,6 +2003,20 @@
     background: color-mix(in oklab, var(--color-primary) 8%, transparent);
     box-shadow: inset 2px 0 0 0 var(--color-primary);
   }
+  /* 触发器列表列宽：固定布局 + 操作列定宽，保证「详情/暂停/删除」始终完整可见；
+     名称/Who 两列给百分比宽度并超出省略，其余列平分剩余自适应。 */
+  .hud-trigger-table { width: 100%; table-layout: fixed; }
+  .hud-trigger-table :where(th, td) { overflow: hidden; }
+  /* 形态/状态/时间/操作给定宽，名称与 Who 用 minmax 之外的剩余空间自适应缩放。 */
+  .hud-trigger-table :where(th, td):nth-child(2) { width: 92px; }
+  .hud-trigger-table :where(th, td):nth-child(3) { width: 132px; }
+  .hud-trigger-table :where(th, td):nth-child(5) { width: 88px; }
+  .hud-trigger-table :where(th, td):nth-child(6),
+  .hud-trigger-table :where(th, td):nth-child(7) { width: 158px; white-space: nowrap; }
+  .hud-trigger-table :where(th, td):nth-child(8) { width: 210px; }
+  .hud-trigger-name, .hud-trigger-who {
+    display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   /* 触发器操作列：长名称不得把三个按钮挤成竖排 */
   .hud-trigger-actions { min-width: max-content; }
   .hud-trigger-actions .btn { flex: 0 0 auto; white-space: nowrap; }
