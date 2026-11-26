@@ -392,6 +392,27 @@ mod tests {
     }
 
     #[test]
+    fn rich_message_all_text_paths_are_collapsible() {
+        // 长消息折叠是「所有消息」的保护，不是 TEXT/MIXED 的专属装饰。
+        // rich_message.rs 有且仅有 5 条正文渲染路径，每条都必须包 CollapsibleContent：
+        //   1) TEXT/MIXED 主路径   2) 未知类型兜底（历史 ae27fe4c 漏包处）
+        //   3) 工具卡 JSON 解析失败  4) 任务卡 JSON 解析失败
+        //   5) 任务卡 JSON 解析成功后的 description 正文（Ok 分支同样会超长）
+        // 任一处漏包，该类型的长消息就会把整屏消息流顶走。
+        let rich = code_region(include_str!("../components/chat/rich_message.rs"));
+        assert_eq!(
+            rich.matches("CollapsibleContent {").count(),
+            5,
+            "富消息 5 条正文渲染路径都须包 CollapsibleContent（含兜底与任务卡 Ok/Err）"
+        );
+        assert_eq!(
+            rich.matches("Err(_) => rsx! {").count(),
+            2,
+            "工具卡 / 任务卡各一条 JSON 解析失败分支"
+        );
+    }
+
+    #[test]
     fn notification_types_normalize_to_markdown_text() {
         // 通知/伴生类（正文是 Markdown）须归一到 MSG_TEXT 走 MarkdownRenderer
         for t in [
