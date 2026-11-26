@@ -700,13 +700,14 @@ pub fn Workspace(view: Option<String>) -> Element {
         WorkspaceView::AgentDetail(aid) => Some(aid.clone()),
         _ => None,
     };
-    // 群聊（项目会话）里消息不止「你 ↔ 一个 Agent」两条线，Agent 之间也会
-    // 互相说话 —— 气泡头部拼出接收方（复用正文 @ 提及的 chip 写法），
-    // 配合旁观消息降透明度，一眼看清谁在跟谁聊。
-    // 1:1 视图（默认对话 / Agent 私聊）收件人是显然的，不重复展示。
+    // Agent 之间也会互相说话，气泡头部拼出接收方（复用正文 @ 提及的 chip
+    // 写法），配合旁观消息降透明度，一眼看清谁在跟谁聊。
+    // 专注态与群聊视图都需要；只有默认 1:1 对话收件人显然，不重复展示。
     let show_receiver = matches!(
         dock_view,
-        WorkspaceView::ProjectDetail(_) | WorkspaceView::TaskDetail(_)
+        WorkspaceView::ProjectDetail(_)
+            | WorkspaceView::TaskDetail(_)
+            | WorkspaceView::AgentDetail(_)
     );
     let chat_title: String = match &dock_view {
         WorkspaceView::Global => "默认对话".to_string(),

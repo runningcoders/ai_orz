@@ -285,10 +285,15 @@ fn render_message_content(
             toggle_expand,
             msg.created_at,
             time_class,
+            collapse_height,
         ),
-        MSG_TASK_ASSIGNMENT => {
-            render_task_card(&msg.content, msg.created_at, bubble_class, time_class)
-        }
+        MSG_TASK_ASSIGNMENT => render_task_card(
+            &msg.content,
+            msg.created_at,
+            bubble_class,
+            time_class,
+            collapse_height,
+        ),
         // 批3 混排主线：Mixed=13 与 Text 同路直渲染（引用块+MarkdownRenderer+hover 操作排），
         // 协议资源引用经批1 markdown_protocol+批2 render_resource_chip 自动 chip 化。
         MSG_TEXT | MSG_MIXED => {
@@ -351,11 +356,16 @@ fn render_message_content(
                 div { class: "{time_class}", "{format_time(msg.created_at)}" }
             }
         }
-        // 兜底也走 Markdown：正文默认即 Markdown，未知/其他类型同样享受富文本渲染，
-        // 避免退回纯文本导致 markdown 符号原样显示（因噎废食）。
+        // 兜底也走 Markdown + 折叠：正文默认即 Markdown，未知/其他类型同样享受
+        // 富文本渲染与长消息保护。折叠不能只裹 TEXT/MIXED 分支——那会让兜底
+        // 类型的长消息把整屏顶走（与 Markdown 兜底同类遗漏）。
         _ => rsx! {
             div { class: "{bubble_class} break-words",
-                MarkdownRenderer { content: msg.content.clone(), compact: true, resolve_attachment_descriptions: true }
+                CollapsibleContent {
+                    len: msg.content.chars().count(),
+                    max_height: collapse_height,
+                    MarkdownRenderer { content: msg.content.clone(), compact: true, resolve_attachment_descriptions: true }
+                }
             }
             div { class: "{time_class}", "{format_time(msg.created_at)}" }
         },
@@ -450,6 +460,7 @@ fn render_tool_call_card(
     mut toggle_expand: impl FnMut() + 'static,
     time: i64,
     time_class: &str,
+    collapse_height: u32,
 ) -> Element {
     let parsed: Result<serde_json::Value, _> = serde_json::from_str(content);
 
@@ -544,15 +555,28 @@ fn render_tool_call_card(
                 div { class: "{time_class}", "{format_time(time)}" }
             }
         }
+        // JSON 解析失败时正文是原始文本，同样要保护消息流不被长文本顶走
         Err(_) => rsx! {
-            div { class: "chat-bubble chat-bubble-neutral break-words", "{content}" }
+            div { class: "chat-bubble chat-bubble-neutral break-words",
+                CollapsibleContent {
+                    len: content.chars().count(),
+                    max_height: collapse_height,
+                    "{content}"
+                }
+            }
             div { class: "{time_class}", "{format_time(time)}" }
         },
     }
 }
 
 /// 渲染任务分配卡片
-fn render_task_card(content: &str, time: i64, bubble_class: &str, time_class: &str) -> Element {
+fn render_task_card(
+    content: &str,
+    time: i64,
+    bubble_class: &str,
+    time_class: &str,
+    collapse_height: u32,
+) -> Element {
     let parsed: Result<serde_json::Value, _> = serde_json::from_str(content);
 
     match parsed {
@@ -574,7 +598,16 @@ fn render_task_card(content: &str, time: i64, bubble_class: &str, time_class: &s
                         div { class: "font-semibold", "{title}" }
                         if let Some(desc) = description {
                             if !desc.is_empty() {
-                                div { class: "text-sm opacity-80", "{desc}" }
+                                // 任务描述正文默认即 Markdown，长文本必须折叠：
+                                // 之前这里是纯文本直铺，JSON 解析成功反而比失败分支
+                                // 更容易把整屏消息流顶走（Ok 分支漏包）。
+                                div { class: "text-sm opacity-80",
+                                    CollapsibleContent {
+                                        len: desc.chars().count(),
+                                        max_height: collapse_height,
+                                        MarkdownRenderer { content: desc.to_string(), compact: true, resolve_attachment_descriptions: true }
+                                    }
+                                }
                             }
                         }
                     }
@@ -582,8 +615,15 @@ fn render_task_card(content: &str, time: i64, bubble_class: &str, time_class: &s
                 div { class: "{time_class}", "{format_time(time)}" }
             }
         }
+        // JSON 解析失败时正文是原始文本，同样要保护消息流不被长文本顶走
         Err(_) => rsx! {
-            div { class: "{bubble_class} break-words", "{content}" }
+            div { class: "{bubble_class} break-words",
+                CollapsibleContent {
+                    len: content.chars().count(),
+                    max_height: collapse_height,
+                    "{content}"
+                }
+            }
             div { class: "{time_class}", "{format_time(time)}" }
         },
     }

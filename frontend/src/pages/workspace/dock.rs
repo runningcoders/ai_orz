@@ -1069,9 +1069,9 @@ pub fn bottom_dock(
             // ---- 聚焦模式右侧：Agent 运行时现场（当前消息 / 任务 / 项目 / 产物） ----
             if focus {
                 div { class: "pointer-events-auto flex-1 min-w-[300px] min-h-0 h-full hud-glass rounded-xl border border-base-content/10 flex flex-col overflow-hidden",
-                    // 标题行：身份 + 运行时状态 + 用量总览（token / 上下文水位）
-                    // + 运行现场摘要。这些原本占固定区大半高度，上移后把更多
-                    // 竖向空间留给下面的实时事件流。
+                    // 标题区：身份 + 状态 + 角色标签（第 1 行），介绍与快捷入口
+                    // 作为第 2 / 3 行。用量与运行现场下移到「实时事件中心」标题行，
+                    // 它们本质上都是事件的统计信息。
                     div { class: "p-3 border-b border-base-content/10 space-y-1.5",
                         div { class: "flex items-center gap-2 min-w-0",
                             if let Some(a) = &selected_agent {
@@ -1082,13 +1082,101 @@ pub fn bottom_dock(
                                         .map(|_| runtime_state_label.to_string())
                                         .unwrap_or_else(|| agent_runtime_label(a.runtime_state).to_string())}
                                 }
+                                // 角色标签紧跟状态徽章，与标题拼成一行
+                                for role in a.roles.iter().take(4) {
+                                    span { class: "flex-shrink-0 {tag_chip()}", "{role}" }
+                                }
                             } else {
                                 span { class: "text-sm font-semibold", "预览" }
                             }
+                            button {
+                                class: "btn hud-btn btn-ghost btn-xs flex-shrink-0 ml-auto",
+                                title: "退出专注",
+                                onclick: move |_| on_exit_focus.call(()),
+                                "✕"
+                            }
+                        }
+                        // 第 2 行：角色介绍
+                        if let Some(desc) = selected_agent.as_ref().and_then(|a| a.description.as_deref()) {
+                            p { class: "text-xs text-base-content/60 leading-relaxed line-clamp-2", "{desc}" }
+                        }
+                        // 第 3 行：快捷入口（长内容统一铺到左侧主区）
+                        div { class: "flex flex-wrap gap-1",
+                            button {
+                                class: "rounded border border-base-content/15 px-2 py-1 text-[10px] text-base-content/55 transition-colors hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-35",
+                                disabled: !task_loaded,
+                                onclick: move |_| {
+                                    left_detail.set(Some(FocusLeftDetail::Task));
+                                },
+                                "任务详情"
+                            }
+                            button {
+                                class: "rounded border border-base-content/15 px-2 py-1 text-[10px] text-base-content/55 transition-colors hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-35",
+                                disabled: !project_loaded,
+                                onclick: move |_| {
+                                    left_detail.set(Some(FocusLeftDetail::Project));
+                                },
+                                "项目详情"
+                            }
+                            button {
+                                class: "rounded border border-base-content/15 px-2 py-1 text-[10px] text-base-content/55 transition-colors hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-35",
+                                disabled: !trace_available,
+                                onclick: move |_| {
+                                    left_detail.set(Some(FocusLeftDetail::LiveTrace));
+                                },
+                                "完整轨迹"
+                            }
+                        }
+                    }
+                    // 固定总览：只保留任务上下文。角色 / 介绍 / 快捷入口已并入
+                    // 标题区，用量与运行现场归入实时事件中心标题行。
+                    // 内容超过面板 48% 时自身滚动，把更长的一段留给事件中心。
+                    div { class: "flex-none max-h-[48%] min-h-0 overflow-y-auto p-3 space-y-3",
+                        // ---- 任务上下文 ----
+                        div { class: "text-xs font-medium text-base-content/60", "任务上下文" }
+                        if let Some(t) = &task {
+                            div { class: "hud-glass rounded-lg p-3 space-y-2",
+                                div { class: "flex items-start gap-2",
+                                    span { class: "text-sm font-medium flex-1 min-w-0 break-words",
+                                        "{t.title}"
+                                    }
+                                    span { class: "flex-shrink-0 {task_status_badge(t.status)}",
+                                        "{task_status_text(t.status)}"
+                                    }
+                                }
+                                div { class: "flex items-center gap-2",
+                                    HudProgress {
+                                        value: t.progress,
+                                        tone: Some(progress_tone(t.progress).to_string()),
+                                        show_value: Some(true),
+                                    }
+                                }
+                            }
+                        } else if runtime
+                            .as_ref()
+                            .is_none_or(|rt| rt.task_id.is_some())
+                        {
+                            // 运行态未到 / 任务已挂上但详情未回：都算「加载中」
+                            div { class: "hud-glass rounded-lg p-3 text-sm text-base-content/50",
+                                "任务详情加载中…"
+                            }
+                        } else {
+                            div { class: "hud-glass rounded-lg p-3",
+                                div { class: "text-sm text-base-content/50", "当前没有关联任务" }
+                            }
+                        }
+
+                    }
+                    // 右侧可拉伸区：实时事件中心（工具调用 / 思考过程）。
+                    // 与左侧同高对齐并独立滚动；详情统一铺到左侧主区。
+                    div { class: "flex-1 min-h-0 overflow-y-auto p-3 space-y-3 border-t border-base-content/10",
+                        // ---- 实时事件中心（大脑图 + 动作层 + 事件流） ----
+                        // 用量与运行现场都是事件的统计信息，放在本节标题行。
+                        div { class: "flex items-start justify-between gap-2 min-w-0",
+                            span { class: "flex-shrink-0 pt-0.5 text-xs font-medium text-base-content/60", "实时事件中心" }
                             // Token：近 60 分钟窗口累计；输入 / 输出固定，
                             // 缓存命中与思考是各自子集，> 0 才入列。
-                            // 窄面板下允许换行，避免把右端退出按钮挤出可视区。
-                            div { class: "ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1 font-mono text-[10px] text-base-content/50",
+                            div { class: "flex min-w-0 flex-wrap items-center justify-end gap-1 font-mono text-[10px] text-base-content/50",
                                 if let (Some(input), Some(output)) = (tokens_input, tokens_output) {
                                     span {
                                         class: "rounded bg-base-200/60 px-1 py-0.5",
@@ -1116,14 +1204,7 @@ pub fn bottom_dock(
                                     }
                                 }
                             }
-                            button {
-                                class: "btn hud-btn btn-ghost btn-xs flex-shrink-0",
-                                title: "退出专注",
-                                onclick: move |_| on_exit_focus.call(()),
-                                "✕"
-                            }
                         }
-                        // 第二行：上下文水位 + 项目 + 本次思考现场（场景 / 轮次 / 工具数）
                         div { class: "flex items-center gap-1.5 text-[10px] text-base-content/45 flex-wrap",
                             if let Some((len, threshold)) = context_usage {
                                 div { class: "flex items-center gap-1",
@@ -1160,94 +1241,6 @@ pub fn bottom_dock(
                                 }
                             }
                         }
-                    }
-                    // 固定总览：角色 / 描述 / 快捷入口 / 任务上下文。
-                    // 用量与运行现场已上移标题行；内容超过面板 48% 时自身滚动，
-                    // 把更长的一段留给实时事件中心。
-                    div { class: "flex-none max-h-[48%] min-h-0 overflow-y-auto p-3 space-y-3",
-                        if let Some(a) = &selected_agent {
-                            if !a.roles.is_empty() {
-                                div { class: "flex flex-wrap gap-1",
-                                    for role in a.roles.iter().take(4) {
-                                        span { class: "{tag_chip()}", "{role}" }
-                                    }
-                                }
-                            }
-                            if let Some(desc) = &a.description {
-                                p { class: "text-xs text-base-content/60 leading-relaxed line-clamp-2", "{desc}" }
-                            }
-                        }
-
-                        // 快捷入口：长内容统一铺到左侧主区，右栏只留总览
-                        div { class: "flex flex-wrap gap-1",
-                            button {
-                                class: "rounded border border-base-content/15 px-2 py-1 text-[10px] text-base-content/55 transition-colors hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-35",
-                                disabled: !task_loaded,
-                                onclick: move |_| {
-                                    left_detail.set(Some(FocusLeftDetail::Task));
-                                },
-                                "任务详情"
-                            }
-                            button {
-                                class: "rounded border border-base-content/15 px-2 py-1 text-[10px] text-base-content/55 transition-colors hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-35",
-                                disabled: !project_loaded,
-                                onclick: move |_| {
-                                    left_detail.set(Some(FocusLeftDetail::Project));
-                                },
-                                "项目详情"
-                            }
-                            button {
-                                class: "rounded border border-base-content/15 px-2 py-1 text-[10px] text-base-content/55 transition-colors hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-35",
-                                disabled: !trace_available,
-                                onclick: move |_| {
-                                    left_detail.set(Some(FocusLeftDetail::LiveTrace));
-                                },
-                                "完整轨迹"
-                            }
-                        }
-
-                        // ---- 任务上下文 ----
-                        div { class: "text-xs font-medium text-base-content/60", "任务上下文" }
-                        if let Some(t) = &task {
-                            div { class: "hud-glass rounded-lg p-3 space-y-2",
-                                div { class: "flex items-start gap-2",
-                                    span { class: "text-sm font-medium flex-1 min-w-0 break-words",
-                                        "{t.title}"
-                                    }
-                                    span { class: "flex-shrink-0 {task_status_badge(t.status)}",
-                                        "{task_status_text(t.status)}"
-                                    }
-                                }
-                                div { class: "flex items-center gap-2",
-                                    HudProgress {
-                                        value: t.progress,
-                                        tone: Some(progress_tone(t.progress).to_string()),
-                                        show_value: Some(true),
-                                    }
-                                }
-                            }
-                        } else if runtime
-                            .as_ref()
-                            .is_none_or(|rt| rt.task_id.is_some())
-                        {
-                            // 运行态未到 / 任务已挂上但详情未回：都算「加载中」
-                            div { class: "hud-glass rounded-lg p-3 text-sm text-base-content/50",
-                                "任务详情加载中…"
-                            }
-                        } else {
-                            div { class: "hud-glass rounded-lg p-3",
-                                div { class: "text-sm text-base-content/50", "当前没有关联任务" }
-                            }
-                        }
-
-                        // 用量 / 运行现场已上移到标题行，固定区只保留任务上下文，
-                        // 把剩余高度尽量让给下方实时事件流。
-                    }
-                    // 右侧可拉伸区：实时事件中心（工具调用 / 思考过程）。
-                    // 与左侧同高对齐并独立滚动；详情统一铺到左侧主区。
-                    div { class: "flex-1 min-h-0 overflow-y-auto p-3 space-y-3 border-t border-base-content/10",
-                        // ---- 实时事件中心（大脑图 + 动作层 + 事件流） ----
-                        div { class: "text-xs font-medium text-base-content/60", "实时事件中心" }
                         if let Some(agent_id) = selected_agent.as_ref().map(|a| a.id.clone()) {
                             AgentLiveCenter {
                                 agent_id,
