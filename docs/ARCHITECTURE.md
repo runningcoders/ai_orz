@@ -27,6 +27,7 @@
 > - [docs/diagrams/ai-orz-a2a.html](docs/diagrams/ai-orz-a2a.html) — 外部 Agent 接入专题图（A2A JSON-RPC / 轮询兜底 / 联邦签名）
 > - [docs/diagrams/ai-orz-search.html](docs/diagrams/ai-orz-search.html) — 搜索专题图（三路召回 / 属性过滤 / 存储面）
 > - [docs/diagrams/ai-orz-stats.html](docs/diagrams/ai-orz-stats.html) — 统计与监控专题图（事件采集 / 聚合 / 看板）
+> - [docs/diagrams/ai-orz-schedule.html](docs/diagrams/ai-orz-schedule.html) — 日程与定时调度专题图（四组参数 / occurrence 展开 / 执行留痕）
 > - [docs/diagrams/ai-orz-frontend.html](docs/diagrams/ai-orz-frontend.html) — 前端应用专题图（Dioxus WASM / 页面 / API 客户端）
 > - [docs/diagrams/ai-orz-infra.html](docs/diagrams/ai-orz-infra.html) — 基础设施与部署专题图（启动装配 / 存储 / 发布）
 > - [docs/diagrams/ai-orz-data-model.html](docs/diagrams/ai-orz-data-model.html) — 数据模型 ER 图（三族九表 / 字段来自现网 schema）
@@ -350,6 +351,7 @@ data/
 | [docs/diagrams/ai-orz-a2a.html](docs/diagrams/ai-orz-a2a.html) | 外部 Agent：Agent Card + JSON-RPC 四方法 + 协议映射与回调 + 30s 轮询兜底 | 协议入口 / 结果与兜底 / 联邦与长连接 |
 | [docs/diagrams/ai-orz-search.html](docs/diagrams/ai-orz-search.html) | 搜索：FTS5 + 向量 + 图谱三路召回 + 属性精确过滤 | 工具入口 / 三路召回 / 存储面 |
 | [docs/diagrams/ai-orz-stats.html](docs/diagrams/ai-orz-stats.html) | 统计与监控：事件采集（采集器落 pkg/stats/runtime，全局单例）→ AOP 消费 → 四类指标落库 → 监控 API | 采集 / 聚合 / 读取与看板 |
+| [docs/diagrams/ai-orz-schedule.html](docs/diagrams/ai-orz-schedule.html) | 日程与定时调度：`cron_triggers` 四组顶层参数（When / Who / What / How）+ `common/schedule/` 纯计算展开（cron > interval > run_at）→ Scheduler Consumer 租约领取后三分派（SyncMaintenance / AsyncNotify / AsyncAgentWakeup）→ `TriggerExecEvent` 落 DuckDB 执行留痕 → 管理端列表（筛选与分页下沉数据端）与详情页（按需展开编辑） | 配置写入 / 触发与留痕 / 管理端回读 |
 | [docs/diagrams/ai-orz-frontend.html](docs/diagrams/ai-orz-frontend.html) | 前端应用：Dioxus WASM 入口 / 路由（45 条）/ 页面模块（72 个 .rs）/ HUD / API 客户端 + 工作台现场化（workspace/ 十模块）+ 缓存管理页 + build.rs | 应用骨架 / 页面与组件 / 数据与产物 |
 | [docs/diagrams/ai-orz-infra.html](docs/diagrams/ai-orz-infra.html) | 基础设施：配置 → 连接池与迁移 → 路径与 JSONL → 后台任务 → 发布 | 启动与配置 / 运行期资源 / 构建与发布 |
 | [docs/diagrams/ai-orz-data-model.html](docs/diagrams/ai-orz-data-model.html) | 数据模型（ER 图）：三族九表，字段取自现网 SQLite schema | 身份与组织 / 任务与消息 / 知识图谱三件套 |

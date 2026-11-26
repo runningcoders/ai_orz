@@ -12,7 +12,7 @@
 - **专题图**回答「这个子系统的能力线、链路过哪几层、口径是多少」（组件级 + 时序混合）。
 - 不把子系统塞进总图：总图连 8 个业务域都只用一行字概括，单拆某一个会破坏层级一致性。
 
-## 二、清单（17 张）
+## 二、清单（18 张）
 
 | 文件 | 层级 | 讲什么 | 视图 | 对应知识库模块 |
 |---|---|---|---|---|
@@ -29,6 +29,7 @@
 | [ai-orz-a2a.html](./ai-orz-a2a.html) | 组件级 | Agent Card + JSON-RPC 四方法 + 协议映射与回调 + 30s 轮询兜底 + 联邦签名 | 协议入口 / 结果与兜底 / 联邦与长连接 | 07-外部Agent(A2A) |
 | [ai-orz-search.html](./ai-orz-search.html) | 组件级 | FTS5 全文 + 向量检索 + 图谱遍历三路召回 + 属性精确过滤 + `ids` 直取与 `include_retired` / `include_history` 受控出口 | 工具入口 / 三路召回 / 存储面 | 08-搜索 |
 | [ai-orz-stats.html](./ai-orz-stats.html) | 组件级 | 业务事件 → AOP 同步消费 → 四类指标落库（含按时序桶的耗时统计）→ 采集器落 pkg/stats/runtime（全局单例，handler 直读）→ 监控 API 与看板 | 采集 / 聚合 / 读取与看板 | 09-统计与监控 |
+| [ai-orz-schedule.html](./ai-orz-schedule.html) | 组件级 | `cron_triggers` 四组顶层参数（When 时间规则三选一 / Who 三字段分工 / What action 列优先回落 payload / How behavior 三值静态决定消费语义） → `common/schedule/` 纯计算（`cron` > `interval` > `run_at` 优先级 · occurrence 展开 · `MAX_SCAN_STEPS=100_000`） → Scheduler Consumer 租约领取后三分派（SyncMaintenance / AsyncNotify / AsyncAgentWakeup） → `TriggerExecEvent` 按「一次 attempt」落 DuckDB `trigger_exec_events`（success / skipped / failed 都记，与 `cron_triggers.total_runs` 配额游标是两张账） → 管理端列表（状态过滤与分页下沉数据端、筛选变更自动重查）与详情页（编辑区按需展开） | 配置写入 / 触发与留痕 / 管理端回读 | 05-任务与项目 |
 | [ai-orz-frontend.html](./ai-orz-frontend.html) | 组件级 | Dioxus WASM 入口 / 路由（45 条）/ 页面模块（72 个 .rs）/ HUD / API 客户端 + 产物预览（HtmlPreview 唯一渲染出口）+ 工作台现场化（workspace/ 十模块，固定席位场 + 5s 场景投影轮询）+ 缓存管理页 + build.rs 产物 | 应用骨架 / 页面与组件 / 数据与产物 | 11-前端应用 |
 | [ai-orz-infra.html](./ai-orz-infra.html) | 组件级 | 配置 → 连接池与迁移 → 路径与 JSONL（pkg/jsonl：writer + sidecar）→ 向量重建三档 → 后台任务 → 打包发布 | 启动与配置 / 运行期资源 / 构建与发布 | 12-基础设施与部署 |
 | [ai-orz-data-model.html](./ai-orz-data-model.html) | ER 图（表级） | 三族九表：身份 / 工作 / 知识图谱，字段取自现网 SQLite schema | 身份与组织 / 任务与消息 / 知识图谱三件套 | 13-数据模型 |
@@ -614,6 +615,58 @@
 **入口三处核对**：`docs/index.html`（aop 卡「7 类」→ 13 类、「18 处注册」→ 19 处、模块表「12 类消费者」→ 13 类；think-path / frontend 两处 desc 各补实时能力）、`docs/ARCHITECTURE.md`（aop 专题行数字）、本文件清单三行，逐处 `count == 1` 断言通过后替换，只命中应改那一处。
 
 **未做人眼视觉复核**：以上交叉/弯道数是 archify 的自动几何度量，`visualReview` 为 `not-requested`。四道门禁全 pass 只说明「几何与结构不违规」，是否真的好看仍需人眼确认。
+
+
+### 2026-11-26 新增 1 张专题图：schedule（日程与定时调度，revision → `e154dce2`）
+
+**这一节是「新增」不是「重渲染」** —— 本批第一次为日程/定时调度单独立图。
+
+**求交基数**：`git diff --name-only c46cfc0e..HEAD`（本批 6 笔，49 条路径，落盘实测）× 各图 `archify-source-evidence-data` 的 `nodes{}` 展开路径。
+
+| 图 | sources 数 | touched（对 49） | touched（对 PR 全量 195） | 判定 |
+|---|---|---|---|---|
+| ai-orz-schedule.html | — | — | — | **本次新建**（原 17 张里无任何一张覆盖日程/调度域） |
+| ai-orz-stats.html | 14 | 4 | 5 | touched 最高，但**不刷**：命中的是统计框架自身的消费者文件（`aop_stats_hook.rs` / `think_round_stats_consumer.rs` / `tool_exec_stats_consumer.rs` / `collector.rs`），本批对它们只做了 `global_stats` 单例退场后的接线调整，**图所描述的「事件→消费→四类指标落库」抽象层一条未变**；且 `TriggerExecEvent` 尚不在该图四类指标口径内 |
+| ai-orz-aop.html | 13 | 1 | 3 | 不刷：唯一命中 `aop_stats_hook.rs` 属统计域接线，AOP 图的「六 Trait / Registry / 消费者清单 / tick 生产者」未变 |
+| ai-orz-architecture.html | 17 | 3 | 5 | 不刷：`storage/mod.rs` + `router.rs` + `dao/mod.rs` 命中属**机械适配**（路由注册与模块挂载），总图的容器清单与四层调用关系未变 |
+| ai-orz-frontend.html | 19 | 2 | 7 | 不刷：命中 `pages/mod.rs` + `router.rs`（页面注册）属机械适配；新增的两个页面文件（`trigger_detail.rs` / `trigger_form_fields.rs`）**不在该图 sources 里**，因为该图讲的是应用骨架与既有页面模块，日程管理页作为一组已在 schedule 图内展开 |
+| ai-orz-infra.html | 17 | 1 | 2 | 不刷：命中 `dao/mod.rs` 属机械适配。**另记一条既有腐坏**：该图组件 `cron` 的 evidence 指向 `src/pkg/cron.rs`，该路径已在本批之前的 rename 中迁到 `common/src/schedule/cron.rs` ⇒ 图内证据路径 MISSING=1。**本轮不在授权范围（用户只问日程相关是否需要补图），未刷，如实登记** |
+| ai-orz-org-federation.html | 16 | 1 | 2 | 不刷：命中 `router.rs` 属路由注册 |
+| ai-orz-task-project.html | 23 | 2 | 7 | 不刷：命中 `scheduler.rs`（触发器调度，不是任务 DAG 调度）+ `router.rs`；六态状态机 / 验收闭环 / DAG 未变 |
+| ai-orz-think-path.html | 22 | 1 | 11 | 不刷：命中 `think_round_stats_consumer.rs` 属统计接线 |
+| 其余 8 张（a2a / data-model / memory / messaging / ontology / search / testing / tool-context / tools） | — | 0 | 0~4 | 本批 49 条路径与 sources 交集为空 |
+
+**为什么判定「需要补」而不是「已被覆盖」**：
+
+1. 17 张图里**没有一张**以日程/定时调度为主题；含 `cron`/`schedul`/`trigger` 字样的 evidence 只有 4 张，且都是**旁支**——aop 的 `src/producer/cron_trigger.rs`（生产者侧兜底 tick）、infra 的 `src/pkg/cron.rs`（已迁走的旧路径）、stats 的 `pkg/aop/core/scheduler.rs`（AOP 自己的 worker 调度器，不是业务定时器）、task-project 的 `consumer/scheduler.rs`（作为任务域的一个消费者被画，没展开它的内部结构）。
+2. 本批 6 笔里有 4 笔直接改日程域，且带来**现有图覆盖不了的结构**：
+   - `cron_triggers` 从「一张带 CHECK 的表」变成「四组顶层参数」（When / Who / What / How）——这是新**数据形状**；
+   - `common/schedule/` 是新的**纯计算层**（与 DB 隔离）；
+   - 新增 **DuckDB 执行留痕表** `trigger_exec_events` 与它的查询 DAO/API——这是新**存储面 + 新读链路**，且与既有 `cron_triggers.total_runs` 是语义不同的两张账；
+   - 管理端新增**详情页 + 按需展开编辑区**，列表侧把筛选与分页**下沉到数据端**——这是新**前端结构 + 新查询口径**。
+   
+   以上四条任一都不是「给既有图改一行数字」能表达的，四条合起来就是一张新图的边界。
+
+**这张图的边界（写清避免下次误用）**：讲「日程/触发器这条链路」，不讲 AOP 框架本身（归 aop）、不讲 Stats 框架的四类指标（归 stats）、不讲任务状态机与 DAG（归 task-project）。三处交叉点在卡片里一句话带过并指向对应专题图。
+
+**本张规格**：16 组件 / 15 连线 / 6 卡片 / 3 视图（配置写入 · 触发与留痕 · 管理端回读）；
+`revision` = `e154dce2`（本批已推送分支 tip，非孤儿锚点），`referenceCount` = 17，证据路径 MISSING = **0**；
+产物 **863,994 B**，sha256 前 16 = `1917880782208fcf`。
+
+**图门禁（四道，串行）**：
+
+| 门禁 | exit | 结果 |
+|---|---|---|
+| `validate architecture` | **0** | 9 artifact checks；composition showcase 0 error / 0 warning |
+| `finalize architecture --browser-check` | **0** | gates = validate/deliver/check/browser-check 全 pass，diagnostics = 0 |
+| `check` | **0** | composition status = pass，errors 0 / warnings 0 |
+| 入口三处 grep | **3 处各 1** | `docs/index.html` 新增专题卡 1 处 / `docs/ARCHITECTURE.md` 顶部清单 + 专题表各 1 处 / 本文件清单 1 行 |
+
+几何度量（`check --json` 的 composition.metrics 实测）：`properCrossings = 0` / `resolvedCrossovers = 0` / `maxBends = 3` / `routesOverSuggestedBends = 1`（唯一一条 `duckdb → stats_dao` 的竖向短距回折，`stretch=1.34` 仍在建议上限 1.35 内）/ `routesOverSuggestedStretch = 0` / `arrowheadCollisions = 0` / `labelRouteClearanceIssues = 0` / `desktopReadabilityIssues = 0`。
+
+**过程中被门禁挡回的两次（如实记）**：① 首版画布宽 1230px，`composition/desktop-readability` 要求 ≤1193px ⇒ **降粒度压列距**（不是放宽阈值）；② `cards[].dot` 用了 `sky`，schema 枚举只允许 `cyan/emerald/violet/amber/rose/orange/slate` ⇒ 改 `cyan`。两次都是「改候选稿」，没有改门禁。
+
+**未做人眼视觉复核**：以上交叉/弯道数是 archify 的自动几何度量。四道门禁全 pass 只说明「几何与结构不违规」，是否真的好看仍需人眼确认。
 
 
 ## 五、维护约定
