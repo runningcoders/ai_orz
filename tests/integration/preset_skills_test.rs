@@ -1,7 +1,7 @@
 //! Integration tests for preset skills & builtin tools import on system initialization.
 //!
 //! Covers:
-//! - `initialize_system` imports 9 preset skills (6 neural + 1 project_management + 1 agent_recruitment + 1 user_reception) to the shared library
+//! - `initialize_system` imports all preset skills (TEMPLATE_* seed entries) to the shared library
 //! - `initialize_system` syncs builtin tools to DB
 //! - Preset skills' author_id is replaced with the actual owner user_id
 //! - Preset skill files (skill.md) are written and contain expected content
@@ -12,7 +12,7 @@
 //! 集成测试共享同一进程级 Storage OnceLock（单 SQLite 文件），固定 ID 的 Local 组织 /
 //! 预置技能（TEMPLATE_*）在所有用例间共享同一行数据：
 //!
-//! 1. `count=9` / `author_id == bs2.user_id` 这类**快照断言**对「额外写入」零容忍，
+//! 1. 「预置技能数量 == seed 快照」/ `author_id == bs2.user_id` 这类**快照断言**对「额外写入」零容忍，
 //!    并行执行下其他测试先 bootstrap 导入后，会被当前用例的断言误判为「自己导入的」，
 //!    造成测试间语义耦合。
 //! 2. `bootstrap_system` 内部的 `BOOTSTRAP_MUTEX` 仅串行化 bootstrap 本身，
@@ -51,11 +51,20 @@ async fn query_all_skills(ctx: &ai_orz::pkg::RequestContext) -> Vec<ai_orz::mode
         .items
 }
 
-/// After system initialization, 9 preset skills should exist in the shared library.
+/// 预置技能（TEMPLATE_ 前缀）的期望数量，直接从 seed 快照取，避免写死数字随新增技能过期。
+fn expected_preset_skill_count() -> usize {
+    ai_orz::service::domain::system::seed::default::embedded_default_snapshot()
+        .skills
+        .iter()
+        .filter(|s| s.id.starts_with("TEMPLATE_"))
+        .count()
+}
+
+/// After system initialization, all TEMPLATE_* preset skills should exist in the shared library.
 #[sqlx::test]
 async fn test_initialize_system_imports_preset_skills(pool: SqlitePool) {
     // 全局串行锁：4 个用例共用 Storage + 固定 ID 预置技能 + 单个 Local 组织，
-    // 必须整用例（bootstrap→断言）互斥，否则 count=9/author_id 更新等零容忍断言失效。
+    // 必须整用例（bootstrap→断言）互斥，否则数量/author_id 更新等零容忍断言失效。
     // 用 into_inner() 跳过 PoisonError：此锁只做执行顺序栅拦，不保护可变状态。
     let _lock = PRESET_STATE_MUTEX
         .lock()
@@ -279,7 +288,11 @@ async fn test_preset_skills_idempotent(pool: SqlitePool) {
         .iter()
         .filter(|s| s.po.id.starts_with("TEMPLATE_"))
         .count();
-    assert_eq!(count_after_first, 11, "第一次初始化后应有 11 个预置技能");
+    assert_eq!(
+        count_after_first,
+        expected_preset_skill_count(),
+        "第一次初始化后预置技能数量应与 seed 快照一致"
+    );
 
     // 第二次 bootstrap — 应更新而非重复创建
     let bs2 = crate::common::factories::bootstrap_system(&app).await;
@@ -290,8 +303,9 @@ async fn test_preset_skills_idempotent(pool: SqlitePool) {
         .filter(|s| s.po.id.starts_with("TEMPLATE_"))
         .count();
     assert_eq!(
-        count_after_second, 11,
-        "第二次初始化后仍应只有 11 个预置技能（idempotent）"
+        count_after_second,
+        expected_preset_skill_count(),
+        "第二次初始化后预置技能数量应保持不变（idempotent）"
     );
 
     // author_id 应更新为第二个 owner
