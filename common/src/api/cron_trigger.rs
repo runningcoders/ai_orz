@@ -5,6 +5,70 @@ use ai_orz_macros::Params;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// 系统级同步维护动作模板。
+///
+/// 与 `consumer/scheduler.rs::dispatch_sync_maintenance` 的 6 个分支一一对应：
+/// 前端表单据此渲染可选项并生成 payload，后端 seed 据此创建默认触发器。
+/// 放 common 是因为两端都要用——各写一份字符串常量会漂移，选错 action 到点只会告警。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SystemActionTemplate {
+    /// `payload.action` 的值（也是顶层 action 列的取值）
+    pub action: &'static str,
+    /// 表单下拉展示名
+    pub label: &'static str,
+    /// 这个动作到点做什么
+    pub description: &'static str,
+    /// 是否需要额外指定 Agent（当前仅 `agent_rest` 支持，留空表示作用于全部）
+    pub needs_agent: bool,
+}
+
+/// 后端真实支持的系统维护动作，顺序即表单展示顺序
+pub const SYSTEM_ACTION_TEMPLATES: &[SystemActionTemplate] = &[
+    SystemActionTemplate {
+        action: "agent_rest",
+        label: "Agent 睡眠沉淀",
+        description: "派发 Agent 的短期记忆沉淀请求；留空则扫描全部待沉淀 Agent",
+        needs_agent: true,
+    },
+    SystemActionTemplate {
+        action: "project_followup",
+        label: "项目进度巡检",
+        description: "扫描进行中的项目，推进停滞任务",
+        needs_agent: false,
+    },
+    SystemActionTemplate {
+        action: "tool_log_cleanup",
+        label: "工具日志清理",
+        description: "清理超过保留期的工具运行日志",
+        needs_agent: false,
+    },
+    SystemActionTemplate {
+        action: "directory_reconcile",
+        label: "组织目录对账",
+        description: "与对端组织双向对账成员目录",
+        needs_agent: false,
+    },
+    SystemActionTemplate {
+        action: "pending_notification_redelivery",
+        label: "滞留通知重投",
+        description: "重投停留在 Pending 的跟进通知",
+        needs_agent: false,
+    },
+    SystemActionTemplate {
+        action: "vector_maintenance",
+        label: "向量库整理",
+        description: "合并向量库碎片并回收旧版本",
+        needs_agent: false,
+    },
+];
+
+/// 按 action id 查模板；`None` 表示不在系统维护动作集合内（自定义 / 历史值）。
+pub fn system_action_template(action: &str) -> Option<&'static SystemActionTemplate> {
+    SYSTEM_ACTION_TEMPLATES
+        .iter()
+        .find(|template| template.action == action)
+}
+
 /// Create Cron Trigger request
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct CreateCronTriggerRequest {
@@ -126,6 +190,14 @@ pub struct ScheduleAgentTaskRequest {
     pub title: String,
     /// 用户原始意图 / 详细说明：到点唤醒时原样回灌给 Agent
     pub description: String,
+    /// 日程信息 / 备注（自由 JSON）：Agent 写给自己（或负责 Agent）的内容，只有它自己读。
+    ///
+    /// 框架在这里**没有任何协议**：字段、结构、含义全由 Agent 自定义，服务端不解析、
+    /// 不校验、不解释；到点原样附在唤醒正文里回灌，由 Agent 自己决定拿来做什么。
+    /// 日程不存在「动作」语义——本字段与内置触发器的 action 分派协议无关，
+    /// 也不是顶层 action 展示标签。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payload: Option<serde_json::Value>,
     /// 时间规则：cron 表达式（与 interval_seconds / run_at 三选一，优先级 cron > interval > run_at）
     pub cron_expression: Option<String>,
     /// 时间规则：间隔秒数
@@ -140,7 +212,7 @@ pub struct ScheduleAgentTaskRequest {
     pub agent_id: Option<String>,
     /// 行为模板：缺省 `AsyncAgentWakeup`；只允许 AsyncNotify / AsyncAgentWakeup
     pub behavior: Option<TriggerBehavior>,
-    /// 动作标签（写顶层 action 列）：缺省用 title
+    /// 展示 / 检索用的日程标签（写顶层 action 列）：缺省用 title；不参与执行分派
     pub action: Option<String>,
     /// 最大触发次数（必须为正数）；None = 不限
     pub max_runs: Option<i32>,
@@ -162,7 +234,7 @@ pub struct QueryScheduleRequest {
     pub from: Option<i64>,
     /// 自定义区间终点（Unix 毫秒，不含）
     pub to: Option<i64>,
-    /// 关键词：匹配名称、描述、动作标签（大小写不敏感）
+    /// 关键词：匹配名称、描述、日程标签（大小写不敏感）
     pub keyword: Option<String>,
     /// 按行为模板筛选
     pub behavior: Option<TriggerBehavior>,
@@ -183,7 +255,7 @@ pub struct ScheduleOccurrence {
     pub name: String,
     /// 用户原始意图 / 说明
     pub description: String,
-    /// 业务动作标签
+    /// 展示 / 检索用日程标签（缺省为标题），不表示任何动作
     pub action: Option<String>,
     /// 行为模板
     pub behavior: TriggerBehavior,
@@ -311,6 +383,14 @@ pub struct UpdateScheduleRequest {
     pub title: Option<String>,
     /// 新描述（到点唤醒时回灌给 Agent 的完整意图）
     pub description: Option<String>,
+    /// 新日程信息 / 备注（自由 JSON，Agent 自定义、无协议约束）；语义同创建时的 payload。
+    /// 三态：字段缺省 → 保持原备注；显式 `null` → 清空备注；传 JSON → 覆盖。
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_ext::deserialize_tri_state",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub payload: Option<Option<serde_json::Value>>,
     /// 新 cron 表达式（5 字段）
     pub cron_expression: Option<String>,
     /// 新间隔秒数
@@ -318,13 +398,25 @@ pub struct UpdateScheduleRequest {
     /// 新一次性触发时刻（Unix 毫秒）
     pub run_at: Option<i64>,
     /// 新生效窗口起点（Unix 毫秒）；`null` 表示清除
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_ext::deserialize_tri_state",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub start_at: Option<Option<i64>>,
     /// 新生效窗口终点（Unix 毫秒）；`null` 表示清除
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_ext::deserialize_tri_state",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub end_at: Option<Option<i64>>,
     /// 新最大触发次数（必须为正数）；`null` 表示清除限制
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_ext::deserialize_tri_state",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub max_runs: Option<Option<i32>>,
     /// 新负责 Agent ID（改派执行者）
     pub agent_id: Option<String>,
@@ -361,4 +453,57 @@ pub struct PauseCronTriggerResponse {
 pub struct ResumeCronTriggerResponse {
     /// Whether resume succeeded
     pub success: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 更新 DTO 的四个三态字段必须能跨 JSON 边界：
+    /// 缺省=保持、null=清空、值=覆盖。此前 `Option<Option<T>>` 的默认 serde
+    /// 实现把 null 吞成外层 None，导致「清空」静默失效（既有测试直接构造
+    /// Rust 结构体，绕过了 JSON，所以没发现）。
+    #[test]
+    fn update_schedule_tri_state_survives_json() {
+        let base = r#"{"trigger_id":"t-1"}"#;
+        let req: UpdateScheduleRequest = serde_json::from_str(base).unwrap();
+        assert_eq!(req.payload, None);
+        assert_eq!(req.start_at, None);
+        assert_eq!(req.end_at, None);
+        assert_eq!(req.max_runs, None);
+
+        let clear = r#"{
+            "trigger_id":"t-1",
+            "payload":null,
+            "start_at":null,
+            "end_at":null,
+            "max_runs":null
+        }"#;
+        let req: UpdateScheduleRequest = serde_json::from_str(clear).unwrap();
+        assert_eq!(req.payload, Some(None));
+        assert_eq!(req.start_at, Some(None));
+        assert_eq!(req.end_at, Some(None));
+        assert_eq!(req.max_runs, Some(None));
+
+        let set = r#"{
+            "trigger_id":"t-1",
+            "payload":{"ids":["p-1"]},
+            "start_at":100,
+            "end_at":200,
+            "max_runs":3
+        }"#;
+        let req: UpdateScheduleRequest = serde_json::from_str(set).unwrap();
+        assert_eq!(req.payload, Some(Some(serde_json::json!({"ids":["p-1"]}))));
+        assert_eq!(req.start_at, Some(Some(100)));
+        assert_eq!(req.end_at, Some(Some(200)));
+        assert_eq!(req.max_runs, Some(Some(3)));
+
+        // 序列化方向：保持不出现、清空为 null、覆盖为值
+        let serialized = serde_json::to_value(&req).unwrap();
+        assert_eq!(serialized["payload"], serde_json::json!({"ids":["p-1"]}));
+        let cleared: UpdateScheduleRequest = serde_json::from_str(clear).unwrap();
+        let serialized = serde_json::to_value(&cleared).unwrap();
+        assert!(serialized.get("payload").is_some_and(|v| v.is_null()));
+        assert!(serialized.get("start_at").is_some_and(|v| v.is_null()));
+    }
 }

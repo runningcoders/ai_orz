@@ -16,6 +16,9 @@ pub struct ScheduleUpdate {
     pub trigger_id: String,
     pub title: Option<String>,
     pub description: Option<String>,
+    /// 三态：`None` 保持、`Some(None)` 清空备注、`Some(Some(json))` 覆盖。
+    /// 存序列化后的 JSON 字符串，与 PO.payload 同构。
+    pub payload: Option<Option<String>>,
     pub cron_expression: Option<String>,
     pub interval_seconds: Option<i64>,
     pub run_at: Option<i64>,
@@ -62,6 +65,13 @@ pub(crate) fn apply_allowed_update(target: &mut CronTriggerPo, update: &Schedule
     }
     if let Some(description) = update.description.as_deref() {
         target.description = description.to_string();
+    }
+    if let Some(payload) = &update.payload {
+        target.payload = payload
+            .as_deref()
+            .filter(|s| !s.trim().is_empty() && *s != "null")
+            .map(str::to_string)
+            .unwrap_or_else(|| "{}".to_string());
     }
     if let Some(start) = update.start_at {
         target.start_at = start;
@@ -176,6 +186,37 @@ mod tests {
             },
         );
         assert_eq!((t.start_at, t.end_at, t.max_runs), (None, None, None));
+    }
+
+    /// 日程备注（payload）也是三态：缺省保持、null 清空为 `{}`、JSON 覆盖。
+    #[test]
+    fn payload_is_tri_state() {
+        let mut t = own_schedule();
+        t.payload = r#"{"note":"旧备注"}"#.to_string();
+
+        // 缺省 → 保持
+        apply_allowed_update(&mut t, &ScheduleUpdate::default());
+        assert_eq!(t.payload, r#"{"note":"旧备注"}"#);
+
+        // JSON → 覆盖（Agent 自定义的自由信息，原样存字符串）
+        apply_allowed_update(
+            &mut t,
+            &ScheduleUpdate {
+                payload: Some(Some(r#"{"ids":["p-1"]}"#.to_string())),
+                ..Default::default()
+            },
+        );
+        assert_eq!(t.payload, r#"{"ids":["p-1"]}"#);
+
+        // 显式 null → 清空
+        apply_allowed_update(
+            &mut t,
+            &ScheduleUpdate {
+                payload: Some(None),
+                ..Default::default()
+            },
+        );
+        assert_eq!(t.payload, "{}");
     }
 
     #[test]

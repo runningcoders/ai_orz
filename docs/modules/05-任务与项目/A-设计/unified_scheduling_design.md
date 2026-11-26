@@ -76,7 +76,7 @@ related:
 
 ## 2. 核心模型：四组顶层参数
 
-一条调度记录 = `When + Who + What + How`，四组参数全部是表的顶层列，`payload` 退化为「行为模板的扩展参数」，不再承载身份与调度语义。
+一条调度记录 = `When + Who + What + How`，四组参数全部是表的顶层列；系统触发器的 `payload` 退化为「行为模板的扩展参数」，日程的 `payload` 则是无协议的自由信息（见 §2.3），两者都不承载身份与调度语义。
 
 | 组 | 语义 | 字段 | 系统默认触发器 | 用户日程 | Agent 日程 |
 |---|---|---|---|---|---|
@@ -148,9 +148,18 @@ related:
 
 ### 2.3 `What`：动作与扩展参数
 
-- `action` 从 `payload` 提升为顶层列，成为行为的业务标签（`agent_rest` / `agent_schedule` / `user_reminder` / …）。
-- `payload` 保留为 `extra` 容器：`{"extra": {...}}`。存量 `{"action": "...", "extra": {...}}` 由 DAL 读取时兼容解析（`action` 列优先，回落 payload 内 action）。
-- `payload.extra` 必须是具名字段，禁止 `#[serde(flatten)]`（现有 `CronTriggerPayload` 的踩坑注释已说明）。
+⚠️ **两类 payload 的语义必须分开，不要互相套：**
+
+| 形态 | payload 是什么 | 谁读 | 框架约束 |
+|---|---|---|---|
+| **内置系统触发器**（`SyncMaintenance`） | `{"action":"<id>","extra":{...}}` 分派外框；`action` 决定执行哪个维护动作 | 消费端（分派 + 动作参数） | 有协议：`action` 必填语义、`extra` 具名字段 |
+| **日程**（用户 / Agent 自定，`AsyncNotify` / `AsyncAgentWakeup`） | Agent 写在日程上、留给到点的自己读的**自由信息 / 备注** | 只有 Agent 自己；到点原样附在唤醒正文回灌 | **无协议**：字段、结构、含义全由 Agent 自定义，服务端不解析、不解释、不赋语义 |
+
+日程**不存在「动作」语义**——到点做什么由收到信息的 Agent 自己决定。日程的 payload 既不是 action 分派外框，也不与顶层 `action` 列挂钩；顶层 `action` 列在日程形态下只是展示 / 检索用的标签（缺省取标题），不参与执行分派。
+
+- `action` 从 `payload` 提升为顶层列，成为行为的业务标签（`agent_rest` / `agent_schedule` / `user_reminder` / …）。**此条的 action 分派语义只适用于内置系统触发器**；日程形态下 `action` 退化为标签。
+- 系统触发器的 `payload` 保留为 `extra` 容器：`{"extra": {...}}`。存量 `{"action": "...", "extra": {...}}` 由 DAL 读取时兼容解析（`action` 列优先，回落 payload 内 action）。
+- 系统触发器 `payload.extra` 必须是具名字段，禁止 `#[serde(flatten)]`（现有 `CronTriggerPayload` 的踩坑注释已说明）。
 - `description` 是给用户看的自然语言意图，同时作为 Agent 日程的指令正文来源。
 
 ### 2.4 `How`：行为模板（关键决策）

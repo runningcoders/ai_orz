@@ -19,8 +19,9 @@ use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{
     CreateCronTriggerRequest, ListAgentsRequest, ListCronTriggersResponseItem,
-    QueryScheduleRequest, QueryScheduleResponse, ScheduleAgentTaskRequest, ScheduleOccurrence,
-    SearchAgentsRequest, UpdateCronTriggerRequest, UpdateScheduleRequest,
+    QueryScheduleRequest, QueryScheduleResponse, SYSTEM_ACTION_TEMPLATES, ScheduleAgentTaskRequest,
+    ScheduleOccurrence, SearchAgentsRequest, SystemActionTemplate, UpdateCronTriggerRequest,
+    UpdateScheduleRequest, system_action_template,
 };
 use common::enums::{CreatorType, ScheduleDateTerm, TriggerBehavior, TriggerType};
 use common::schedule::{calendar_day_key, calendar_day_keys, format_time_hm_in_tz};
@@ -90,61 +91,61 @@ fn weekday_label(key: &str) -> &'static str {
         .unwrap_or("")
 }
 
-/// 根据 action 模板构造 payload
+/// 根据 action 模板构造 payload。
+///
+/// 系统维护动作的 payload 格式由后端 consumer 固定为
+/// `{"action":"<id>","extra":{...}}`，表单选模板即可，不必也不该手拼 JSON。
 fn build_payload(template: &str, agent_id: &str, settle_limit: &str) -> Result<String, String> {
-    match template {
-        "agent_rest" => {
-            if agent_id.trim().is_empty() {
-                return Err("agent_id 不能为空".to_string());
-            }
-            let limit = if settle_limit.trim().is_empty() {
-                10i64
-            } else {
-                settle_limit
-                    .trim()
-                    .parse::<i64>()
-                    .map_err(|e| format!("settle_limit 必须为数字: {}", e))?
-            };
-            let payload = serde_json::json!({
-                "action": "agent_rest",
-                "extra": {
-                    "agent_id": agent_id,
-                    "settle_limit": limit,
-                }
-            });
-            Ok(payload.to_string())
+    let tpl = system_action_template(template)
+        .ok_or_else(|| format!("未知系统动作模板: {}", template))?;
+    if tpl.action == "agent_rest" {
+        let limit = if settle_limit.trim().is_empty() {
+            10i64
+        } else {
+            settle_limit
+                .trim()
+                .parse::<i64>()
+                .map_err(|e| format!("settle_limit 必须为数字: {}", e))?
+        };
+        let mut extra = serde_json::json!({ "settle_limit": limit });
+        // 留空 = 系统默认形态：后端扫描全部待沉淀 Agent，不针对单个
+        if !agent_id.trim().is_empty() {
+            extra["agent_id"] = serde_json::json!(agent_id.trim());
         }
-        _ => Err(format!("未知模板: {}", template)),
+        return Ok(serde_json::json!({ "action": tpl.action, "extra": extra }).to_string());
     }
+    Ok(serde_json::json!({ "action": tpl.action, "extra": {} }).to_string())
 }
 
 /// 解析 payload 为 (template, agent_id, settle_limit)
+///
+/// 非系统维护 action（自定义值 / 历史外框）一律回落 `custom`，由 textarea 原样保留。
 fn parse_payload(payload: &str) -> (String, String, String) {
     let v: serde_json::Value = match serde_json::from_str(payload) {
         Ok(v) => v,
         Err(_) => return ("custom".to_string(), String::new(), String::new()),
     };
-    let action = v
-        .get("action")
-        .and_then(|a| a.as_str())
+    let action = v.get("action").and_then(|a| a.as_str()).unwrap_or("");
+    if system_action_template(action).is_none() {
+        return ("custom".to_string(), String::new(), String::new());
+    }
+    let extra = v.get("extra").cloned().unwrap_or_default();
+    let agent_id = extra
+        .get("agent_id")
+        .and_then(|x| x.as_str())
         .unwrap_or("")
         .to_string();
-    if action == "agent_rest" {
-        let extra = v.get("extra").cloned().unwrap_or_default();
-        let agent_id = extra
-            .get("agent_id")
-            .and_then(|x| x.as_str())
-            .unwrap_or("")
-            .to_string();
-        let settle_limit = extra
-            .get("settle_limit")
-            .and_then(|x| x.as_i64())
-            .map(|n| n.to_string())
-            .unwrap_or_else(|| "10".to_string());
-        ("agent_rest".to_string(), agent_id, settle_limit)
-    } else {
-        ("custom".to_string(), String::new(), String::new())
-    }
+    let settle_limit = extra
+        .get("settle_limit")
+        .and_then(|x| x.as_i64())
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| "10".to_string());
+    (action.to_string(), agent_id, settle_limit)
+}
+
+/// 当前选中的系统动作模板（`custom` 或无匹配返回 None）
+fn selected_template(value: &str) -> Option<&'static SystemActionTemplate> {
+    system_action_template(value)
 }
 
 fn trigger_type_text(t: TriggerType) -> &'static str {
@@ -376,6 +377,8 @@ pub fn SystemTriggers() -> Element {
     let mut agent_options = use_signal(Vec::<String>::new);
     let mut agent_loading = use_signal(|| false);
     let mut json_error = use_signal(String::new);
+    // 当前选中的系统动作模板（`custom` = None），供表单区分参数区
+    let active_template = selected_template(&form_template());
     let mut submitting = use_signal(|| false);
     let mut loading_detail = use_signal(|| false);
     // 当前编辑项的详情快照（P3 四组只读概览；系统项新增字段由此只读呈现）
@@ -482,7 +485,8 @@ pub fn SystemTriggers() -> Element {
         let shape = form_shape();
         // Action 模板 / payload 只在「系统定时任务」侧有意义；日程走独立入口
         let payload_str = if shape == "system" {
-            if form_template() == "agent_rest" {
+            if form_template() != "custom" {
+                // 所有系统维护动作都由模板生成 payload，用户不碰 JSON
                 match build_payload(&form_template(), &form_agent_id(), &form_settle_limit()) {
                     Ok(p) => p,
                     Err(e) => {
@@ -574,6 +578,7 @@ pub fn SystemTriggers() -> Element {
                         let req = ScheduleAgentTaskRequest {
                             title: name.clone(),
                             description,
+                            payload: None,
                             cron_expression: cron_expression.clone(),
                             interval_seconds,
                             run_at,
@@ -595,6 +600,7 @@ pub fn SystemTriggers() -> Element {
                             trigger_id: id.clone(),
                             title: Some(name.clone()),
                             description: Some(description),
+                            payload: None,
                             cron_expression: cron_expression.clone(),
                             interval_seconds,
                             run_at,
@@ -1419,41 +1425,50 @@ pub fn SystemTriggers() -> Element {
                             select {
                                 class: "select select-bordered w-full",
                                 value: "{form_template}",
-                                onchange: move |e| form_template.set(e.value()),
-                                option { value: "agent_rest", "agent_rest（Agent 休息与沉淀）" }
-                                option { value: "custom", "自定义 JSON" }
+                                onchange: move |e| {
+                                    form_template.set(e.value());
+                                    json_error.set(String::new());
+                                },
+                                for tpl in SYSTEM_ACTION_TEMPLATES {
+                                    option { value: tpl.action, "{tpl.label}" }
+                                }
+                                option { value: "custom", "自定义 JSON（高级）" }
                             }
                         }
-                        if form_template() == "agent_rest" {
-                            div { class: "form-control w-full",
-                                label { class: "form-label", "执行 Agent *" }
-                                SearchableSelect {
-                                    placeholder: "选择 Agent（可搜索）...".to_string(),
-                                    selected: None,
-                                    options: agent_options(),
-                                    on_select: move |selection: String| handle_agent_select(selection),
-                                    on_search: Some(EventHandler::new(move |kw: String| handle_agent_search(kw))),
-                                    loading: agent_loading(),
-                                }
-                                div { class: "form-hint",
-                                    if form_agent_id().is_empty() {
-                                        "从列表选择 Agent，支持按名称或 ID 搜索"
-                                    } else {
-                                        "已选 Agent ID：{form_agent_id()}"
+                        if let Some(tpl) = active_template {
+                            div { class: "form-hint", "{tpl.description}" }
+                            if tpl.needs_agent {
+                                div { class: "form-control w-full",
+                                    label { class: "form-label", "执行 Agent（可留空）" }
+                                    SearchableSelect {
+                                        placeholder: "选择 Agent（可搜索，留空 = 全部）...".to_string(),
+                                        selected: None,
+                                        options: agent_options(),
+                                        on_select: move |selection: String| handle_agent_select(selection),
+                                        on_search: Some(EventHandler::new(move |kw: String| handle_agent_search(kw))),
+                                        loading: agent_loading(),
+                                    }
+                                    div { class: "form-hint",
+                                        if form_agent_id().is_empty() {
+                                            "留空则扫描全部待沉淀 Agent（系统默认形态）"
+                                        } else {
+                                            "已选 Agent ID：{form_agent_id()}"
+                                        }
                                     }
                                 }
-                            }
-                            div { class: "form-control w-full",
-                                label { class: "form-label", "settle_limit（沉淀上限）" }
-                                input {
-                                    class: "input input-bordered w-full",
-                                    r#type: "number",
-                                    value: "{form_settle_limit}",
-                                    placeholder: "10",
-                                    oninput: move |e| form_settle_limit.set(e.value())
+                                div { class: "form-control w-full",
+                                    label { class: "form-label", "settle_limit（沉淀上限）" }
+                                    input {
+                                        class: "input input-bordered w-full",
+                                        r#type: "number",
+                                        value: "{form_settle_limit}",
+                                        placeholder: "10",
+                                        oninput: move |e| form_settle_limit.set(e.value())
+                                    }
+                                    div { class: "form-hint", "单次沉淀的短期记忆条数上限，默认 10" }
                                 }
-                                div { class: "form-hint", "单次沉淀的短期记忆条数上限，默认 10" }
                             }
+                            div { class: "form-hint", "Payload 由模板自动生成，无需手填 JSON" }
                         } else {
                             div { class: "form-control w-full",
                                 label { class: "form-label", "Payload JSON *" }
@@ -1528,5 +1543,59 @@ mod tests {
     fn agent_id_from_option_parses_label_and_plain_id() {
         assert_eq!(agent_id_from_option("研发 Agent (agent-42)"), "agent-42");
         assert_eq!(agent_id_from_option("agent-7"), "agent-7");
+    }
+
+    #[test]
+    fn system_templates_cover_all_backend_actions() {
+        let actions: Vec<&str> = SYSTEM_ACTION_TEMPLATES.iter().map(|t| t.action).collect();
+        assert_eq!(
+            actions,
+            vec![
+                "agent_rest",
+                "project_followup",
+                "tool_log_cleanup",
+                "directory_reconcile",
+                "pending_notification_redelivery",
+                "vector_maintenance",
+            ]
+        );
+        assert!(selected_template("agent_rest").is_some_and(|t| t.needs_agent));
+        assert!(selected_template("vector_maintenance").is_some_and(|t| !t.needs_agent));
+        assert!(selected_template("not_a_real_action").is_none());
+    }
+
+    #[test]
+    fn build_payload_of_maintenance_template_needs_no_agent() {
+        let payload = build_payload("vector_maintenance", "", "").unwrap();
+        let value: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(value["action"], "vector_maintenance");
+        assert_eq!(value["extra"], serde_json::json!({}));
+    }
+
+    #[test]
+    fn build_payload_agent_rest_allows_empty_agent_for_global_settle() {
+        let payload = build_payload("agent_rest", "", "").unwrap();
+        let value: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(value["action"], "agent_rest");
+        assert_eq!(value["extra"]["settle_limit"], 10);
+        assert!(value["extra"].get("agent_id").is_none());
+
+        let scoped = build_payload("agent_rest", "agent-7", "5").unwrap();
+        let value: serde_json::Value = serde_json::from_str(&scoped).unwrap();
+        assert_eq!(value["extra"]["agent_id"], "agent-7");
+        assert_eq!(value["extra"]["settle_limit"], 5);
+    }
+
+    #[test]
+    fn parse_payload_roundtrips_all_templates_and_falls_back_to_custom() {
+        for tpl in SYSTEM_ACTION_TEMPLATES {
+            let payload = build_payload(tpl.action, "", "").unwrap();
+            let (parsed, _, _) = parse_payload(&payload);
+            assert_eq!(parsed, tpl.action);
+        }
+        assert_eq!(
+            parse_payload(r#"{"action":"other","extra":{}}"#).0,
+            "custom"
+        );
     }
 }

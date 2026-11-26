@@ -17,6 +17,10 @@ fn to_update(params: UpdateScheduleRequest) -> ScheduleUpdate {
         trigger_id: params.trigger_id,
         title: params.title,
         description: params.description,
+        // 三态原样透传：Value::Null → Some(None)（清空），其余 → Some(Some(json 字符串))
+        payload: params
+            .payload
+            .map(|value| value.filter(|v| !v.is_null()).map(|v| v.to_string())),
         cron_expression: params.cron_expression,
         interval_seconds: params.interval_seconds,
         run_at: params.run_at,
@@ -29,12 +33,12 @@ fn to_update(params: UpdateScheduleRequest) -> ScheduleUpdate {
 
 /// 更新自己创建的一条日程。
 ///
-/// 只能改标题、描述、时间规则、生效窗口与最大次数；归属、行为模板、统计字段
-/// 一律不接受修改。改了时间规则会按新规则重算下一次触发时刻。
+/// 可改标题、描述、备注（payload）、时间规则、生效窗口、最大次数与负责 Agent；
+/// 归属、行为模板、统计字段一律不接受修改。改了时间规则会按新规则重算下一次触发时刻。
 #[register_handler_tool(
     id = "update_schedule",
     name = "Update Schedule",
-    description = "Update a schedule owned by the current user (any agent acting for that user may edit it; creator does not grant permission). Pass trigger_id plus only the fields to change: title, description, cron_expression (5-field cron), interval_seconds, run_at (Unix ms), start_at/end_at window, max_runs (positive integer), agent_id (reassign the responsible agent). start_at / end_at / max_runs are tri-state: omit to keep, pass null to clear, pass a value to override. Passing any time rule field (cron_expression / interval_seconds / run_at) replaces the whole time rule and recomputes next_run_at. Owner, behavior template and run statistics cannot be changed. System maintenance triggers and other users' schedules are not visible.",
+    description = "Update a schedule owned by the current user (any agent acting for that user may edit it; creator does not grant permission). Pass trigger_id plus only the fields to change: title, description, payload, cron_expression (5-field cron), interval_seconds, run_at (Unix ms), start_at/end_at window, max_runs (positive integer), agent_id (reassign the responsible agent). payload is free-form information left on the schedule for the agent at fire time — any JSON with fields and structure entirely of your own choosing; the framework defines no protocol, parses or interprets nothing, and attaches no action. It is delivered back verbatim in the wake-up message and the receiving agent decides what to do with it. payload / start_at / end_at / max_runs are tri-state: omit to keep, pass null to clear, pass a value to override. Passing any time rule field (cron_expression / interval_seconds / run_at) replaces the whole time rule and recomputes next_run_at. Owner, behavior template and run statistics cannot be changed. System maintenance triggers and other users' schedules are not visible.",
     params = "common::api::UpdateScheduleRequest",
     neural,
     tags = "scheduling,autonomy"
@@ -71,6 +75,7 @@ mod tests {
             trigger_id: "sch-1".into(),
             title: Some("新标题".into()),
             description: Some("新描述".into()),
+            payload: Some(Some(serde_json::json!({"k": 1}))),
             cron_expression: Some("0 9 * * *".into()),
             interval_seconds: Some(600),
             run_at: Some(123),
@@ -82,6 +87,7 @@ mod tests {
         let u = to_update(p);
         assert_eq!(u.trigger_id, "sch-1");
         assert_eq!(u.title.as_deref(), Some("新标题"));
+        assert_eq!(u.payload.as_ref().unwrap().as_deref(), Some(r#"{"k":1}"#));
         assert_eq!(u.interval_seconds, Some(600));
         // 三态原样透传：Some(Some(v)) 覆盖、Some(None) 清除、None 保持
         assert_eq!(u.start_at, Some(Some(10)));

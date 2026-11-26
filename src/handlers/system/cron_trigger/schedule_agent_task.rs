@@ -59,7 +59,7 @@ fn resolve_owner_user_id(uid: &str, creator_type: CreatorType, creator_id: &str)
 #[register_handler_tool(
     id = "schedule_agent_task",
     name = "Schedule Agent Task",
-    description = "Create a schedule that fires later: either wake the responsible agent to act (behavior=AsyncAgentWakeup, default) or have that agent notify the owner (behavior=AsyncNotify). Provide a title, the full intent to deliver at fire time (description), and one time rule: cron_expression (5-field cron), interval_seconds, or run_at (one-off, Unix ms). Optional: start_at/end_at window, agent_id (responsible agent; defaults to yourself when you are an agent), max_runs (positive integer). Identity fields (owner, org, creator) are fixed from the request context and cannot be overridden. Returns the created schedule detail with its trigger_id.",
+    description = "Create a schedule that fires later: either wake the responsible agent (behavior=AsyncAgentWakeup, default) or have that agent notify the owner (behavior=AsyncNotify). Provide a title, the full intent to deliver at fire time (description), and one time rule: cron_expression (5-field cron), interval_seconds, or run_at (one-off, Unix ms). Optional: start_at/end_at window, agent_id (responsible agent; defaults to yourself when you are an agent), max_runs (positive integer), payload. payload is free-form information you leave on the schedule for your future self — any JSON with fields and structure entirely of your own choosing. The framework defines no protocol for it: nothing is parsed or interpreted, no field has a reserved meaning, and no action is attached. It is delivered back verbatim in the wake-up message; what to do with it is entirely up to the agent who receives it. Identity fields (owner, org, creator) are fixed from the request context and cannot be overridden. Returns the created schedule detail with its trigger_id.",
     params = "common::api::ScheduleAgentTaskRequest",
     neural,
     tags = "scheduling,autonomy"
@@ -164,8 +164,14 @@ pub async fn schedule_agent_task(
     trigger.action = Some(action);
     trigger.behavior = behavior;
     trigger.max_runs = params.max_runs.map(i64::from);
-    // payload 只做兼容容器；新记录的业务动作写顶层 action 列
-    trigger.payload = "{}".to_string();
+    // 顶层 action 列只是展示 / 检索用标签（缺省用标题），不参与日程执行分派；
+    // payload 原样保留 Agent 留下的自由信息，到点由 consumer 附在唤醒正文里回灌。
+    trigger.payload = params
+        .payload
+        .as_ref()
+        .filter(|value| !value.is_null())
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "{}".to_string());
 
     system_domain()
         .cron_manager()
@@ -188,6 +194,7 @@ mod tests {
         ScheduleAgentTaskRequest {
             title: "晨间简报".to_string(),
             description: "汇总昨日进度并汇报".to_string(),
+            payload: None,
             cron_expression: None,
             interval_seconds: None,
             run_at: Some(1_800_000_000_000),

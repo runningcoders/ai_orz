@@ -84,17 +84,23 @@ impl Consumer for CronTriggerConsumer {
             event.trigger_id
         );
 
-        let payload: CronTriggerPayload = serde_json::from_str(&event.payload).map_err(|e| {
-            Error::bad_request(format!(
-                "invalid cron trigger payload for trigger {}: {}",
-                event.trigger_id, e
-            ))
-        })?;
+        // 行为模板从事件读取（默认 SyncMaintenance），不回查表。
+        let behavior = TriggerBehavior::from(event.behavior);
+        // 系统维护 payload 是 {"action":...} 分派外框，格式错误要报错；
+        // 日程按 behavior 分派，payload 只是 Agent 留下的自由信息，消费端不解析、不解释。
+        let payload: CronTriggerPayload = if behavior == TriggerBehavior::SyncMaintenance {
+            serde_json::from_str(&event.payload).map_err(|e| {
+                Error::bad_request(format!(
+                    "invalid cron trigger payload for trigger {}: {}",
+                    event.trigger_id, e
+                ))
+            })?
+        } else {
+            CronTriggerPayload::default()
+        };
 
         // 顶层 action 列优先，存量记录回落 payload.action（A-设计 §2.3 兼容路径）。
-        // 行为模板从事件读取（默认 SyncMaintenance），不回查表。
         let action = resolve_action(event.action.as_deref(), &payload.action);
-        let behavior = TriggerBehavior::from(event.behavior);
 
         sys_info!(
             "cron trigger fired: {} (trigger_id: {}, action: {}, behavior: {:?})",
@@ -758,8 +764,10 @@ impl CronTriggerConsumer {
 /// 且**不报错**。存量 payload 形态见 `.ai_orz/ai_orz.db::cron_triggers` 与
 /// `docs/wiki/.../定时任务 API.md`（系统默认触发器 seed 见
 /// `service/domain/system/mod.rs::ensure_system_cron_triggers`）。
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 struct CronTriggerPayload {
+    /// 系统维护动作标识；缺省视为空标签（兼容历史缺字段的外框）
+    #[serde(default)]
     action: String,
     /// 动作参数；缺省（历史用户只写 `{"action":"x"}`）时为空对象语义
     #[serde(default)]
@@ -773,6 +781,19 @@ fn resolve_action<'a>(top_level: Option<&'a str>, payload_action: &'a str) -> &'
         Some(action) if !action.is_empty() => action,
         _ => payload_action,
     }
+}
+
+/// 日程信息附段：Agent 在日程上留下的自由 JSON **原样**随消息回灌。
+///
+/// 框架对内容没有协议——不解析、不解释、不赋字段含义，读者是 Agent 自己；
+/// 消费端不做 parse → 再序列化（那会改动键序、空格与换行）。
+/// 前端展示给人看时再格式化即可；这里只跳过缺省的空对象 / null / 空串。
+fn schedule_payload_section(payload: &str) -> String {
+    let trimmed = payload.trim();
+    if trimmed.is_empty() || trimmed == "{}" || trimmed == "null" {
+        return String::new();
+    }
+    format!("\n- 日程信息 / 备注（自由 JSON，Agent 自定义，原样回灌）：\n```json\n{payload}\n```\n")
 }
 
 /// 构造 Agent 唤醒正文：至少含日程 ID、用户原始意图、期望动作、完成后如何汇报。
@@ -801,6 +822,7 @@ fn build_schedule_wakeup_content(event: &CronTriggerEvent, action: &str) -> Stri
          - 负责 Agent：{}\n\
          - 用户原始意图：{}\n\
          - 期望动作：{}\n\
+         {}\
          请根据原始意图执行上述动作；完成后通过消息向归属用户汇报结果。",
         event.trigger_name,
         event.trigger_id,
@@ -808,7 +830,8 @@ fn build_schedule_wakeup_content(event: &CronTriggerEvent, action: &str) -> Stri
         or_dash(event.owner_user_id.as_deref()),
         or_dash(event.agent_id.as_deref()),
         intent,
-        expected
+        expected,
+        schedule_payload_section(&event.payload)
     )
 }
 
@@ -846,7 +869,12 @@ fn build_schedule_notify_content(event: &CronTriggerEvent, action: &str) -> Stri
     } else {
         detail
     };
-    format!("【日程提醒】{}：{}", event.trigger_name, detail)
+    format!(
+        "【日程提醒】{}：{}{}",
+        event.trigger_name,
+        detail,
+        schedule_payload_section(&event.payload)
+    )
 }
 
 impl CronTriggerPayload {
@@ -871,6 +899,26 @@ struct AgentRestPayload {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn schedule_event(payload: &str) -> CronTriggerEvent {
+        CronTriggerEvent {
+            event_id: "e-1".into(),
+            trigger_id: "t-1".into(),
+            trigger_name: "晨间简报".into(),
+            payload: payload.into(),
+            created_at: 0,
+            trigger_type: 3,
+            behavior: 2, // AsyncAgentWakeup
+            action: Some("daily_brief".into()),
+            description: "汇总昨日进度".into(),
+            org_id: None,
+            owner_user_id: Some("user-1".into()),
+            creator_type: Some(1), // CreatorType::Agent
+            creator_id: Some("agent-1".into()),
+            agent_id: Some("agent-2".into()),
+            lease_owner: None,
+        }
+    }
 
     /// 唤醒正文必须带齐身份三字段：Agent 到点执行时要知道「谁安排的、
     /// 算谁的、自己是谁」，否则「谁安排的」只落库不进执行上下文。
@@ -1023,5 +1071,46 @@ mod tests {
                 .expect("应可解析");
         assert_eq!(payload.action, "agent_rest");
         assert_eq!(payload.action_params(), serde_json::json!({}));
+    }
+
+    /// 外框缺 action 时仍可解析（兼容历史外框）；日程本身不走这条解析。
+    #[test]
+    fn test_payload_envelope_tolerates_missing_action() {
+        let payload: CronTriggerPayload =
+            serde_json::from_str(r#"{"note":"无 action 的历史外框"}"#)
+                .expect("缺 action 的外框应可解析");
+        assert_eq!(payload.action, "");
+        assert_eq!(payload.action_params(), serde_json::json!({}));
+    }
+
+    /// Agent 留在日程上的自由信息必须**原样**进唤醒正文：
+    /// 框架无协议、消费端不 parse / 不再序列化，键序、空格、换行都保持写入时的样子。
+    #[test]
+    fn test_wakeup_content_carries_custom_payload_verbatim() {
+        let payload = r#"{"project_ids":["p-1", "p-2"],"note":"别忘了带上周报"}"#;
+        let content = build_schedule_wakeup_content(&schedule_event(payload), "daily_brief");
+        assert!(
+            content.contains("日程信息 / 备注（自由 JSON，Agent 自定义，原样回灌）"),
+            "{content}"
+        );
+        assert!(
+            content.contains(payload),
+            "payload 应逐字出现在正文里: {content}"
+        );
+
+        let notify = build_schedule_notify_content(&schedule_event(payload), "daily_brief");
+        assert!(notify.contains(payload), "{notify}");
+    }
+
+    /// 缺省 / null / 空串不附段，保持正文简洁。
+    #[test]
+    fn test_wakeup_content_skips_empty_payload() {
+        for payload in ["{}", "null", "  "] {
+            let content = build_schedule_wakeup_content(&schedule_event(payload), "daily_brief");
+            assert!(
+                !content.contains("日程信息 / 备注"),
+                "payload={payload}, content={content}"
+            );
+        }
     }
 }
