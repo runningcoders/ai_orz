@@ -8,4 +8,6 @@ pub mod processes;
 pub mod seed;
 pub mod seed_sensitive_fields;
 pub mod tasks;
+pub mod trigger_detail;
+pub mod trigger_form_fields;
 pub mod triggers;

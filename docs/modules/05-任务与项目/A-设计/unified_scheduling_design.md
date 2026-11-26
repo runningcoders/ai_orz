@@ -455,6 +455,46 @@ P2/P4 只覆盖「建 + 查」，Agent 建错了、要改时间或撤销时仍�
 
 ---
 
+## 10.3 P6：执行记录统计与管理端详情页
+
+**口径：按 attempt 一条 attempt 留痕，与 `total_runs` 严格分工。** `cron_triggers.total_runs`
+是配额游标（只在成功推进时 +1，控制 `max_runs`），不能反映失败/跳过；执行记录落
+DuckDB 独立表 `trigger_exec_events`，每次 `CronTriggerConsumer::on_event` 收尾都记一条，
+三态 `status = success / skipped / failed`：
+
+- `success`：派发成功。`dispatched_count` 记**实际下游动作数**（沉淀请求数、跟进消息数、
+  重投数、清理条目数……），不是常量 1；若部分子动作失败（发送失败、记账失败、
+  collection 失败），status 仍为 success（不触发重捞），但摘要写进 `skip_reason` 以免
+  把「部分失败」伪装成「全成功」。
+- `skipped`：配置/条件不满足主动放弃且**不重试**（缺 `owner_user_id` / `agent_id`、
+  未知 action、系统维护 payload 非法（只告警不重捞）、清理保留天数为 0），带 `skip_reason`。
+- `failed`：抛错，交给下轮重捞（`decide_retry=Retry`，不 mark → 下个 tick 重捞；
+  仅瞬时错误走这里，持久性配置错误归 `skipped`，避免每 60s 无限重试）。
+
+**打点覆盖**：`execute_attempt` 把 payload 解析等前置错误也纳入 attempt，所有
+`on_event` 之后的错误路径都有统计；只有事件本身反序列化失败（连 trigger_id 都拿不到）
+例外。用户系统级事件不再重复写内存 AOP 收集器（`AopStatsCollector` 对 `cron.trigger`
+跳过计数），attempt 级统计以本表为唯一出口，链路日志仍保留。
+
+**落盘沿用 Stats 三重保障**：攒满 `batch_size=100` / 周期 30s / 优雅退出 `flush_all`。
+低频日程长期攒不满也能在 30s 内可见；代价是查询有 ≤30s 延迟、非优雅退出丢最近窗口，
+对「执行留痕/健康度」可接受（若将来做对账/计费才需改同步落盘）。打点失败不改写业务
+结论（用 `let _ =` 忽略，避免把成功变失败触发无谓重捞）。
+
+**查询与归属**：`GET /cron-triggers/{id}/exec-records` 只返回明细分页 + 总数；
+`GET /cron-triggers/{id}/exec-stats` 独立返回概览（总数/三态/平均耗时）与时序桶分布
+（桶宽 1~1440 分钟，默认 60 分钟）。两者都经 `handler → domain CronManager → dal →
+dao stats`（DuckDB 独立 DAO，不混入 SQLite CRUD）。handler 先 `get_trigger` 确认 trigger
+存在并解析归属，组织管理员只能读本组织 trigger 的记录（系统级 `org_id=None` 全局可见），
+DAO 的 `WHERE` 同时带 `trigger_id + org_id + 时间窗`，防止跨租户越权。
+handler 归一化时间窗（缺省最近 7 天）与分页（默认 50、上限 200）。前端新增
+`/system/triggers/:id` 详情页：详情信息 + 编辑（日程开放名称/时间规则/说明/payload/
+生效窗口/次数/负责 Agent；系统项开放名称/时间规则/payload）+ 执行统计（趋势折线 +
+状态环形图）+ 执行明细分页；统计与明细两个接口独立拉取、独立刷新。列表操作列
+「编辑」改为「详情」入口，暂停/恢复/删除仍在列表页。
+
+---
+
 ## 11. 明确不做的边界
 
 - 不做毫秒级精度：Producer 仍 60s 轮询，日程最小粒度是分钟。

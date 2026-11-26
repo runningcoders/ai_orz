@@ -1231,6 +1231,16 @@ fn system_routes() -> Router {
             "/cron-triggers/{trigger_id}/resume",
             post(handlers::system::cron_trigger::resume_cron_trigger_handler),
         )
+        // 执行记录：某日程维度的 attempt 留痕（DuckDB trigger_exec_events）
+        .route(
+            "/cron-triggers/{trigger_id}/exec-records",
+            get(handlers::system::cron_trigger::query_trigger_exec_handler),
+        )
+        // 执行统计：概览 + 时序分布（与明细分页独立拉取）
+        .route(
+            "/cron-triggers/{trigger_id}/exec-stats",
+            get(handlers::system::cron_trigger::query_trigger_exec_stats_handler),
+        )
         // 日程（统一调度器的异步形态）：Agent 自主创建，身份从 ctx 固化
         .route(
             "/schedules",

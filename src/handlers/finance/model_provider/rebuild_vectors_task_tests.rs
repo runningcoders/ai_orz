@@ -1,6 +1,39 @@
 //! `resolve_entities` 护栏：范围解析必须「全能收窄、错必报错」。
+//! 另含注入式单测：任务只调注进来的目标，不再摸 DAL 全局单例。
 
-use super::{ALL_ENTITIES, resolve_entities};
+use super::{
+    ALL_ENTITIES, RebuildTargets, RebuildVectorsTask, VectorRebuildTarget, resolve_entities,
+};
+use crate::pkg::RequestContext;
+use crate::pkg::background_task::TaskProgressCounter;
+use async_trait::async_trait;
+use common::enums::VectorRebuildMode;
+use common::error::Result;
+use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// 记录调用次数；`fail=true` 时模拟 DAL 抛错。
+struct CountingTarget {
+    calls: AtomicUsize,
+    fail: bool,
+}
+
+#[async_trait]
+impl VectorRebuildTarget for CountingTarget {
+    async fn rebuild(
+        &self,
+        _ctx: RequestContext,
+        _progress: &TaskProgressCounter,
+        _mode: VectorRebuildMode,
+    ) -> Result<()> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        if self.fail {
+            return Err(common::error::Error::internal("boom"));
+        }
+        Ok(())
+    }
+}
 
 /// 不传 `entities` 时保持语义：全部 8 类。
 #[test]
@@ -58,4 +91,65 @@ fn order_follows_request() {
     let picked = resolve_entities(Some(&["tool".to_string(), "skill".to_string()]))
         .expect("两个都是合法实体");
     assert_eq!(picked, vec![("tool", "Tool"), ("skill", "Skill")]);
+}
+
+/// 只执行注入且被选中的实体，不再依赖全局 DAL。
+#[tokio::test]
+async fn run_rebuilds_dispatches_only_injected_targets() {
+    crate::pkg::storage::test_support::init_for_test().await;
+    let agent = Arc::new(CountingTarget {
+        calls: AtomicUsize::new(0),
+        fail: false,
+    });
+    let memory = Arc::new(CountingTarget {
+        calls: AtomicUsize::new(0),
+        fail: false,
+    });
+    let mut targets: RebuildTargets = BTreeMap::new();
+    targets.insert("agent", agent.clone());
+    targets.insert("memory", memory.clone());
+
+    let task = RebuildVectorsTask::with_targets(
+        RequestContext::new_system(),
+        vec![("agent", "Agent")],
+        VectorRebuildMode::Force,
+        targets,
+    );
+    task.run_rebuilds().await.expect("fake 目标不应失败");
+
+    assert_eq!(agent.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        memory.calls.load(Ordering::SeqCst),
+        0,
+        "未选中的实体不应执行"
+    );
+}
+
+/// 任一实体失败即中断后续实体，错误向上抛（保持原「失败即停」语义）。
+#[tokio::test]
+async fn run_rebuilds_stops_on_first_error() {
+    crate::pkg::storage::test_support::init_for_test().await;
+    let agent = Arc::new(CountingTarget {
+        calls: AtomicUsize::new(0),
+        fail: true,
+    });
+    let memory = Arc::new(CountingTarget {
+        calls: AtomicUsize::new(0),
+        fail: false,
+    });
+    let mut targets: RebuildTargets = BTreeMap::new();
+    targets.insert("agent", agent.clone());
+    targets.insert("memory", memory.clone());
+
+    let task = RebuildVectorsTask::with_targets(
+        RequestContext::new_system(),
+        vec![("agent", "Agent"), ("memory", "Memory")],
+        VectorRebuildMode::Auto,
+        targets,
+    );
+    let err = task.run_rebuilds().await.expect_err("首个实体失败应上抛");
+    assert!(err.to_string().contains("boom"));
+
+    assert_eq!(agent.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(memory.calls.load(Ordering::SeqCst), 0, "失败后不应继续执行");
 }

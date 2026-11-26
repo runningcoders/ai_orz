@@ -10,23 +10,170 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::Arc;
 
 use crate::models::events::{AgentSettleEvent, CronTriggerEvent};
 use crate::pkg::RequestContext;
 use crate::pkg::aop::Event;
 use crate::pkg::aop::{ConsumeMode, Consumer, RetryDecision, Subscription};
-use crate::service::dal::message::RepublishOutcome;
-use crate::service::domain::runtime::domain as runtime_domain;
-use common::enums::{EventTopic, TriggerBehavior};
+use crate::pkg::stats::TriggerExecEvent;
+use crate::service::dal::message::{MessageDal, RepublishOutcome};
+use crate::service::domain::organization::{
+    DirectoryReconcileReport, OrganizationDomain, domain as organization_domain,
+};
+use crate::service::domain::runtime::{RuntimeDomain, domain as runtime_domain};
+use common::enums::{EventTopic, TriggerBehavior, TriggerExecStatus};
 use common::error::{Error, Result};
 
 // ==================== 消费者实现 ====================
+
+/// 一次触发 attempt 的执行结论（供统计打点）
+///
+/// 与 `Result` 分开：`Err` 表示需要下轮重捞的失败；`Skipped` 表示配置/条件不满足、
+/// 主动放弃但**不重试**（上抛会每 60s 无限重试）。两者在统计表里是不同的 status。
+#[derive(Debug)]
+struct ExecOutcome {
+    status: &'static str,
+    /// 跳过原因，或成功但部分子动作失败时的说明（落在 skip_reason 列）
+    skip_reason: Option<String>,
+    /// 实际派发的下游动作数（Agent 沉淀请求 / 通知消息 / 清理条目…）
+    dispatched_count: u64,
+}
+
+impl ExecOutcome {
+    fn success(dispatched_count: u64) -> Self {
+        Self {
+            status: TriggerExecStatus::Success.as_str(),
+            skip_reason: None,
+            dispatched_count,
+        }
+    }
+
+    /// 成功但有部分子动作失败：status 仍 success（不触发重捞），
+    /// 但把失败摘要写进 skip_reason，避免统计把「部分失败」伪装成「全成功」。
+    fn success_with_note(dispatched_count: u64, note: impl Into<String>) -> Self {
+        Self {
+            status: TriggerExecStatus::Success.as_str(),
+            skip_reason: Some(note.into()),
+            dispatched_count,
+        }
+    }
+
+    fn skipped(reason: impl Into<String>) -> Self {
+        Self {
+            status: TriggerExecStatus::Skipped.as_str(),
+            skip_reason: Some(reason.into()),
+            dispatched_count: 0,
+        }
+    }
+}
+
+/// 本消费者用到的 runtime 能力（窄接口：单测可注入 fake，不把大 domain trait 拖进来）
+#[async_trait]
+pub trait CronRuntime: Send + Sync {
+    /// 全部有待沉淀短期记忆的 Agent id（去重）
+    async fn pending_settle_agents(&self, ctx: RequestContext) -> Result<Vec<String>>;
+    /// Agent 是否忙（有在跑任务）
+    fn is_agent_unavailable(&self, agent_id: &str) -> bool;
+}
+
+/// 生产实现：委托 `RuntimeDomain`
+pub struct RuntimeCronRuntime(Arc<dyn RuntimeDomain>);
+
+#[async_trait]
+impl CronRuntime for RuntimeCronRuntime {
+    async fn pending_settle_agents(&self, ctx: RequestContext) -> Result<Vec<String>> {
+        use crate::service::dao::memory::{MemoryQuery, MemorySortOrder};
+        use common::enums::{MemoryStatus, MemoryType};
+
+        // 索引表规模有限（只含摘要），取全量 Active 短期记忆后去重即可。
+        // 上限是防御值：正常远达不到；触达时下次周期会继续处理剩余部分。
+        let pending = self
+            .0
+            .memory()
+            .query(
+                ctx,
+                MemoryQuery {
+                    status: Some(MemoryStatus::Active),
+                    memory_type: Some(MemoryType::ShortTerm),
+                    limit: Some(1000),
+                    order: MemorySortOrder::OldestFirst,
+                    ..Default::default()
+                },
+            )
+            .await?;
+        let mut ids: Vec<String> = pending
+            .iter()
+            .filter_map(|m| {
+                crate::handlers::hr::agent::settle_memory::short_term_of(m)
+                    .map(|i| i.agent_id.clone())
+            })
+            .collect();
+        ids.sort();
+        ids.dedup();
+        Ok(ids)
+    }
+
+    fn is_agent_unavailable(&self, agent_id: &str) -> bool {
+        self.0.is_agent_unavailable(agent_id)
+    }
+}
+
+/// 重投滞留跟进通知（窄接口）
+#[async_trait]
+pub trait CronNotifier: Send + Sync {
+    async fn republish_created(
+        &self,
+        ctx: RequestContext,
+        message_id: &str,
+    ) -> Result<RepublishOutcome>;
+}
+
+/// 生产实现：委托 `MessageDal`
+pub struct MessageCronNotifier(Arc<dyn MessageDal>);
+
+#[async_trait]
+impl CronNotifier for MessageCronNotifier {
+    async fn republish_created(
+        &self,
+        ctx: RequestContext,
+        message_id: &str,
+    ) -> Result<RepublishOutcome> {
+        self.0.republish_created(ctx, message_id).await
+    }
+}
+
+/// 对端目录对账（窄接口）
+#[async_trait]
+pub trait CronReconciler: Send + Sync {
+    async fn reconcile_directories(&self) -> Result<DirectoryReconcileReport>;
+}
+
+/// 生产实现：委托 `OrganizationDomain`
+pub struct OrgCronReconciler(Arc<dyn OrganizationDomain>);
+
+#[async_trait]
+impl CronReconciler for OrgCronReconciler {
+    async fn reconcile_directories(&self) -> Result<DirectoryReconcileReport> {
+        self.0
+            .organization_manage()
+            .reconcile_directories(RequestContext::new_system())
+            .await
+    }
+}
 
 /// Cron 触发器消费者
 ///
 /// 订阅 CRON_TRIGGER 事件，按 payload.action 分发到不同 domain 处理。
 /// 作为 AOP 的 Sync 消费者，事件发布时直接调用 on_event。
-pub struct CronTriggerConsumer;
+///
+/// 依赖以窄接口注入（`new()` 是生产组合根，`with_deps()` 供测试），
+/// 不再在业务方法里直接取 domain/dal 全局单例。
+pub struct CronTriggerConsumer {
+    runtime: Arc<dyn CronRuntime>,
+    notifier: Arc<dyn CronNotifier>,
+    reconciler: Arc<dyn CronReconciler>,
+}
 
 impl Default for CronTriggerConsumer {
     fn default() -> Self {
@@ -35,8 +182,26 @@ impl Default for CronTriggerConsumer {
 }
 
 impl CronTriggerConsumer {
+    /// 生产组合根：把全局单例适配为窄接口（唯一取全局的位置）。
     pub fn new() -> Self {
-        Self
+        Self {
+            runtime: Arc::new(RuntimeCronRuntime(runtime_domain())),
+            notifier: Arc::new(MessageCronNotifier(crate::service::dal::message::dal())),
+            reconciler: Arc::new(OrgCronReconciler(organization_domain())),
+        }
+    }
+
+    /// 注入式构造（测试/自定义组合根）。
+    pub fn with_deps(
+        runtime: Arc<dyn CronRuntime>,
+        notifier: Arc<dyn CronNotifier>,
+        reconciler: Arc<dyn CronReconciler>,
+    ) -> Self {
+        Self {
+            runtime,
+            notifier,
+            reconciler,
+        }
     }
 }
 
@@ -73,11 +238,58 @@ impl Consumer for CronTriggerConsumer {
         RetryDecision::Retry
     }
 
-    async fn on_event(&self, _ctx: RequestContext, event: serde_json::Value) -> Result<()> {
+    async fn on_event(&self, ctx: RequestContext, event: serde_json::Value) -> Result<()> {
+        let started_at = std::time::Instant::now();
+        // 反序列化失败时连 trigger_id 都拿不到，无可归因的统计维度；直接上抛。
         let event: CronTriggerEvent = serde_json::from_value(event).map_err(|e| {
             Error::internal(format!("failed to deserialize cron trigger event: {}", e))
         })?;
 
+        // 执行体整体作为一个 attempt：payload 解析等前置错误也在打点范围内，
+        // 不再有「事件已解析但 stat 缺账」的漏记路径。
+        let dispatch_result = self.execute_attempt(&event).await;
+
+        // 打点维度从 event 推导（解析失败时 action 取顶层列，仍可归因）。
+        let behavior = TriggerBehavior::from(event.behavior);
+        let action = event.action.clone();
+        let (status, skip_reason, dispatched_count) = match dispatch_result.as_ref() {
+            Ok(o) => (o.status, o.skip_reason.clone(), o.dispatched_count),
+            Err(e) => (TriggerExecStatus::Failed.as_str(), Some(e.to_string()), 0),
+        };
+        let duration_ms = started_at.elapsed().as_millis() as u64;
+        // 统计事件是「尽力而为」：打点失败不能改变业务结论（尤其不能把成功变失败
+        // → 触发无谓重捞），故这里用 `let _ =`。Stats 走请求级 ctx，不注入。
+        if let Some(stats) = ctx.stats_opt() {
+            let _ = stats
+                .record(
+                    ctx.clone(),
+                    TriggerExecEvent {
+                        timestamp: chrono::Utc::now().timestamp_millis(),
+                        trigger_id: event.trigger_id.clone(),
+                        trigger_name: event.trigger_name.clone(),
+                        action,
+                        behavior: behavior.as_tag().to_string(),
+                        status: status.to_string(),
+                        skip_reason,
+                        org_id: event.org_id.clone(),
+                        owner_user_id: event.owner_user_id.clone(),
+                        agent_id: event.agent_id.clone(),
+                        call_count: 1,
+                        duration_ms: Some(duration_ms),
+                        dispatched_count,
+                        ..Default::default()
+                    },
+                )
+                .await;
+        }
+        dispatch_result.map(|_| ())
+    }
+}
+
+impl CronTriggerConsumer {
+    /// 一次 attempt 的执行本体：Err 上抛（下轮重捞）；
+    /// Ok(outcome) 含成功 / 主动跳过两态。所有错误路径都回到 on_event 统一打点。
+    async fn execute_attempt(&self, event: &CronTriggerEvent) -> Result<ExecOutcome> {
         sys_debug!(
             "received cron trigger event: {} (trigger_id: {}, action to be parsed)",
             event.id(),
@@ -101,7 +313,6 @@ impl Consumer for CronTriggerConsumer {
 
         // 顶层 action 列优先，存量记录回落 payload.action（A-设计 §2.3 兼容路径）。
         let action = resolve_action(event.action.as_deref(), &payload.action);
-
         sys_info!(
             "cron trigger fired: {} (trigger_id: {}, action: {}, behavior: {:?})",
             event.trigger_name,
@@ -112,18 +323,14 @@ impl Consumer for CronTriggerConsumer {
 
         match behavior {
             TriggerBehavior::SyncMaintenance => {
-                self.dispatch_sync_maintenance(&event, action, &payload)
-                    .await?;
+                self.dispatch_sync_maintenance(event, action, &payload)
+                    .await
             }
-            TriggerBehavior::AsyncNotify => {
-                self.dispatch_async_notify(&event, action).await?;
-            }
+            TriggerBehavior::AsyncNotify => self.dispatch_async_notify(event, action).await,
             TriggerBehavior::AsyncAgentWakeup => {
-                self.dispatch_async_agent_wakeup(&event, action).await?;
+                self.dispatch_async_agent_wakeup(event, action).await
             }
         }
-
-        Ok(())
     }
 }
 
@@ -131,33 +338,24 @@ impl Consumer for CronTriggerConsumer {
 
 impl CronTriggerConsumer {
     /// 同步维护模板：现有 6 个 action 分支原样保留，零行为回归。
+    /// 每个 handler 自报派发数与部分失败说明，统计口径与实际动作一致。
     async fn dispatch_sync_maintenance(
         &self,
         event: &CronTriggerEvent,
         action: &str,
         payload: &CronTriggerPayload,
-    ) -> Result<()> {
+    ) -> Result<ExecOutcome> {
         let params = payload.action_params();
 
         match action {
-            "agent_rest" => {
-                if let Err(e) = self.handle_agent_rest(event, &params).await {
-                    // 单次触发失败只告警不上抛：避免 nack 重试风暴（下个周期会重新沉淀）
-                    sys_error!(
-                        "agent_rest action failed for trigger {} (id: {}): {}",
-                        event.trigger_name,
-                        event.trigger_id,
-                        e
-                    );
-                }
-            }
-            "project_followup" => self.handle_project_followup(&params).await?,
+            "agent_rest" => self.handle_agent_rest(event, &params).await,
+            "project_followup" => self.handle_project_followup(&params).await,
             "pending_notification_redelivery" => {
-                self.handle_pending_notification_redelivery().await?
+                self.handle_pending_notification_redelivery().await
             }
-            "tool_log_cleanup" => self.handle_tool_log_cleanup().await?,
-            "vector_maintenance" => self.handle_vector_maintenance().await?,
-            "directory_reconcile" => self.handle_directory_reconcile().await?,
+            "tool_log_cleanup" => self.handle_tool_log_cleanup().await,
+            "vector_maintenance" => self.handle_vector_maintenance().await,
+            "directory_reconcile" => self.handle_directory_reconcile().await,
             _ => {
                 sys_warn!(
                     "unknown action '{}' for trigger {} (id: {})",
@@ -165,10 +363,9 @@ impl CronTriggerConsumer {
                     event.trigger_name,
                     event.trigger_id
                 );
+                Ok(ExecOutcome::skipped(format!("unknown action: {action}")))
             }
         }
-
-        Ok(())
     }
 
     /// 异步通知模板：给用户提醒（不唤醒 Agent），走 `send_to_user` → `message.created`。
@@ -178,7 +375,11 @@ impl CronTriggerConsumer {
     /// 硬当成 Agent 发送会造出 role 与 id 不一致的消息）。
     /// ctx 用 `new_system()` + `enrich_org_from_project_user` 补 root_user_id：
     /// 少了这一步 `MessagePo.root_user_id=""` → SSE 不推、Final 路由丢失。
-    async fn dispatch_async_notify(&self, event: &CronTriggerEvent, action: &str) -> Result<()> {
+    async fn dispatch_async_notify(
+        &self,
+        event: &CronTriggerEvent,
+        action: &str,
+    ) -> Result<ExecOutcome> {
         use crate::service::domain::message::SendToUserCommand;
         use crate::service::domain::message::domain as message_domain;
 
@@ -189,7 +390,7 @@ impl CronTriggerConsumer {
                 "schedule trigger {} (behavior=AsyncNotify) has no owner_user_id; skipping",
                 event.trigger_id
             );
-            return Ok(());
+            return Ok(ExecOutcome::skipped("missing owner_user_id"));
         }
 
         let ctx = RequestContext::new_system();
@@ -217,7 +418,7 @@ impl CronTriggerConsumer {
             event.trigger_id,
             sent.po.id
         );
-        Ok(())
+        Ok(ExecOutcome::success(1))
     }
 
     /// Agent 唤醒模板：定时日程到点唤醒目标 Agent 执行动作。
@@ -232,7 +433,7 @@ impl CronTriggerConsumer {
         &self,
         event: &CronTriggerEvent,
         action: &str,
-    ) -> Result<()> {
+    ) -> Result<ExecOutcome> {
         use crate::service::domain::message::SendToAgentCommand;
         use crate::service::domain::message::domain as message_domain;
         use common::enums::{MessageRole, MessageType};
@@ -243,7 +444,7 @@ impl CronTriggerConsumer {
                 "schedule trigger {} (behavior=AsyncAgentWakeup) has no agent_id; skipping",
                 event.trigger_id
             );
-            return Ok(());
+            return Ok(ExecOutcome::skipped("missing agent_id"));
         }
 
         let owner = event.owner_user_id.as_deref().unwrap_or_default();
@@ -275,7 +476,7 @@ impl CronTriggerConsumer {
             to_agent_id,
             sent.po.id
         );
-        Ok(())
+        Ok(ExecOutcome::success(1))
     }
 
     /// agent_rest 动作：**只派发沉淀请求**，不在此处执行沉淀
@@ -291,13 +492,28 @@ impl CronTriggerConsumer {
     /// - Agent 忙时同步路径只能「跳过」，而触发器随后就会把 `next_run_at` 推到下一个
     ///   cron 点（日触发 = 次日）→ 一次跳过丢一天。走队列则 `order_key = agent_id`
     ///   使沉淀与发给同一 Agent 的消息落在同一条队列上串行，忙时不丢、也不刷重试日志
-    async fn handle_agent_rest(&self, event: &CronTriggerEvent, extra: &Value) -> Result<()> {
-        let payload: AgentRestPayload = serde_json::from_value(extra.clone()).map_err(|e| {
-            Error::bad_request(format!(
-                "invalid agent_rest payload for trigger {}: {}",
-                event.trigger_id, e
-            ))
-        })?;
+    async fn handle_agent_rest(
+        &self,
+        event: &CronTriggerEvent,
+        extra: &Value,
+    ) -> Result<ExecOutcome> {
+        // payload 非法属于**持久性配置错误**：重试不会自愈，按「主动跳过」处理
+        // （只告警、不重捞）。上抛会因 `decide_retry=Retry` 变成每 60s 无限重试，
+        // 且 `next_run_at` 永不推进（原实现的「失败只告警」就是为规避这个重试风暴）。
+        let payload: AgentRestPayload = match serde_json::from_value(extra.clone()) {
+            Ok(payload) => payload,
+            Err(e) => {
+                sys_error!(
+                    "invalid agent_rest payload for trigger {} (id: {}): {}",
+                    event.trigger_name,
+                    event.trigger_id,
+                    e
+                );
+                return Ok(ExecOutcome::skipped(format!(
+                    "invalid agent_rest payload: {e}"
+                )));
+            }
+        };
 
         let ctx = RequestContext::new_system();
         // 不传 settle_limit 时用自适应上限：实际批量由上下文预算决定，
@@ -309,36 +525,7 @@ impl CronTriggerConsumer {
         // 解析本次要沉淀的 Agent 集合：指定 agent_id → 单个；缺省 → 全部有待沉淀记忆的 Agent
         let agent_ids: Vec<String> = match &payload.agent_id {
             Some(id) => vec![id.clone()],
-            None => {
-                use crate::service::dao::memory::{MemoryQuery, MemorySortOrder};
-                use common::enums::{MemoryStatus, MemoryType};
-
-                // 索引表规模有限（只含摘要），取全量 Active 短期记忆后去重即可。
-                // 上限是防御值：正常远达不到；触达时下次周期会继续处理剩余部分。
-                let pending = runtime_domain()
-                    .memory()
-                    .query(
-                        ctx.clone(),
-                        MemoryQuery {
-                            status: Some(MemoryStatus::Active),
-                            memory_type: Some(MemoryType::ShortTerm),
-                            limit: Some(1000),
-                            order: MemorySortOrder::OldestFirst,
-                            ..Default::default()
-                        },
-                    )
-                    .await?;
-                let mut ids: Vec<String> = pending
-                    .iter()
-                    .filter_map(|m| {
-                        crate::handlers::hr::agent::settle_memory::short_term_of(m)
-                            .map(|i| i.agent_id.clone())
-                    })
-                    .collect();
-                ids.sort();
-                ids.dedup();
-                ids
-            }
+            None => self.runtime.pending_settle_agents(ctx.clone()).await?,
         };
 
         sys_info!(
@@ -365,7 +552,7 @@ impl CronTriggerConsumer {
             event.trigger_id
         );
 
-        Ok(())
+        Ok(ExecOutcome::success(agent_ids.len() as u64))
     }
 
     /// project_followup 动作：对停滞且无人正在处理的项目发送跟进通知
@@ -385,7 +572,7 @@ impl CronTriggerConsumer {
     /// `task_event_consumer.rs` 文件头「为什么不再用『谁在忙』来决定是否通知」）。
     /// 投递后若接收方确实占线，消息留在 `Pending` 由
     /// [`Self::handle_pending_notification_redelivery`] 定时重投。
-    async fn handle_project_followup(&self, _extra: &Value) -> Result<()> {
+    async fn handle_project_followup(&self, _extra: &Value) -> Result<ExecOutcome> {
         use crate::service::dao::message::MessageQuery;
         use crate::service::domain::message::SendToAgentCommand;
         use crate::service::domain::message::builder::build_project_finalize_content;
@@ -438,6 +625,8 @@ impl CronTriggerConsumer {
         };
 
         let now = utils::current_timestamp_ms();
+        let mut sent = 0u64;
+        let mut issues: Vec<String> = Vec::new();
 
         for project in projects {
             let owner_agent_id = match &project.po.owner_agent_id {
@@ -536,6 +725,7 @@ impl CronTriggerConsumer {
                 .await
             {
                 Ok(_) => {
+                    sent += 1;
                     // 发送成功后记账，供下一轮节流判据使用（失败不记，下个 tick 会重试）
                     if let Err(e) = project_domain()
                         .project_manage()
@@ -547,15 +737,21 @@ impl CronTriggerConsumer {
                             project.po.id,
                             e
                         );
+                        issues.push(format!("followup accounting failed: {}", project.po.id));
                     }
                 }
                 Err(e) => {
                     sys_warn!("发送项目跟进消息失败: agent={}, err={}", owner_agent_id, e);
+                    issues.push(format!("followup send failed: {}", owner_agent_id));
                 }
             }
         }
 
-        Ok(())
+        if issues.is_empty() {
+            Ok(ExecOutcome::success(sent))
+        } else {
+            Ok(ExecOutcome::success_with_note(sent, issues.join("; ")))
+        }
     }
 
     /// pending_notification_redelivery 动作：重投「滞留 Pending」的跟进类通知
@@ -599,7 +795,7 @@ impl CronTriggerConsumer {
     ///
     /// 重投复用 `MessageDal::republish_created`（与首次投递共用事件构造点），
     /// 消费侧还有 `status == Processed` 幂等守卫兜底，故即便队列判重漏掉也安全。
-    async fn handle_pending_notification_redelivery(&self) -> Result<()> {
+    async fn handle_pending_notification_redelivery(&self) -> Result<ExecOutcome> {
         use crate::service::domain::message::domain as message_domain;
 
         /// 滞留阈值：留足一次完整 LLM 会话的余量（巡检类会话实测可能十几分钟）
@@ -613,7 +809,7 @@ impl CronTriggerConsumer {
             .await?;
 
         if stale.is_empty() {
-            return Ok(());
+            return Ok(ExecOutcome::success(0));
         }
 
         let mut already_queued = 0usize;
@@ -623,12 +819,13 @@ impl CronTriggerConsumer {
 
         for message in &stale {
             let agent_id = &message.po.to_id;
-            if runtime_domain().is_agent_unavailable(agent_id) {
+            if self.runtime.is_agent_unavailable(agent_id) {
                 busy_skipped += 1;
                 continue;
             }
 
-            match crate::service::dal::message::dal()
+            match self
+                .notifier
                 .republish_created(ctx.clone(), &message.po.id)
                 .await
             {
@@ -670,19 +867,26 @@ impl CronTriggerConsumer {
             busy_skipped,
             failed
         );
-        Ok(())
+        if failed == 0 {
+            Ok(ExecOutcome::success(redelivered as u64))
+        } else {
+            Ok(ExecOutcome::success_with_note(
+                redelivered as u64,
+                format!("{failed} redeliveries failed"),
+            ))
+        }
     }
 
     /// tool_log_cleanup 动作：清理超期工具运行日志（① 运行时输出 TTL）
     ///
     /// 保留天数读 `[tool_log].retention_days` 配置（0 = 不清理）；
     /// Running 进程日志所在日期目录受保护跳过（见 tool_log_retention 模块）。
-    async fn handle_tool_log_cleanup(&self) -> Result<()> {
+    async fn handle_tool_log_cleanup(&self) -> Result<ExecOutcome> {
         let config = crate::config::get();
         let retention_days = config.tool_log.retention_days;
         if retention_days == 0 {
             sys_info!("tool_log_cleanup: retention_days = 0，跳过清理");
-            return Ok(());
+            return Ok(ExecOutcome::skipped("retention_days = 0"));
         }
 
         let base_path = config.base_data_path();
@@ -700,7 +904,9 @@ impl CronTriggerConsumer {
             report.freed_bytes,
             report.skipped_dirs
         );
-        Ok(())
+        Ok(ExecOutcome::success(
+            (report.removed_dirs + report.removed_files) as u64,
+        ))
     }
 
     /// vector_maintenance 动作：合并向量表碎片并回收超过保留窗口的旧版本
@@ -708,7 +914,7 @@ impl CronTriggerConsumer {
     /// LanceDB 每次写入都会产生新版本（manifest 只追加不回收），长期运行后
     /// `_versions/` 会远大于真实数据；碎片不合并还会让查询退化为全量扫描。
     /// 保留窗口由 [`crate::pkg::storage::VectorMaintenanceOptions::default`] 决定。
-    async fn handle_vector_maintenance(&self) -> Result<()> {
+    async fn handle_vector_maintenance(&self) -> Result<ExecOutcome> {
         let report = match crate::pkg::storage::get()
             .vector()
             .maintain(crate::pkg::storage::VectorMaintenanceOptions::default())
@@ -729,19 +935,23 @@ impl CronTriggerConsumer {
             report.bytes_removed,
             report.old_versions_removed
         );
-        Ok(())
+        let dispatched = report.fragments_removed as u64 + report.old_versions_removed;
+        if report.failed == 0 {
+            Ok(ExecOutcome::success(dispatched))
+        } else {
+            Ok(ExecOutcome::success_with_note(
+                dispatched,
+                format!("{} collections failed", report.failed),
+            ))
+        }
     }
 
     /// directory_reconcile 动作：逐 Active 对端双向目录同步（推本地 + 拉对端）
     ///
     /// 兑底推送丢失/失败的场景，保证目录最终一致（变更推送由
     /// FederationDirectoryConsumer 消费 organization.changed 事件承担时效性）。
-    async fn handle_directory_reconcile(&self) -> Result<()> {
-        let ctx = RequestContext::new_system();
-        let report = crate::service::domain::organization::domain()
-            .organization_manage()
-            .reconcile_directories(ctx)
-            .await?;
+    async fn handle_directory_reconcile(&self) -> Result<ExecOutcome> {
+        let report = self.reconciler.reconcile_directories().await?;
 
         sys_info!(
             "directory_reconcile 完成: peers={} pushed={} pulled_written={}",
@@ -749,7 +959,9 @@ impl CronTriggerConsumer {
             report.pushed,
             report.pulled_written
         );
-        Ok(())
+        Ok(ExecOutcome::success(
+            (report.pushed + report.pulled_written) as u64,
+        ))
     }
 }
 

@@ -5,9 +5,12 @@
 use crate::models::cron_trigger::CronTriggerPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::cron_trigger;
-use crate::service::dao::cron_trigger::{CronTriggerDao, CronTriggerQuery};
+use crate::service::dao::cron_trigger::{
+    CronTriggerDao, CronTriggerQuery, TriggerExecQuery, TriggerExecQueryResult,
+    TriggerExecStatsDao, TriggerExecStatsQuery, TriggerExecStatsResult,
+};
 use common::enums::TriggerType;
-use common::error::{Result, err};
+use common::error::{Error, Result, err};
 use common::schedule::effective_type;
 use std::sync::{Arc, OnceLock};
 
@@ -22,14 +25,23 @@ pub fn dal() -> Arc<dyn CronTriggerDal + Send + Sync> {
 
 /// 初始化 CronTrigger DAL
 pub fn init() {
-    let _ = CRON_TRIGGER_DAL.set(new(cron_trigger::dao()));
+    let _ = CRON_TRIGGER_DAL.set(new(
+        cron_trigger::dao(),
+        // 统计库与 SQLite 触发器库是两套存储，但都经构造注入进 DAL；
+        // 未注册（如测试组合根）时为 None，exec 查询返回明确错误而非 panic。
+        cron_trigger::stats::stats_dao(),
+    ));
 }
 
 /// 创建 CronTrigger DAL（返回 trait 对象）
 pub fn new(
     cron_trigger_dao: Arc<dyn CronTriggerDao + Send + Sync>,
+    exec_stats_dao: Option<Arc<dyn TriggerExecStatsDao>>,
 ) -> Arc<dyn CronTriggerDal + Send + Sync> {
-    Arc::new(CronTriggerDalImpl { cron_trigger_dao })
+    Arc::new(CronTriggerDalImpl {
+        cron_trigger_dao,
+        exec_stats_dao,
+    })
 }
 
 // ==================== DAL 接口 ====================
@@ -80,6 +92,23 @@ pub trait CronTriggerDal: Send + Sync {
 
     /// 记录执行错误（不清租约）
     async fn record_failure(&self, ctx: RequestContext, id: &str, error: &str) -> Result<()>;
+
+    /// 查询执行记录（DuckDB `trigger_exec_events`，只读）
+    ///
+    /// 统计 DAO 与 `CronTriggerDao` 一样由构造注入（组合根注入单例，测试可传 None），
+    /// 不在方法内直接取全局单例。
+    async fn query_exec(
+        &self,
+        ctx: RequestContext,
+        query: TriggerExecQuery,
+    ) -> Result<TriggerExecQueryResult>;
+
+    /// 查询执行统计概览与时序分布（DuckDB，只读）
+    async fn query_exec_stats(
+        &self,
+        ctx: RequestContext,
+        query: TriggerExecStatsQuery,
+    ) -> Result<TriggerExecStatsResult>;
 }
 
 // ==================== DAL 实现 ====================
@@ -87,6 +116,8 @@ pub trait CronTriggerDal: Send + Sync {
 /// CronTrigger DAL 实现
 struct CronTriggerDalImpl {
     cron_trigger_dao: Arc<dyn CronTriggerDao + Send + Sync>,
+    /// 执行统计 DAO（DuckDB）；测试组合根可为 None
+    exec_stats_dao: Option<Arc<dyn TriggerExecStatsDao>>,
 }
 
 #[async_trait::async_trait]
@@ -234,6 +265,28 @@ impl CronTriggerDal for CronTriggerDalImpl {
 
     async fn record_failure(&self, ctx: RequestContext, id: &str, error: &str) -> Result<()> {
         self.cron_trigger_dao.record_failure(ctx, id, error).await
+    }
+
+    async fn query_exec(
+        &self,
+        ctx: RequestContext,
+        query: TriggerExecQuery,
+    ) -> Result<TriggerExecQueryResult> {
+        let dao = self.exec_stats_dao.as_ref().ok_or_else(|| {
+            Error::internal("trigger exec stats DAO not initialized for CronTrigger DAL")
+        })?;
+        dao.query(ctx, query).await
+    }
+
+    async fn query_exec_stats(
+        &self,
+        ctx: RequestContext,
+        query: TriggerExecStatsQuery,
+    ) -> Result<TriggerExecStatsResult> {
+        let dao = self.exec_stats_dao.as_ref().ok_or_else(|| {
+            Error::internal("trigger exec stats DAO not initialized for CronTrigger DAL")
+        })?;
+        dao.query_stats(ctx, query).await
     }
 }
 

@@ -6,7 +6,7 @@
 use crate::models::events::ToolExecEvent;
 use crate::pkg::RequestContext;
 use crate::pkg::aop::{ConsumeMode, Consumer, Subscription};
-use crate::pkg::stats::{ToolCallEvent, global_stats};
+use crate::pkg::stats::ToolCallEvent;
 use crate::pkg::tool_tracing::entry::ToolCallStatus;
 use async_trait::async_trait;
 use common::enums::EventTopic;
@@ -64,9 +64,8 @@ impl Consumer for ToolExecStatsConsumer {
             .with_duration_ms(event.entry.duration_ms)
             .with_status(status);
 
-        if let Some(stats) = global_stats() {
-            // ctx 已由框架从事件 carrier 还原（携带 log_id 等链路标识）
-            let _ = stats.record(ctx, stats_event).await;
+        if let Some(stats) = ctx.stats_opt() {
+            let _ = stats.record(ctx.clone(), stats_event).await;
         }
 
         Ok(())

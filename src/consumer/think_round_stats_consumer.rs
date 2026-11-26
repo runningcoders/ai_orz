@@ -3,14 +3,14 @@
 //! 订阅 `agent.think.round` 事件，将每轮 think 的 token 用量
 //! 记录到 `model_call_events` 表（ModelCallEvent）。
 //!
-//! 与 ToolExecStatsConsumer 类似，通过 global_stats() 访问 Stats 单例。
+//! 与 ToolExecStatsConsumer 类似：Stats 从请求级 `ctx.stats_opt()` 取，未启用时 no-op。
 
 use async_trait::async_trait;
 
 use crate::models::events::ThinkRoundEvent;
 use crate::pkg::RequestContext;
 use crate::pkg::aop::{ConsumeMode, Consumer, Subscription};
-use crate::pkg::stats::{ModelCallEvent, global_stats};
+use crate::pkg::stats::ModelCallEvent;
 use common::enums::EventTopic;
 use common::error::Result;
 
@@ -70,9 +70,8 @@ impl Consumer for ThinkRoundStatsConsumer {
             // 不含工具执行）。重试时它是累计值，语义仍是「这一轮花了多久」。
             .with_duration_ms(Some(event.duration_ms));
 
-        if let Some(stats) = global_stats() {
-            // ctx 已由框架从事件 carrier 还原（携带 log_id 等链路标识）
-            let _ = stats.record(ctx, stats_event).await;
+        if let Some(stats) = ctx.stats_opt() {
+            let _ = stats.record(ctx.clone(), stats_event).await;
         }
 
         Ok(())

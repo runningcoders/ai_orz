@@ -67,7 +67,7 @@ pub fn new(
 #[cfg(test)]
 pub(crate) fn new_for_test() -> Arc<dyn SystemDomain> {
     new(
-        cron_trigger_dal::new(crate::service::dao::cron_trigger::new()),
+        cron_trigger_dal::new(crate::service::dao::cron_trigger::new(), None),
         backup_dal::new(),
         log_query_dal::new(),
     )
@@ -141,6 +141,20 @@ pub trait CronManager: Send + Sync {
     ) -> Result<Vec<CronTriggerPo>>;
     /// 按同一条件统计触发器总数（不含分页）
     async fn count_triggers(&self, ctx: RequestContext, query: CronTriggerQuery) -> Result<usize>;
+
+    /// 查询某触发器（日程维度）的执行明细分页
+    async fn query_trigger_exec(
+        &self,
+        ctx: RequestContext,
+        query: crate::service::dao::cron_trigger::TriggerExecQuery,
+    ) -> Result<crate::service::dao::cron_trigger::TriggerExecQueryResult>;
+
+    /// 查询执行概览与时序分布（独立于明细分页）
+    async fn query_trigger_exec_stats(
+        &self,
+        ctx: RequestContext,
+        query: crate::service::dao::cron_trigger::TriggerExecStatsQuery,
+    ) -> Result<crate::service::dao::cron_trigger::TriggerExecStatsResult>;
 
     /// 查询某用户在指定时间范围的日程实例。
     ///
@@ -284,6 +298,22 @@ impl CronManager for SystemDomainImpl {
 
     async fn count_triggers(&self, ctx: RequestContext, query: CronTriggerQuery) -> Result<usize> {
         self.cron_trigger_dal.count(ctx, query).await
+    }
+
+    async fn query_trigger_exec(
+        &self,
+        ctx: RequestContext,
+        query: crate::service::dao::cron_trigger::TriggerExecQuery,
+    ) -> Result<crate::service::dao::cron_trigger::TriggerExecQueryResult> {
+        self.cron_trigger_dal.query_exec(ctx, query).await
+    }
+
+    async fn query_trigger_exec_stats(
+        &self,
+        ctx: RequestContext,
+        query: crate::service::dao::cron_trigger::TriggerExecStatsQuery,
+    ) -> Result<crate::service::dao::cron_trigger::TriggerExecStatsResult> {
+        self.cron_trigger_dal.query_exec_stats(ctx, query).await
     }
 
     async fn query_schedules(

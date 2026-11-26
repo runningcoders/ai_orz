@@ -116,6 +116,44 @@ pub async fn resume_cron_trigger(id: &str) -> Result<(), ApiError> {
     .await
 }
 
+/// 查询某触发器执行概览与时序分布（与明细分页独立拉取）
+pub async fn query_trigger_exec_stats(
+    trigger_id: &str,
+    start_at: Option<i64>,
+    end_at: Option<i64>,
+    bucket_minutes: Option<i64>,
+) -> Result<common::api::QueryTriggerExecStatsResponse, ApiError> {
+    let qs = build_query_string(&[
+        ("start_at", start_at.map(|v| v.to_string())),
+        ("end_at", end_at.map(|v| v.to_string())),
+        ("bucket_minutes", bucket_minutes.map(|v| v.to_string())),
+    ]);
+    api_get(&format!(
+        "/api/v1/system/cron-triggers/{trigger_id}/exec-stats{qs}"
+    ))
+    .await
+}
+
+/// 查询某触发器（日程维度）的执行明细（分页）
+pub async fn query_trigger_exec(
+    trigger_id: &str,
+    start_at: Option<i64>,
+    end_at: Option<i64>,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) -> Result<common::api::QueryTriggerExecResponse, ApiError> {
+    let qs = build_query_string(&[
+        ("start_at", start_at.map(|v| v.to_string())),
+        ("end_at", end_at.map(|v| v.to_string())),
+        ("offset", offset.map(|v| v.to_string())),
+        ("limit", limit.map(|v| v.to_string())),
+    ]);
+    api_get(&format!(
+        "/api/v1/system/cron-triggers/{trigger_id}/exec-records{qs}"
+    ))
+    .await
+}
+
 // ===== 备份管理 =====
 
 /// 列出所有备份（按 version 降序）

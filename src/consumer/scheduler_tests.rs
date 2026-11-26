@@ -220,3 +220,89 @@ fn test_wakeup_content_skips_empty_payload() {
         );
     }
 }
+
+// ==================== 注入式单测：不依赖全局 domain/dal/stats ====================
+
+struct NoopRuntime;
+
+#[async_trait]
+impl CronRuntime for NoopRuntime {
+    async fn pending_settle_agents(&self, _ctx: RequestContext) -> Result<Vec<String>> {
+        Ok(vec![])
+    }
+
+    fn is_agent_unavailable(&self, _agent_id: &str) -> bool {
+        false
+    }
+}
+
+struct NoopNotifier;
+
+#[async_trait]
+impl CronNotifier for NoopNotifier {
+    async fn republish_created(
+        &self,
+        _ctx: RequestContext,
+        _message_id: &str,
+    ) -> Result<RepublishOutcome> {
+        Ok(RepublishOutcome::AlreadyQueued)
+    }
+}
+
+struct NoopReconciler;
+
+#[async_trait]
+impl CronReconciler for NoopReconciler {
+    async fn reconcile_directories(&self) -> Result<DirectoryReconcileReport> {
+        Ok(DirectoryReconcileReport {
+            peers: 0,
+            pushed: 0,
+            pulled_written: 0,
+        })
+    }
+}
+
+fn consumer_with_noop_deps() -> CronTriggerConsumer {
+    CronTriggerConsumer::with_deps(
+        Arc::new(NoopRuntime),
+        Arc::new(NoopNotifier),
+        Arc::new(NoopReconciler),
+    )
+}
+
+fn system_event(payload: &str) -> CronTriggerEvent {
+    CronTriggerEvent {
+        event_id: "e-1".into(),
+        trigger_id: "t-1".into(),
+        trigger_name: "系统维护".into(),
+        payload: payload.into(),
+        created_at: 0,
+        trigger_type: 0,
+        behavior: 0, // SyncMaintenance
+        action: Some("agent_rest".into()),
+        description: String::new(),
+        org_id: None,
+        owner_user_id: None,
+        creator_type: None,
+        creator_id: None,
+        agent_id: None,
+        lease_owner: None,
+    }
+}
+
+/// `agent_rest` 参数格式错误 ⇒ skipped（只告警不重捞），且不需要真实 runtime。
+#[tokio::test]
+async fn invalid_agent_rest_payload_is_skipped() {
+    let consumer = consumer_with_noop_deps();
+    let outcome = consumer
+        .execute_attempt(&system_event(
+            r#"{"action":"agent_rest","extra":{"agent_id":123}}"#,
+        ))
+        .await
+        .expect("配置错误不应上抛（上抛会每 60s 重试）");
+
+    assert_eq!(outcome.status, "skipped");
+    assert_eq!(outcome.dispatched_count, 0);
+    let reason = outcome.skip_reason.expect("skipped 必须带原因");
+    assert!(reason.contains("invalid agent_rest payload"), "{reason}");
+}

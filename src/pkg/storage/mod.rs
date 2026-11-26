@@ -102,9 +102,6 @@ impl Storage {
         let stats_arc =
             Stats::open_and_init(stats_db_path.to_str().unwrap_or_default(), stats_config).await?;
 
-        // 初始化全局单例（AOP 消费者等无 ctx 场景使用）
-        crate::pkg::stats::init_global_stats(stats_arc.clone());
-
         let inner = StorageInner {
             sqlite,
             vector,
@@ -170,7 +167,6 @@ impl Storage {
     /// 生产代码由 `Storage::new()` 内部调用，测试代码可通过此方法注入
     pub fn init_stats(&self, stats: Stats) -> common::error::Result<()> {
         let stats_arc = Arc::new(stats);
-        crate::pkg::stats::init_global_stats(stats_arc.clone());
         self.inner
             .stats
             .set(stats_arc)

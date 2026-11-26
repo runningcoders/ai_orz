@@ -478,6 +478,115 @@ pub struct ResumeCronTriggerResponse {
     pub success: bool,
 }
 
+// ==================== 触发器执行记录（详情页用）====================
+
+/// 查询某触发器（日程维度）的执行记录
+///
+/// 时间范围缺省为最近 7 天；分页上限 200。数据来自 DuckDB `trigger_exec_events`，
+/// 按「一次 attempt」落一条（成功/跳过/失败都记），与 `total_runs` 的配额语义不同。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct QueryTriggerExecRequest {
+    /// 触发器 ID
+    #[param(source = "path")]
+    pub trigger_id: String,
+    /// 起始时间（毫秒）；缺省 = 最近 7 天
+    #[param(source = "query")]
+    pub start_at: Option<i64>,
+    /// 结束时间（毫秒）；缺省 = 现在
+    #[param(source = "query")]
+    pub end_at: Option<i64>,
+    /// 分页偏移，默认 0
+    #[param(source = "query")]
+    pub offset: Option<usize>,
+    /// 每页条数，默认 50、硬上限 200
+    #[param(source = "query")]
+    pub limit: Option<usize>,
+}
+
+/// 单条执行记录（对应 trigger_exec_events 一行）
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TriggerExecRecord {
+    /// 执行时间（毫秒）
+    pub timestamp: i64,
+    /// 业务动作
+    pub action: Option<String>,
+    /// 行为模板名
+    pub behavior: String,
+    /// 结果状态：success / skipped / failed
+    pub status: String,
+    /// 跳过/失败原因
+    pub skip_reason: Option<String>,
+    /// 耗时（毫秒）
+    pub duration_ms: Option<u64>,
+    /// 派发的下游动作数
+    pub dispatched_count: u64,
+}
+
+/// 执行概览（按 status 聚合 + 耗时均值）
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TriggerExecSummary {
+    /// 区间内执行总次数
+    pub total: u64,
+    /// 成功次数
+    pub success: u64,
+    /// 主动跳过次数
+    pub skipped: u64,
+    /// 失败次数
+    pub failed: u64,
+    /// 平均耗时（毫秒，带耗时样本）；无样本为 None
+    pub avg_duration_ms: Option<f64>,
+}
+
+/// 执行记录查询响应（纯明细；统计分布走独立的 exec-stats 接口）
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct QueryTriggerExecResponse {
+    /// 当前页记录（按时间倒序）
+    pub records: Vec<TriggerExecRecord>,
+    /// 区间内符合条件的总数（用于分页）
+    pub total: usize,
+}
+
+/// 执行统计查询请求（与明细同触发 ID / 时间窗，独立拉取）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct QueryTriggerExecStatsRequest {
+    /// 触发器 ID
+    #[param(source = "path")]
+    pub trigger_id: String,
+    /// 起始时间（毫秒）；缺省 = 最近 7 天
+    #[param(source = "query")]
+    pub start_at: Option<i64>,
+    /// 结束时间（毫秒）；缺省 = 现在
+    #[param(source = "query")]
+    pub end_at: Option<i64>,
+    /// 时序桶宽度（分钟）；缺省 60 分钟
+    #[param(source = "query")]
+    pub bucket_minutes: Option<i64>,
+}
+
+/// 单个时间桶的执行分布
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TriggerExecBucket {
+    /// 桶起始时间（毫秒）
+    pub interval_start: i64,
+    /// 桶内 attempt 总数
+    pub total: u64,
+    /// 成功数
+    pub success: u64,
+    /// 跳过数
+    pub skipped: u64,
+    /// 失败数
+    pub failed: u64,
+}
+
+/// 执行统计响应（概览 + 时序分布，与明细分页解耦）
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct QueryTriggerExecStatsResponse {
+    /// 区间概览（总数 / 三态分布 / 平均耗时）
+    pub summary: TriggerExecSummary,
+    /// 按时间桶升序排列的分布点
+    pub buckets: Vec<TriggerExecBucket>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

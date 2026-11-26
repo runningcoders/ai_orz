@@ -89,7 +89,12 @@ pub trait CronTriggerDao: Send + Sync + std::fmt::Debug {
 }
 
 pub mod sqlite;
+pub mod stats;
 pub use self::sqlite::{dao, init, new};
+pub use self::stats::{
+    TriggerExecQuery, TriggerExecQueryResult, TriggerExecStatsDao, TriggerExecStatsQuery,
+    TriggerExecStatsResult,
+};
 
 #[cfg(test)]
 pub(crate) mod sqlite_test;
