@@ -58,8 +58,8 @@ setup_path() {
 #
 # 为什么要清：Cargo 不回收 target/ 里的旧指纹产物（官方 build artifacts GC 尚未实现，
 # cargo#13136），源码 / RUSTFLAGS / feature 每次变化都留下一整套新 hash 副本，
-# target 实测涨到 346G。现在是精准 GC：按 .fingerprint/*/invoked.timestamp 判定活缓存，
-# 保留 rlib/rmeta/build out 等真正能加速编译的产物，删除 *.rcgu.o、历史副本、
+# target 实测涨到 346G。现在是精准 GC：以 cargo 的 fresh 标记（.fingerprint 下的非空
+# 输出文件）为第一判据，cargo 下次会命中的缓存一律不删；只清历史副本、*.rcgu.o、
 # 旧 incremental session 与闲置工具 target（详见 clean_target.py 头注）。
 # --auto 表示「编译钩子自动调用」：短时间内重复编译跳过重扫（AI_ORZ_GC_MIN_INTERVAL
 # 可调）；手动 make clean-stale 不带此标记，永远立即执行。

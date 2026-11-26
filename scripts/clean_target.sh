@@ -14,10 +14,14 @@
 #   不认 {16} 量词 → 一个副本都没匹配上（该 bug 已修，实现改为 Python 精确匹配）。
 #
 # 【现在怎么做】精准 GC，算法实现在 scripts/clean_target.py：
-#   以 .fingerprint/<crate>-<hash>/invoked.timestamp 的 mtime 为「最近被使用」判据，
-#   按 crate 保留最近 N 份 + 时间窗口内全部，其余视为死副本。
-#   保留：rlib / rmeta / .d / 最新 build out / fingerprint 目录（真正能加快编译的缓存）
-#   删除：全部 *.rcgu.o、历史指纹副本、旧 incremental session、闲置工具 target
+#   第一判据是 cargo 自己的 fresh 标记：.fingerprint/<crate>-<hash>/ 下存在非空输出
+#   标记文件（lib-foo / bin-foo / build-script-build-*）⇒ cargo 下次会命中，绝不许删。
+#   ⚠️ invoked.timestamp 的 mtime 不能单独当判据：cargo 只在真正重编时才更新它，
+#      长期命中的 crate 时间戳会停在几个月前，旧规则会把有效缓存误判为死副本。
+#   兜底判据：时间窗口（默认 7 天）内被使用过的 hash 全留 + 每 crate 再保最近 N 份。
+#   保留：rlib / rmeta / .d / build out / fingerprint 目录（真正能加快编译的缓存）
+#   删除：全部 *.rcgu.o（删了不影响 fresh 判定，已实测）、历史指纹副本、旧
+#   incremental session、闲置工具 target。
 #   （*.rcgu.o 另有「编译后即时清理」：各脚本 EXIT trap 调 common.sh::
 #    clean_generated_rcgu，命令一返回就删；本 GC 只作兜底）
 #   可执行产物（集成测试二进制）不是缓存：只留 2 小时内链接出的、每个 target 最新 1 份，
@@ -27,7 +31,9 @@
 #
 # 【子命令】
 #   stale [天数]   常规 GC（默认保留 7 天窗口 / 每 crate 2 份）—— 所有编译入口经
-#                  common.sh::clean_stale_artifacts 在编译前自动调用
+#                  common.sh::clean_stale_artifacts 在编译前自动调用，且自动带 --safe
+#                  （只清 *.rcgu.o / 旧测试二进制 / incremental / 闲置 target，不碰
+#                  deps 产物与 build 目录，保证一定命中缓存）
 #   slim           激进 GC（1 天 / 每 crate 1 份 / 强制删闲置工具 target / 清空 incremental）
 #   dry-run        只报告不删除（等价 AI_ORZ_GC_DRY_RUN=1 stale）
 #   all            cargo clean 全量重置（下次为完整冷构建，慎用）
@@ -101,6 +107,9 @@ run_gc() {
 
     local args=(--keep-days "$days" --keep-per-crate "$per")
     [ "$force" = "1" ] && args+=(--force-oneoff)
+    # 编译前钩子（stale --auto）走安全模式：绝不删 deps 产物 / build 目录，
+    # 否则 cargo 会重编该 crate 并连锁重编全部下游（缓存永远命中不了）。
+    [ "$allow_throttle" = "1" ] && args+=(--safe)
     [ "$DRY_RUN" = "1" ] && args+=(--dry-run)
 
     rm -f "$MANIFEST"
