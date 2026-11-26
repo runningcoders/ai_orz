@@ -41,7 +41,7 @@ graph TB
 subgraph "采集与消费"
 A["AOP Producer<br/>记录 TaskEvent"]
 B["DuckDB 持久化<br/>task_events 表"]
-C["TaskEventConsumer<br/>处理 task.status_changed"]
+C["TaskEventConsumer<br/>处理 task.status.changed"]
 end
 subgraph "数据访问层"
 D["TaskStatsDao 接口"]
@@ -89,7 +89,7 @@ C --> F
 ## 架构总览
 任务统计遵循“采集→持久化→查询→展示”的链路：
 - 采集：通过 Stats 子系统记录 TaskEvent，写入 DuckDB 的 task_events 表。
-- 消费：TaskEventConsumer 监听 task.status_changed，仅在 Completed 时触发后续流程。
+- 消费：TaskEventConsumer 监听 task.status.changed，仅在 Completed 时触发后续流程。
 - 查询：DAL/DAO 层基于 StatFilter 与 StatAggregation 构建查询，返回聚合结果或统计摘要。
 - 展示：上层 Handler/Domain 将统计数据提供给前端或监控系统。
 
@@ -103,7 +103,7 @@ participant Domain as "Domain/Handler"
 App->>Stats : 记录 TaskEvent(创建/开始/完成/失败)
 Stats->>DB : INSERT 任务事件
 Note over Stats,DB : 异步持久化，不阻塞主流程
-DB-->>Consumer : 事件流(task.status_changed)
+DB-->>Consumer : 事件流(task.status.changed)
 Consumer->>Domain : 仅 Completed 时触发通知/补偿
 Domain-->>App : 统计查询(get_stats/query_task_calls)
 Domain->>Stats : 构造 StatFilter/Aggregation
@@ -199,7 +199,7 @@ ReturnStats --> End
 - [src/service/dao/task/stats_duckdb.rs:24-67](src/service/dao/task/stats_duckdb.rs#L24-L67)
 
 ### 任务完成事件消费（TaskEventConsumer）
-- 订阅事件：task.status_changed。
+- 订阅事件：task.status.changed。
 - 处理策略：仅当 new_status 为 Completed 且存在 project_id 时继续处理。
 - 去重机制：检查是否存在 Pending 的 TaskDispatchNotification，避免重复通知。
 - 通知内容：构建意图指令消息，填充 project_id 与 task_id 上下文，发送给 Owner Agent。
@@ -210,7 +210,7 @@ participant DB as "DuckDB"
 participant Consumer as "TaskEventConsumer"
 participant Project as "Project Domain"
 participant Message as "Message Domain"
-DB-->>Consumer : task.status_changed(new_status=Completed, project_id, task_id)
+DB-->>Consumer : task.status.changed(new_status=Completed, project_id, task_id)
 Consumer->>Consumer : 校验 new_status 与 project_id
 Consumer->>Project : 查询项目以获取 owner_agent_id
 Project-->>Consumer : 返回项目信息

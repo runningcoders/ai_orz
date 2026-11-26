@@ -703,6 +703,11 @@
 .markdown-compact li {
   margin: 0.15em 0;
 }
+/* 话题链：Markdown 字号对齐原话题卡片的 11px，避免大字号撑破紧凑列表 */
+.thread-md .markdown-body {
+  font-size: 0.6875rem;
+  line-height: 1.55;
+}
 
 /* ========== 聊天气泡：宽度自适应 + 轻量配色 ========== */
 
@@ -715,13 +720,31 @@
      - 同文本 + group 包裹：243.1px / 2 行（270.1 × 90%，被砍）
      - 「在吗」+ group 包裹：57.4px / 2 行（63.8 × 90%，俩字硬换行）
    现在：百分比约束上移到 `.chat` 的直接子元素（相对 grid 列宽，参照正确，窄屏也留边），
-   气泡本身只用固定上限 28rem（= Tailwind `max-w-md`，与附件消息卡片宽度一致）。 */
+   消息体最多占列宽的 82% —— 左侧发送者头像 + 右侧对侧头像各占一块，
+   留 18% 的呼吸位；短消息仍由 fit-content 贴身，内容多长就撑多长。
+   气泡本身只给一个足够宽的固定上限（52rem ≈ 832px）：常见列宽下 82% 先触发，
+   超宽屏再用它兜住可读性，避免单行过长。 */
 .chat > *:not(.chat-image) {
-  max-width: 90%;
+  max-width: min(82%, 52rem);
+  /* min-width:0 —— .chat 是 grid，item 默认 min-width:auto 会被长内容
+     （代码块 / 长单词 / 大表格）反向撑宽，导致上面 82% 相对「已被撑宽的
+     列」计算，形成循环放大。无头实测：720px 列 + 长文本，缺此规则时
+     group 撑到 682px（应 590px）、气泡撑到 832px；加上后收敛到 590px。 */
+  min-width: 0;
 }
 .chat .chat-bubble {
   width: fit-content;
-  max-width: 28rem;
+  max-width: 100%;
+}
+/* 宽度约束与消息类型无关：主分支气泡包在 .group 里，工具卡 / 任务卡 /
+   附件 / 兜底分支的气泡直挂 .chat。上面的通用规则（相对 .chat 列宽）管住
+   group 包裹层与直挂气泡；但 `.chat .chat-bubble`（0,2,0）定义更晚会覆盖
+   它，故直挂气泡用同等特异性再钉一次 min(82%, 52rem)。包裹气泡的父 group
+   已被限到 min(82%,52rem)，气泡取 100% 即不越界。
+   无头实测窄屏 720 / 中屏 1000 / 宽屏 1600 下，两种结构的所有气泡宽度
+   全部 = min(82%, 52rem)，group 与气泡严格相等（引用块对齐不被破坏）。 */
+.chat > .chat-bubble:not(.chat-image) {
+  max-width: min(82%, 52rem);
 }
 /* 气泡内的 markdown 不应再继承全局 `max-w-none`（详情页/文档页需要铺满），
    而是填满气泡宽度，配合上面的 fit-content 正确换行。 */
@@ -751,16 +774,16 @@
 /* 1.2) 有引用时给整块一个最小宽度：太短的消息（如「在吗」）旁边的引用块会被压到
    2 字一行，比被撑宽还难读。最小宽度必须挂在**包裹层**（`.chat` 的 grid item），
    并让气泡铺满它。
-   ⚠️ 别把 min-width 挂在气泡上：气泡会越过包裹层的 `max-width: 90%` 溢出去，
+   ⚠️ 别把 min-width 挂在气泡上：气泡会越过包裹层的 `max-width: 82%` 溢出去，
    引用块（=100% 包裹层）就与气泡错位（无头实测 240px 列 MISMATCH）。
-   用 `min(14rem, 90%)` 而不是 `min(14rem, 100%)`：min-width 会压过 max-width，
-   取 100% 时窄屏会顶到列边、丢掉 `max-width: 90%` 留的右边距。
+   用 `min(14rem, 82%)` 而不是 `min(14rem, 100%)`：min-width 会压过 max-width，
+   取 100% 时窄屏会顶到列边、丢掉 `max-width: 82%` 留的呼吸位。
    无头实测（chromium + 真实产物）：
-     - 720px 列：短主体 224px / 长主体 448px（不受影响），wrap = 气泡 = 引用块
-     - 300px 列：223.2px（收敛到 90%），三者仍相等
-     - 240px 列：169.2px（= 90%，保住右边距），三者仍相等 */
+     - 720px 列：短主体 224px / 长主体按 82% 封顶，wrap = 气泡 = 引用块
+     - 300px 列：收敛到 82%，三者仍相等
+     - 240px 列：= 82%，保住右边距，三者仍相等 */
 .chat .chat-has-quote {
-  min-width: min(14rem, 90%);
+  min-width: min(14rem, 82%);
 }
 .chat .chat-has-quote .chat-bubble {
   width: 100%;
@@ -1980,6 +2003,23 @@
     background: color-mix(in oklab, var(--color-primary) 8%, transparent);
     box-shadow: inset 2px 0 0 0 var(--color-primary);
   }
+  /* 触发器列表列宽：固定布局 + 操作列定宽，保证「详情/暂停/删除」始终完整可见；
+     名称/Who 两列给百分比宽度并超出省略，其余列平分剩余自适应。 */
+  .hud-trigger-table { width: 100%; table-layout: fixed; }
+  .hud-trigger-table :where(th, td) { overflow: hidden; }
+  /* 形态/状态/时间/操作给定宽，名称与 Who 用 minmax 之外的剩余空间自适应缩放。 */
+  .hud-trigger-table :where(th, td):nth-child(2) { width: 92px; }
+  .hud-trigger-table :where(th, td):nth-child(3) { width: 132px; }
+  .hud-trigger-table :where(th, td):nth-child(5) { width: 88px; }
+  .hud-trigger-table :where(th, td):nth-child(6),
+  .hud-trigger-table :where(th, td):nth-child(7) { width: 158px; white-space: nowrap; }
+  .hud-trigger-table :where(th, td):nth-child(8) { width: 210px; }
+  .hud-trigger-name, .hud-trigger-who {
+    display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* 触发器操作列：长名称不得把三个按钮挤成竖排 */
+  .hud-trigger-actions { min-width: max-content; }
+  .hud-trigger-actions .btn { flex: 0 0 auto; white-space: nowrap; }
 
   /* 弹窗皮肤：覆盖 DaisyUI .modal 背景 + .modal-box（渐变发丝边 + 切角投影） */
   .hud-modal { background: color-mix(in oklab, var(--color-base-100) 32%, transparent); backdrop-filter: blur(4px); }
@@ -2318,3 +2358,197 @@
   .project-agent-item-tasks li {
     overflow-wrap: anywhere;
   }
+
+/* ============================================================
+ * Agent 实时事件中心（专注模式）
+ * - 入场：极短的位移 + 淡入，模拟「信号落到面板上」
+ * - 运行节点：呼吸式光环，不改变布局尺寸
+ * - 扫描线：仅顶部一条极淡的光带，提示链路仍在流动
+ * 全部尊重 prefers-reduced-motion。
+ * ============================================================ */
+@keyframes al-feed-in {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes al-node-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-primary) 45%, transparent); }
+  70% { box-shadow: 0 0 0 5px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+@keyframes al-live-breathe {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+@keyframes al-scan-sweep {
+  0% { transform: translateY(-120%); }
+  100% { transform: translateY(520%); }
+}
+
+.al-feed-item { animation: al-feed-in 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+/* 新事件从顶部展开：grid 行高 0fr → 1fr，旧事件被平滑下推一位 */
+@keyframes al-feed-expand {
+  from { grid-template-rows: 0fr; }
+  to   { grid-template-rows: 1fr; }
+}
+.al-feed-enter {
+  display: grid;
+  grid-template-rows: 0fr;
+  animation: al-feed-expand 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.al-feed-enter-inner {
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.al-node-running { animation: al-node-pulse 1.8s ease-out infinite; }
+.al-live-dot { animation: al-live-breathe 1.6s ease-in-out infinite; }
+.al-scan { animation: al-scan-sweep 3.6s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .al-feed-item,
+  .al-node-running,
+  .al-live-dot,
+  .al-scan {
+    animation: none !important;
+  }
+  .al-feed-enter {
+    animation: none !important;
+    grid-template-rows: 1fr !important;
+  }
+}
+
+/* 边激活：新跳转落图时，箭头做一次短促的能量脉冲 */
+@keyframes al-edge-flash {
+  0% { opacity: 0.15; filter: drop-shadow(0 0 0 transparent); }
+  35% { opacity: 1; filter: drop-shadow(0 0 4px color-mix(in oklab, var(--color-primary) 55%, transparent)); }
+  100% { opacity: 0.9; filter: drop-shadow(0 0 0 transparent); }
+}
+.al-edge-flash { animation: al-edge-flash 0.9s ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .al-edge-flash { animation: none !important; }
+}
+
+/* 长内容折叠：越往下越淡，配合底部「点击展开全文」 */
+.collapsible-fade {
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 58%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 58%, transparent 100%);
+}
+/* 展开态显式清掉遮罩：折叠组件的两个分支都使用非空 class，
+   避免空值未覆盖旧样式导致“已展开但仍被裁住”。 */
+.collapsible-expanded {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+/* ============================================================
+ * HUD 日期选择器（DateTimeInput）：挂在 .orz-popover 切角浮层内。
+ * 日历格沿用 HUD 玻璃语言：hover 微亮、今天发丝边、选中 primary 填充。
+ * 全部走 --color-* 语义变量，随 data-theme 自动换肤。
+ * ============================================================ */
+/* 左右排布：日历占满左列，时间滚轮固定宽靠右并加竖向发丝线分隔 */
+.hud-datepicker-calendar { flex: 1 1 auto; min-width: 0; }
+.hud-time-wheel {
+  flex: 0 0 auto;
+  width: 144px;
+  padding-left: 12px;
+  border-left: 1px solid color-mix(in oklab, var(--color-base-content) 10%, transparent);
+}
+.hud-datepicker-week,
+.hud-datepicker-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+.hud-datepicker-week span {
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: .08em;
+  color: color-mix(in oklab, var(--color-base-content) 45%, transparent);
+  padding-bottom: 4px;
+}
+.hud-datepicker-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-family: var(--font-family-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-base-content);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color .12s, border-color .12s, color .12s;
+}
+.hud-datepicker-cell:hover {
+  background: color-mix(in oklab, var(--color-base-content) 10%, transparent);
+}
+.hud-datepicker-cell.is-outside { opacity: .32; }
+.hud-datepicker-cell.is-today {
+  border-color: color-mix(in oklab, var(--color-primary) 55%, transparent);
+}
+.hud-datepicker-cell.is-selected,
+.hud-datepicker-cell.is-selected:hover {
+  background: color-mix(in oklab, var(--color-primary) 85%, transparent);
+  color: var(--color-primary-content);
+  border-color: color-mix(in oklab, var(--color-primary) 65%, transparent);
+}
+
+/* 时/分滚轮列：中间高亮为当前值，鼠标滚轮与上下相邻格均可调节 */
+.hud-wheel-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.hud-wheel-label {
+  font-size: 10px;
+  letter-spacing: .08em;
+  color: color-mix(in oklab, var(--color-base-content) 45%, transparent);
+}
+.hud-wheel-strip {
+  display: flex;
+  flex-direction: column;
+  width: 54px;
+  height: 130px;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklab, var(--color-base-content) 14%, transparent);
+  border-radius: 4px;
+  background: color-mix(in oklab, var(--color-base-200) 55%, transparent);
+  user-select: none;
+}
+.hud-wheel-item {
+  display: flex;
+  flex: 0 0 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: color-mix(in oklab, var(--color-base-content) 38%, transparent);
+  font-family: var(--font-family-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.hud-wheel-item:hover {
+  color: var(--color-base-content);
+  background: color-mix(in oklab, var(--color-base-content) 8%, transparent);
+}
+.hud-wheel-item.is-current,
+.hud-wheel-item.is-current:hover {
+  background: color-mix(in oklab, var(--color-primary) 85%, transparent);
+  color: var(--color-primary-content);
+}
+.hud-wheel-sep {
+  align-self: flex-end;
+  padding-bottom: 8px;
+  font-family: var(--font-family-mono);
+  font-size: 14px;
+  color: color-mix(in oklab, var(--color-base-content) 40%, transparent);
+}

@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use crate::models::events::MemoryTermsWrittenEvent;
 use crate::pkg::RequestContext;
 use crate::pkg::aop::{ConsumeMode, Consumer, Subscription};
-use crate::pkg::stats::{OntologyDriftEvent, global_stats};
+use crate::pkg::stats::OntologyDriftEvent;
 use common::enums::EventTopic;
 use common::error::Result;
 use common::ontology::ResolvedTerm;
@@ -79,7 +79,7 @@ impl Consumer for OntologyCertifyConsumer {
             .await?;
 
         // 漂移记账：Drift 分支才打点，只记原文（解析结论不入库）
-        if let Some(stats) = global_stats() {
+        if let Some(stats) = ctx.stats_opt() {
             for entry in &report.entries {
                 let ResolvedTerm::Drift { raw_term, .. } = &entry.verdict else {
                     continue;

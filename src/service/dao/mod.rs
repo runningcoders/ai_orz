@@ -42,6 +42,7 @@ pub fn init_all() {
     cortex::init();
     cortex::native::init();
     cron_trigger::init();
+    cron_trigger::stats::stats_init();
     federation_contract::init();
     message::init();
     message_channel::init();

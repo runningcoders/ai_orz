@@ -379,6 +379,7 @@ impl MessagePo {
             MessageType::Mixed => "混排消息",
             MessageType::TaskCompleted => "任务完成回执",
             MessageType::TaskPendingReview => "任务待验收知会",
+            MessageType::ScheduleTrigger => "日程触发通知",
         };
 
         let content_label = match self.message_type {

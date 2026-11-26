@@ -251,6 +251,33 @@ fn ontology_write_tools_are_not_neural() {
     }
 }
 
+/// 护栏：四个日程工具必须对所有 Agent 可达（neural）。
+///
+/// 它们原先只挂 `scheduling,autonomy`：这两个 tag 既不在 `BASE_AGENT_PACKS`，
+/// 也不在任何 Agent 的 `installed_tags` ⇒ 工具面里根本没有它们；而预置技能
+/// `TEMPLATE_SCHEDULE_MANAGEMENT` 会引导模型调用 ⇒ 引导全是空话。与消息工具
+/// 曾踩过的坑同构，故在此锁一条。
+#[test]
+fn schedule_tools_are_neural_reachable() {
+    let registry = crate::pkg::tool_registry::get_registry();
+    for id in [
+        "schedule_agent_task",
+        "query_schedule",
+        "update_schedule",
+        "cancel_schedule",
+    ] {
+        let factory = registry
+            .get_builtin_factory(id)
+            .unwrap_or_else(|| panic!("builtin tool {} not registered", id));
+        let tags = factory.create_po().get_tags();
+        assert!(
+            tags.iter().any(|t| t == "neural"),
+            "{id} 必须带 neural tag（否则不在任何 Agent 的工具面里，\
+             日程技能里的引导会全部落空）。实际 tags={tags:?}"
+        );
+    }
+}
+
 #[test]
 fn message_tools_are_neural_reachable() {
     let registry = crate::pkg::tool_registry::get_registry();

@@ -332,6 +332,7 @@ impl RuntimeDomainImpl {
             usage,
             inbox,
             collected,
+            silent,
         } = params;
 
         // 唤醒级用量：None = 本次循环独立计量（compact / intent / settle）
@@ -675,6 +676,7 @@ impl RuntimeDomainImpl {
                     inbox,
                     collected,
                     trace_sink: scope.clone(),
+                    silent,
                 },
             )
             .await

@@ -112,6 +112,23 @@ impl ToolCallDao for ToolCallDaoImpl {
 
         // 注入 call_id 后再调用工具，工具内部可通过 ctx.tool_call_id() 关联日志文件/进程条目
         let ctx = ctx.to_builder().tool_call_id(call_id.clone()).build();
+
+        // 运行时细节：调用开始事件（意图 + 入参），与结束的 ToolExecEvent 配对。
+        // 仅 Agent 发起的调用才上报：用户直调没有思考图可挂。
+        if let Some(agent_id) = ctx.agent_id().cloned() {
+            let started_event = crate::models::events::tool_started::tool_started_event(
+                &agent_id,
+                &call_id,
+                &po.id,
+                &po.name,
+                call_intent.clone(),
+                args.clone(),
+                ctx.task_id().cloned(),
+                ctx.project_id().cloned(),
+            );
+            crate::pkg::aop::publish(&ctx, started_event).await;
+        }
+
         let started_at = common::constants::utils::current_timestamp_ms() as u64;
 
         let cloned: Box<dyn CoreTool + Send + Sync> = dyn_clone::clone_box(&*tool.our_tool);

@@ -26,11 +26,9 @@ use std::sync::Arc;
 
 use common::enums::FileType;
 use common::markdown_protocol::{
-    ArtifactComponent, AttachmentComponent, ProtocolRegistry, ResolvedPayload, TransformOptions,
-    extract_refs, transform,
+    ArtifactComponent, AttachmentComponent, ProtocolRegistry, ResolvedPayload, extract_refs,
+    extract_refs_with_spans,
 };
-use common::markdown_render::{blocks_to_plain_text, parse_events};
-use pulldown_cmark::{Event, Parser};
 
 use crate::models::outbound_media::{OutboundAttachment, OutboundMediaKind};
 use crate::pkg::RequestContext;
@@ -107,30 +105,34 @@ fn artifact_summary(file_type: FileType, description: &str) -> Option<String> {
 /// 出站降级：协议引用 → `[附件：名]` / `[产物：名]`（未命中快照兜底防悬空）
 ///
 /// - 无已注册协议引用：原文**零改动**返回（幂等；存量无协议消息零影响）；
-/// - 有引用：transform 管线（后端口径 `demote_raw_html=false`）+ 组件
-///   `render_text` 统一出口（已解析实名 / 未解析快照兜底由组件内决策）+
-///   `common::markdown_render` 的事件流→IR→纯文本降级（前后端口径统一）。
+/// - 有引用：按 [`extract_refs_with_spans`] 拿到的字节 span，**只替换引用本身**，
+///   占位文本由组件 `render_text` 统一出口（已解析实名 / 未解析快照兜底由组件内决策）。
+///
+/// ⚠️ 必须走 span 精确替换，**不能**整段经 `parse → IR → reserialize` round-trip：
+/// 飞书等渠道把正文当 Markdown 渲染（`post/md`），IR round-trip 有损——会把有序列表
+/// 从非 1 起始重编号、吞掉转义符导致字面量变强调、代码块内含反引号时围栏破损、
+/// 引用内多段落 / 列表脱离引用。这些都会破坏与引用无关的正文结构（因噎废食）。
+/// span 替换保证除引用外**逐字不动**，从根上免疫上述所有破损。
 pub fn degrade_content_for_external(content: &str, registry: &ProtocolRegistry) -> String {
-    let has_registered_refs = extract_refs(content)
-        .iter()
-        .any(|(r, _)| registry.contains(&r.scheme));
-    if !has_registered_refs {
+    // 只处理已注册 scheme 的引用；未注册（https / 未注册协议）保持原文
+    let refs: Vec<_> = extract_refs_with_spans(content)
+        .into_iter()
+        .filter(|(r, _, _)| registry.contains(&r.scheme))
+        .collect();
+    if refs.is_empty() {
         return content.to_string();
     }
-    let parser = Parser::new(content);
-    let opts = TransformOptions {
-        demote_raw_html: false,
-    };
-    let events = transform(parser, registry, &opts, |r, snapshot, _| {
-        // transform 只拦截已注册 scheme，get 必命中；防御性回退快照文本
-        let text = match registry.get(&r.scheme) {
-            Some(c) => c.render_text(r, snapshot),
-            None => snapshot.to_string(),
+
+    // 从后往前替换，避免前面的替换改变后面引用的字节偏移
+    let mut out = content.to_string();
+    for (r, snapshot, span) in refs.into_iter().rev() {
+        let replacement = match registry.get(&r.scheme) {
+            Some(c) => c.render_text(&r, &snapshot),
+            None => snapshot,
         };
-        Some(Event::Text(text.into()))
-    });
-    // 事件流 → 渠道无关 IR → 纯文本（降级逻辑统一在 common，前后端口径一致）
-    blocks_to_plain_text(&parse_events(events))
+        out.replace_range(span, &replacement);
+    }
+    out
 }
 
 // ==================== IO 薄壳层（DAL 查询，async） ====================

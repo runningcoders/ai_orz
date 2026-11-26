@@ -24,7 +24,8 @@ use crate::service::dal::agent::{A2aAgentDal, AgentDal, CodexAgentDal};
 use crate::service::dal::brain::BrainDal;
 use crate::service::dal::lark::LarkCredentialDal;
 use crate::service::dal::mcp_tool::McpToolDal;
-use crate::service::dal::memory::TraversalStrategy;
+use crate::service::dal::memory::{MemoryDal, TraversalStrategy};
+use crate::service::dal::ontology::OntologyDal;
 use crate::service::dal::tool::ToolDal;
 use crate::service::dal::user::UserDal;
 use crate::service::dao::memory::{MemoryQuery, MemorySearch};
@@ -458,6 +459,8 @@ pub mod busy_guard;
 // 映射为 `CancelThinkingResponse`，暴露方式与消息域 `RecallOutcome` 对齐
 pub mod cancel;
 mod cerebellum_router;
+// 思考图观测者：pkg 引擎 → AOP 事件的唯一桥接点（供三条 runner 复用）
+pub(crate) mod focus_graph;
 // ── run 级句柄家族：图前由调用方构造、图内写、图后读（所有权显式，非进程级表）──
 //   `ThinkLoopProgress` / `WakeUsage` → `types.rs`（属入参契约，四个场景通用）
 //   `InboxState`                      → `inbox.rs`（三挂点 + 独立设计文档）
@@ -538,6 +541,10 @@ pub(crate) struct RuntimeDomainImpl {
     user_dal: Arc<dyn UserDal + Send + Sync>,
     /// 飞书凭据面子 trait（LarkApp 生产路由：resolve_credentials_for_user）
     lark_credentials: Arc<dyn LarkCredentialDal + Send + Sync>,
+    /// 记忆 DAL（记忆读写 / 索引窗口 / 骨架软门禁）
+    memory_dal: Arc<dyn MemoryDal>,
+    /// 本体 DAL（骨架软门禁加载类型约束）
+    ontology_dal: Arc<dyn OntologyDal>,
 }
 
 impl std::fmt::Debug for RuntimeDomainImpl {
@@ -552,6 +559,8 @@ impl std::fmt::Debug for RuntimeDomainImpl {
             .field("tool_call_logger", &"<ToolCallLogger>")
             .field("user_dal", &"<UserDal>")
             .field("lark_credentials", &"<LarkCredentialDal>")
+            .field("memory_dal", &"<MemoryDal>")
+            .field("ontology_dal", &"<OntologyDal>")
             .finish()
     }
 }
@@ -568,6 +577,8 @@ impl Clone for RuntimeDomainImpl {
             tool_call_logger: self.tool_call_logger.clone(),
             user_dal: self.user_dal.clone(),
             lark_credentials: self.lark_credentials.clone(),
+            memory_dal: self.memory_dal.clone(),
+            ontology_dal: self.ontology_dal.clone(),
         }
     }
 }
@@ -587,6 +598,8 @@ impl RuntimeDomainImpl {
             tool_call_logger: Arc::new(ToolCallLogger::get().clone()),
             user_dal: crate::service::dal::user::dal(),
             lark_credentials: crate::service::dal::lark::dal(),
+            memory_dal: crate::service::dal::memory::dal(),
+            ontology_dal: crate::service::dal::ontology::dal(),
         }
     }
 
@@ -614,6 +627,8 @@ impl RuntimeDomainImpl {
             tool_call_logger: Arc::new(ToolCallLogger::get().clone()),
             user_dal,
             lark_credentials,
+            memory_dal: crate::service::dal::memory::dal(),
+            ontology_dal: crate::service::dal::ontology::dal(),
         }
     }
 
@@ -639,6 +654,8 @@ impl RuntimeDomainImpl {
             tool_call_logger,
             user_dal,
             lark_credentials,
+            memory_dal: crate::service::dal::memory::dal(),
+            ontology_dal: crate::service::dal::ontology::dal(),
         }
     }
 
@@ -751,9 +768,7 @@ impl RuntimeDomain for RuntimeDomainImpl {
         query: crate::service::dao::memory::MemoryTraceQuery,
     ) -> Result<common::api::PagedResult<MemoryTrace>> {
         let query = memory_trace_query::with_context_scope(ctx.clone(), query)?;
-        crate::service::dal::memory::dal()
-            .query_traces(ctx, query)
-            .await
+        self.memory_dal.query_traces(ctx, query).await
     }
 
     async fn get_memory_trace(
@@ -775,9 +790,7 @@ impl RuntimeDomain for RuntimeDomainImpl {
             },
         )?;
         let agent_id = query.agent_id.as_deref().unwrap_or(agent_id);
-        crate::service::dal::memory::dal()
-            .get_trace(ctx, agent_id, trace_id)
-            .await
+        self.memory_dal.get_trace(ctx, agent_id, trace_id).await
     }
 }
 

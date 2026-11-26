@@ -140,6 +140,74 @@ fn degrade_passthrough_without_registered_refs() {
 }
 
 #[test]
+fn degrade_keeps_every_byte_except_reference_span() {
+    // 回归（强断言）：出站降级只替换引用 span，其余正文**逐字不动**。
+    //
+    // 源文刻意包含全部"IR round-trip 会被有损改写"的结构：
+    // - 非 1 起始的有序列表（round-trip 会重编号为 1./2.）
+    // - 转义的字面星号（round-trip 会吞反斜杠 → 语义变强调）
+    // - 代码块内含反引号（round-trip 围栏截断破损）
+    // - 引用的多段落（round-trip 第二段脱离引用）
+    // - GFM 表格 / 加粗 / 软换行
+    // 任何一处被改写，整段 assert_eq 就会失败——杜绝上一版假阳性测试
+    // （只用 contains 断言、表格恰因 Parser 默认不开 GFM 而"碰巧通过"）。
+    let mut art = HashMap::new();
+    art.insert(
+        "art_1".to_string(),
+        ResolvedPayload {
+            name: "季度报告".to_string(),
+            summary: Some("文档 · Q3".to_string()),
+        },
+    );
+    let reg = build_resolved_registry(HashMap::new(), art);
+    let src = "## 交付清单\n\n\
+               3. 第三项\n4. 第四项\n\n\
+               字面 \\*星号\\* 不是强调。\n\n\
+               ````\n代码块内含 ``` 三反引号\n````\n\n\
+               > 引用第一段\n>\n> 引用第二段\n\n\
+               | 项 | 状态 |\n|---|---|\n| A | 完成 |\n\n\
+               **加粗** 与见 [季度报告](artifact:art_1) 结尾。";
+    let expected = "## 交付清单\n\n\
+                    3. 第三项\n4. 第四项\n\n\
+                    字面 \\*星号\\* 不是强调。\n\n\
+                    ````\n代码块内含 ``` 三反引号\n````\n\n\
+                    > 引用第一段\n>\n> 引用第二段\n\n\
+                    | 项 | 状态 |\n|---|---|\n| A | 完成 |\n\n\
+                    **加粗** 与见 [产物：季度报告] 结尾。";
+    let out = degrade_content_for_external(src, &reg);
+    assert_eq!(out, expected, "除引用 span 外必须逐字不动");
+    assert!(!out.contains("artifact:"), "协议引用不残留: {out}");
+}
+
+#[test]
+fn degrade_multiple_refs_replace_all_without_offset_drift() {
+    // 多个引用 + UTF-8 多字节名：从后往前替换，偏移不能漂移，其余原文逐字不动。
+    let mut att = HashMap::new();
+    att.insert(
+        "att_1".to_string(),
+        ResolvedPayload {
+            name: "设计稿.png".to_string(),
+            summary: None,
+        },
+    );
+    let mut art = HashMap::new();
+    art.insert(
+        "art_1".to_string(),
+        ResolvedPayload {
+            name: "报告.pdf".to_string(),
+            summary: None,
+        },
+    );
+    let reg = build_resolved_registry(att, art);
+    let src = "先看 [设计稿](attachment:att_1)，再看 [报告](artifact:art_1)，\
+                另有 [未命中](artifact:art_x) 兜底。";
+    let expected = "先看 [附件：设计稿.png]，再看 [产物：报告.pdf]，\
+                    另有 [产物：未命中] 兜底。";
+    let out = degrade_content_for_external(src, &reg);
+    assert_eq!(out, expected, "多引用替换不得有偏移漂移: {out}");
+}
+
+#[test]
 fn degrade_replaces_resolved_and_falls_back_on_miss() {
     let mut att = HashMap::new();
     att.insert(

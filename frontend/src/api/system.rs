@@ -11,7 +11,10 @@ pub use common::api::{
     WechatPollChannelMetrics, WorkspaceMetricsResponse,
 };
 
-use super::{ApiError, api_delete, api_get, api_get_or_default, api_post, api_post_empty, api_put};
+use super::{
+    ApiError, api_delete, api_get, api_get_or_default, api_post, api_post_empty, api_put,
+    build_query_string,
+};
 
 /// 健康检查（返回纯文本）
 pub async fn check_health() -> Result<String, ApiError> {
@@ -20,8 +23,52 @@ pub async fn check_health() -> Result<String, ApiError> {
 
 // ===== 定时触发器 =====
 
-pub async fn list_cron_triggers() -> Result<common::api::ListCronTriggersResponse, ApiError> {
-    api_get_or_default("/api/v1/system/cron-triggers").await
+pub async fn list_cron_triggers(
+    req: &common::api::ListCronTriggersRequest,
+) -> Result<common::api::ListCronTriggersResponse, ApiError> {
+    // 状态 / 行为列表统一逗号分隔；Params 宏按目标类型反序列化，别名由其 serde 名决定。
+    fn list_param<T: serde::Serialize>(values: &Option<Vec<T>>) -> Option<String> {
+        values.as_ref().filter(|v| !v.is_empty()).map(|items| {
+            items
+                .iter()
+                .filter_map(|v| {
+                    serde_json::to_value(v)
+                        .ok()
+                        .and_then(|value| value.as_str().map(str::to_string))
+                })
+                .collect::<Vec<_>>()
+                .join(",")
+        })
+    }
+    let qs = build_query_string(&[
+        ("trigger_type", req.trigger_type.map(|v| format!("{v:?}"))),
+        ("statuses", list_param(&req.statuses)),
+        ("behaviors", list_param(&req.behaviors)),
+        ("offset", req.offset.map(|v| v.to_string())),
+        ("limit", req.limit.map(|v| v.to_string())),
+    ]);
+    api_get_or_default(&format!("/api/v1/system/cron-triggers{qs}")).await
+}
+
+/// 查询日程实例（相对日期词或显式区间），用于三天 / 周视图
+pub async fn query_schedule(
+    req: common::api::QueryScheduleRequest,
+) -> Result<common::api::QueryScheduleResponse, ApiError> {
+    api_post("/api/v1/system/schedules/query", &req).await
+}
+
+/// 创建带身份的日程（与系统定时任务的 create_cron_trigger 是两个业务入口）
+pub async fn create_schedule(
+    req: common::api::ScheduleAgentTaskRequest,
+) -> Result<common::api::ScheduleAgentTaskResponse, ApiError> {
+    api_post("/api/v1/system/schedules", &req).await
+}
+
+/// 更新当前用户归属的日程（时间规则整体替换，其它字段按需传）
+pub async fn update_schedule(
+    req: common::api::UpdateScheduleRequest,
+) -> Result<common::api::UpdateScheduleResponse, ApiError> {
+    api_post("/api/v1/system/schedules/update", &req).await
 }
 
 pub async fn get_cron_trigger(id: &str) -> Result<common::api::GetCronTriggerResponse, ApiError> {
@@ -66,6 +113,44 @@ pub async fn resume_cron_trigger(id: &str) -> Result<(), ApiError> {
             trigger_id: id.to_string(),
         },
     )
+    .await
+}
+
+/// 查询某触发器执行概览与时序分布（与明细分页独立拉取）
+pub async fn query_trigger_exec_stats(
+    trigger_id: &str,
+    start_at: Option<i64>,
+    end_at: Option<i64>,
+    bucket_minutes: Option<i64>,
+) -> Result<common::api::QueryTriggerExecStatsResponse, ApiError> {
+    let qs = build_query_string(&[
+        ("start_at", start_at.map(|v| v.to_string())),
+        ("end_at", end_at.map(|v| v.to_string())),
+        ("bucket_minutes", bucket_minutes.map(|v| v.to_string())),
+    ]);
+    api_get(&format!(
+        "/api/v1/system/cron-triggers/{trigger_id}/exec-stats{qs}"
+    ))
+    .await
+}
+
+/// 查询某触发器（日程维度）的执行明细（分页）
+pub async fn query_trigger_exec(
+    trigger_id: &str,
+    start_at: Option<i64>,
+    end_at: Option<i64>,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) -> Result<common::api::QueryTriggerExecResponse, ApiError> {
+    let qs = build_query_string(&[
+        ("start_at", start_at.map(|v| v.to_string())),
+        ("end_at", end_at.map(|v| v.to_string())),
+        ("offset", offset.map(|v| v.to_string())),
+        ("limit", limit.map(|v| v.to_string())),
+    ]);
+    api_get(&format!(
+        "/api/v1/system/cron-triggers/{trigger_id}/exec-records{qs}"
+    ))
     .await
 }
 

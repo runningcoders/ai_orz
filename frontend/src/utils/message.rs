@@ -72,17 +72,49 @@ pub const MSG_AUDIO: i32 = 3;
 pub const MSG_VIDEO: i32 = 4;
 pub const MSG_TOOL_CALL_REQUEST: i32 = 5;
 pub const MSG_TOOL_CALL_RESULT: i32 = 6;
+pub const MSG_CONFIRM_REQUEST: i32 = 7;
+pub const MSG_CONFIRM_RESPONSE: i32 = 8;
 pub const MSG_TASK_ASSIGNMENT: i32 = 9;
+pub const MSG_TASK_DISPATCH_NOTIFICATION: i32 = 10;
+pub const MSG_PROJECT_FOLLOWUP_NOTIFICATION: i32 = 11;
+pub const MSG_AGENT_NOTIFY: i32 = 12;
 /// 任务完成回执（对应 common MessageType::TaskCompleted=14）
 pub const MSG_TASK_COMPLETED: i32 = 14;
 /// 任务待验收知会（对应 common MessageType::TaskPendingReview=15）
 pub const MSG_TASK_PENDING_REVIEW: i32 = 15;
 /// 混排消息（文本+资源引用混排，对应 common MessageType::Mixed=13；批3 混排主线）
 pub const MSG_MIXED: i32 = 13;
+/// 日程触发通知（对应 common MessageType::ScheduleTrigger=16；15 已被待验收占用）
+pub const MSG_SCHEDULE_TRIGGER: i32 = 16;
 
 /// 判断是否为附件消息（图片/文件/音频/视频）
 pub fn is_attachment_message(msg_type: i32) -> bool {
     matches!(msg_type, MSG_IMAGE | MSG_FILE | MSG_AUDIO | MSG_VIDEO)
+}
+
+/// 正文为 Markdown 文本、应按 `MSG_TEXT` 走 MarkdownRenderer 的消息类型。
+///
+/// 除普通文本(0)/混排(13)外，以下类型的 `content` 同样是 Markdown 正文：
+/// - 确认请求(7)/确认回复(8)
+/// - 任务调度通知(10)/项目跟进通知(11)/Agent 知会(12)：`builder.rs` 用 `format!`
+///   拼装的 Markdown（**加粗**、表格、有序列表），或 Agent 的原始输出
+/// - 任务完成回执(14)/任务待验收知会(15)：Markdown 表格工作单
+///
+/// 这些类型若落到渲染器的纯文本兜底分支（`whitespace-pre-wrap`），Markdown 符号
+/// 会原样显示，且丢掉统一宽度约束与 hover 操作排。归一化在渲染前完成，只影响
+/// 局部类型变量，不改消息数据本身。
+pub fn normalize_markdown_type(msg_type: i32) -> i32 {
+    match msg_type {
+        MSG_CONFIRM_REQUEST
+        | MSG_CONFIRM_RESPONSE
+        | MSG_TASK_DISPATCH_NOTIFICATION
+        | MSG_PROJECT_FOLLOWUP_NOTIFICATION
+        | MSG_AGENT_NOTIFY
+        | MSG_TASK_COMPLETED
+        | MSG_TASK_PENDING_REVIEW
+        | MSG_SCHEDULE_TRIGGER => MSG_TEXT,
+        other => other,
+    }
 }
 
 /// 角色 → 头像字符（0=User, 1=Agent, 2=System）
@@ -333,11 +365,19 @@ mod tests {
     fn text_and_mixed_share_render_paths() {
         // 批3 主副渲染分支合并守卫：MSG_MIXED 与 MSG_TEXT 同路直渲染，
         // 任一渲染面回退/移除 MSG_MIXED 分支时本测试即失败暴露。
+        // 富消息渲染已抽到共享组件（对话页 / 专注态复用），守卫跟着指向新位置。
+        let rich = include_str!("../components/chat/rich_message.rs");
+        assert_eq!(
+            rich.matches("MSG_TEXT | MSG_MIXED => {").count(),
+            1,
+            "rich_message.rs 主渲染 match 须恰一处 MSG_TEXT|MSG_MIXED 合并臂"
+        );
+        // 对话页不得再保留第二套富消息渲染：两处漂移正是本次抽取要消除的问题
         let chat = include_str!("../pages/message/chat.rs");
         assert_eq!(
             chat.matches("MSG_TEXT | MSG_MIXED => {").count(),
-            1,
-            "chat.rs 主渲染 match 须恰一处 MSG_TEXT|MSG_MIXED 合并臂"
+            0,
+            "chat.rs 不应再保留本地富消息渲染（须复用 RichMessageItem）"
         );
         let bubble = include_str!("../components/chat/message_bubble.rs");
         // 副渲染把归一化结果落在局部 `message_type`（不 clone 整条 MessageListItem，
@@ -349,6 +389,34 @@ mod tests {
             1,
             "message_bubble.rs 副渲染须恰一处 Text||Mixed 合并条件"
         );
+    }
+
+    #[test]
+    fn notification_types_normalize_to_markdown_text() {
+        // 通知/伴生类（正文是 Markdown）须归一到 MSG_TEXT 走 MarkdownRenderer
+        for t in [
+            MSG_CONFIRM_REQUEST,
+            MSG_CONFIRM_RESPONSE,
+            MSG_TASK_DISPATCH_NOTIFICATION,
+            MSG_PROJECT_FOLLOWUP_NOTIFICATION,
+            MSG_AGENT_NOTIFY,
+            MSG_TASK_COMPLETED,
+            MSG_TASK_PENDING_REVIEW,
+        ] {
+            assert_eq!(normalize_markdown_type(t), MSG_TEXT, "type={t}");
+        }
+        // 结构化载荷与普通文本/混排保持原值，不能被误归一
+        for t in [
+            MSG_TEXT,
+            MSG_MIXED,
+            MSG_IMAGE,
+            MSG_FILE,
+            MSG_TOOL_CALL_REQUEST,
+            MSG_TOOL_CALL_RESULT,
+            MSG_TASK_ASSIGNMENT,
+        ] {
+            assert_eq!(normalize_markdown_type(t), t, "type={t}");
+        }
     }
 
     /// 构造一条最小可用的消息（`build_optimistic_user_msg` 依赖 js_sys，原生测试用不了）

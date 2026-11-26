@@ -848,6 +848,172 @@ fn finish_guard_closes_early_exit_run_without_duplicate() {
 }
 
 #[test]
+fn short_circuit_close_closes_fact_only_run_in_both_line_orders() {
+    // 澄清 / 直答短路绕过 deliberate（没有 run_think_loop ⇒ 没有 guard），
+    // 修复靠 ConsolidateNode 出口补 `close_once("short_circuit:<exit>")`。
+    // 无论 close 行先于还是后于 summary_gate 的 fact 行落盘，合并结果都必须是
+    // 「已结束」——否则前端会在这类消息上永久显示「进行中」。
+    for close_first in [true, false] {
+        let run_id = if close_first {
+            "run-shortcut-close-first"
+        } else {
+            "run-shortcut-fact-first"
+        };
+        let scope = TraceSink::memory("agent-a", run_id, "awaken");
+        // summary_gate 的 fact 留痕（真实形态：不带 partial）
+        scope.cerebellum(cerebellum("summary_gate", "skip"));
+        // 短路出口补的收尾行
+        scope.close_once("short_circuit:Clarify");
+        let lines = scope.recorded();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[1]["kind"], "close");
+        assert_eq!(lines[1]["close_reason"], "short_circuit:Clarify");
+
+        let dir = tempdir().unwrap();
+        let base = dir.path();
+        let trace_dir = paths::agent_think_trace_dir(base, "agent-a");
+        fs::create_dir_all(&trace_dir).unwrap();
+        let fact = lines[0].clone();
+        let close = lines[1].clone();
+        let ordered = if close_first {
+            vec![close, fact]
+        } else {
+            vec![fact, close]
+        };
+        let mut raw = ordered;
+        for (i, line) in raw.iter_mut().enumerate() {
+            line["created_at"] = (1_000 + i as u64 * 1_000).into();
+        }
+        let body = raw
+            .iter()
+            .map(|line| serde_json::to_string(line).unwrap())
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(
+            trace_dir.join(format!("{}.jsonl", today())),
+            format!("{body}\n"),
+        )
+        .unwrap();
+
+        let page = query(base, ThinkTraceQuery::default());
+        assert_eq!(page.total, 1, "close_first={close_first}");
+        assert!(
+            !page.items[0].partial,
+            "短路补 close 后不能永久显示进行中（close_first={close_first}）"
+        );
+        assert_eq!(
+            page.items[0].cerebellum.len(),
+            1,
+            "fact 行的留痕不能丢失（close_first={close_first}）"
+        );
+    }
+}
+
+#[test]
+fn llm_error_fallback_close_keeps_successfully_finished_rounds() {
+    // 模型报错且错误预算耗尽时：前几轮已经成功落盘了 kind=round 增量行，
+    // 但报错使 run_think 提前 Err、persist_trace 被跳过，只剩 guard 兜底写的
+    // kind=close(rounds=[]) 行。合并时这个空收尾行不得把已成功的轮次整段清掉
+    // （close_once 文档承诺「已有轮次不受影响」）。
+    let dir = tempdir().unwrap();
+    let base = dir.path();
+    let date = today();
+
+    // 前 2 轮成功：各一行 kind=round 增量
+    for (ts, r) in [(1_000, 1), (2_000, 2)] {
+        let mut partial = entry("run-llm-err", "agent-a", ts);
+        partial.kind = TraceLineKind::Round;
+        partial.partial = true;
+        partial.steps = 0;
+        partial.occurrences.clear();
+        partial.routes.clear();
+        partial.fingerprint.clear();
+        partial.rounds = vec![round(r)];
+        write_entry(base, "agent-a", &date, &partial);
+    }
+
+    // 第 3 轮模型报错 → guard 兜底写空 rounds 的 close 行（close_once 的真实形态）
+    let scope = TraceSink::memory("agent-a", "run-llm-err", "awaken");
+    scope.close_once("finished");
+    let mut fallback = scope.recorded().remove(0);
+    fallback["created_at"] = 3_000.into();
+    let fallback: ThinkTraceEntry = serde_json::from_value(fallback).unwrap();
+    assert_eq!(fallback.kind, TraceLineKind::Close);
+    assert!(fallback.rounds.is_empty(), "兜底 close 行不带轮次明细");
+    write_entry(base, "agent-a", &date, &fallback);
+
+    let page = query(base, ThinkTraceQuery::default());
+    assert_eq!(page.total, 1);
+    assert_eq!(
+        page.items[0]
+            .rounds
+            .iter()
+            .map(|r| r.round)
+            .collect::<Vec<_>>(),
+        vec![1, 2],
+        "报错前已成功的轮次必须保留，不能被空收尾行清空"
+    );
+    assert!(!page.items[0].partial, "兜底收尾后必须是已完成");
+}
+
+#[test]
+fn llm_error_fallback_close_does_not_erase_earlier_fragment_rounds() {
+    // 一次唤醒内意图修订重跑：片段1 正常收尾（完整 rounds），片段2 模型报错
+    // 只剩空收尾行。合并后两个片段的轮次都要保留且连续。
+    let dir = tempdir().unwrap();
+    let base = dir.path();
+    let date = today();
+
+    // 片段1：round 1、2 增量 + 完整收尾
+    for (ts, r) in [(1_000, 1), (2_000, 2)] {
+        let mut partial = entry("run-rerun-err", "agent-a", ts);
+        partial.kind = TraceLineKind::Round;
+        partial.partial = true;
+        partial.steps = 0;
+        partial.occurrences.clear();
+        partial.routes.clear();
+        partial.fingerprint.clear();
+        partial.rounds = vec![round(r)];
+        write_entry(base, "agent-a", &date, &partial);
+    }
+    let mut full = entry("run-rerun-err", "agent-a", 3_000);
+    full.kind = TraceLineKind::Close;
+    full.partial = false;
+    full.rounds = vec![round(1), round(2)];
+    write_entry(base, "agent-a", &date, &full);
+
+    // 片段2：round 3 增量 + 报错空收尾
+    let mut partial = entry("run-rerun-err", "agent-a", 4_000);
+    partial.kind = TraceLineKind::Round;
+    partial.partial = true;
+    partial.steps = 0;
+    partial.occurrences.clear();
+    partial.routes.clear();
+    partial.fingerprint.clear();
+    partial.rounds = vec![round(3)];
+    write_entry(base, "agent-a", &date, &partial);
+
+    let scope = TraceSink::memory("agent-a", "run-rerun-err", "awaken");
+    scope.close_once("finished");
+    let mut fallback: ThinkTraceEntry = serde_json::from_value(scope.recorded().remove(0)).unwrap();
+    fallback.created_at = 5_000;
+    write_entry(base, "agent-a", &date, &fallback);
+
+    let page = query(base, ThinkTraceQuery::default());
+    assert_eq!(page.total, 1);
+    assert_eq!(
+        page.items[0]
+            .rounds
+            .iter()
+            .map(|r| r.round)
+            .collect::<Vec<_>>(),
+        vec![1, 2, 3],
+        "正常片段的收尾轮次 + 报错片段的增量轮次都要保留"
+    );
+    assert!(!page.items[0].partial);
+}
+
+#[test]
 fn write_through_fact_line_has_no_partial_field() {
     // 契约：`TraceSink` 写穿的事实行**不含** `partial` 字段。
     // `merge_same_run` 因此必须按 `kind` 判首行的半成品状态，

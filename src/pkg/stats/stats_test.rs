@@ -22,7 +22,7 @@ async fn test_open_and_create_default_table() -> Result<()> {
     let stats = Stats::open(db_path_str, 100).await?;
     stats.initialize_default()?;
 
-    assert_eq!(stats.registered_table_count(), 7);
+    assert_eq!(stats.registered_table_count(), 8);
 
     Ok(())
 }
@@ -338,7 +338,7 @@ async fn test_custom_event() -> Result<()> {
     stats.initialize_default()?;
     stats.register_table(AgentExecutionTable)?;
 
-    assert_eq!(stats.registered_table_count(), 8);
+    assert_eq!(stats.registered_table_count(), 9);
 
     let ctx = RequestContext::new(None, None);
     let now = Utc::now().timestamp();

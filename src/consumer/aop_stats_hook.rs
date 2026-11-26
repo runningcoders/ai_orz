@@ -7,6 +7,8 @@
 //! - 持有 `AopStatsCollector` 引用（克隆 Arc，零成本）
 //! - 4 回调同步调用 collector.record（内部 async，但 hook 是同步方法）
 //! - 使用 `tokio::spawn` 把 async record 转为后台任务，避免阻塞 AOP 主流程
+//! - `cron.trigger` 例外：其 attempt 级统计已由 DuckDB `trigger_exec_events` 覆盖
+//!   （详情/概览/时序），不再重复记入内存 AOP 收集器；其它事件监控不受影响。
 
 use crate::pkg::aop::{AopEventMeta, AopMetricsHook};
 use crate::pkg::stats::runtime::aop::AopStatsCollector;
@@ -23,6 +25,11 @@ impl AopStatsHook {
 
     /// 内部辅助：spawn 后台 record 任务
     fn spawn_record(&self, kind: String, consumer: String, status: String, duration_ms: u64) {
+        // cron.trigger 的 attempt 统计已落 DuckDB，不再往内存 AOP 收集器重复写。
+        // 只跳过计数，链路日志仍保留。
+        if kind == common::enums::EventTopic::CronTrigger.as_str() {
+            return;
+        }
         let collector = self.collector.clone();
         tokio::spawn(async move {
             collector
@@ -153,5 +160,35 @@ mod tests {
         assert_eq!(ov.total_consumed, 1);
         assert_eq!(ov.total_success, 1);
         assert_eq!(ov.avg_duration_ms, 100.0);
+    }
+
+    /// 定时触发的 attempt 统计已迁到 DuckDB，内存 AOP 不得重复计数；
+    /// 但链路日志仍走回调，因此这里只断言内存快照为零。
+    #[tokio::test]
+    async fn test_hook_skips_cron_trigger_memory_stats() {
+        let collector = AopStatsCollector::new();
+        let hook = AopStatsHook::new(collector.clone());
+
+        let meta = AopEventMeta {
+            event_id: "cron-1".to_string(),
+            event_kind: common::enums::EventTopic::CronTrigger.as_str().to_string(),
+            order_key: "cron-1".to_string(),
+            priority: 5,
+            created_at: 1234567890,
+            attempt: 1,
+            context_carrier: None,
+        };
+        hook.on_publish("cron_trigger", &meta, true);
+        hook.on_consume_start("cron_trigger", &meta);
+        hook.on_consume_success("cron_trigger", &meta, 100);
+        hook.on_consume_failure("cron_trigger", &meta, 20, "boom");
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let ov = collector.overview().await;
+        assert_eq!(ov.total_published, 0);
+        assert_eq!(ov.total_consumed, 0);
+        assert_eq!(ov.total_success, 0);
+        assert_eq!(ov.total_failed, 0);
     }
 }

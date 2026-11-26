@@ -40,7 +40,7 @@
 
 ## 休息沉淀时的技能沉淀（settle 场景）
 
-例行沉淀（信号 4）不只是整理笔记本，**也是把笔记本里验证过的东西升级进工作手册的窗口**。沉淀场景下 `create_skill` / `update_skill` / `search_skill` 等技能管理工具可用——你手上是有笔的，不是只读方法论。
+例行沉淀（信号 4）不只是整理笔记本，**也是把笔记本里验证过的东西升级进工作手册的窗口**。沉淀场景的工具白名单是 `neural` / `memory` / `self_evolution`：`create_skill` / `update_skill`（tags 含 `self_evolution`）与 `search_skill`（neural）可用——你手上是有笔的，不是只读方法论；`install_skill_*` / `uninstall_skill_*` 等纯 `skill_management` 工具不在白名单内。
 
 ### 先分清：这次经验该进图谱还是该成技能
 

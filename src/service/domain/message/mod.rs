@@ -270,6 +270,8 @@ impl MessageDomain for MessageDomainImpl {
             common::enums::message::MessageType::TaskDispatchNotification,
             common::enums::message::MessageType::ProjectFollowupNotification,
             common::enums::message::MessageType::TaskPendingReview,
+            // 日程唤醒消息：滞留同样要重投，否则日程触发一次丢失后再无补救
+            common::enums::message::MessageType::ScheduleTrigger,
         ] {
             let rows = self
                 .message_dal
@@ -308,7 +310,11 @@ impl MessageDomain for MessageDomainImpl {
 pub struct SendToAgentCommand<'a> {
     /// 发送者 ID
     pub from_id: &'a str,
-    /// 发送者角色（用户/Agent）
+    /// 发送者角色（用户/Agent/System）
+    ///
+    /// ⚠️ 由**入口适配层**保证与 `from_id` 一致（需要时调
+    /// [`MessageDelivery::resolve_role_by_id`] 校验）。投递域信任此值、不覆盖：
+    /// domain 只在「命令没有角色字段」时兜底推导，不替上层修复数据。
     pub from_role: MessageRole,
     /// 目标 Agent ID
     pub to_agent_id: &'a str,
@@ -425,6 +431,10 @@ pub struct SendTaskAssignmentCommand<'a> {
     /// 分配者 ID
     pub from_id: &'a str,
     /// 分配者角色
+    ///
+    /// ⚠️ 同 [`SendToAgentCommand::from_role`]：由入口适配层保证与 `from_id`
+    /// 一致（需要时调 [`MessageDelivery::resolve_role_by_id`] 校验）。投递域信任
+    /// 此值、不覆盖；`system` 哨兵必须配 `MessageRole::System`。
     pub from_role: MessageRole,
     /// 接收 Agent ID
     pub to_agent_id: &'a str,
@@ -616,6 +626,20 @@ pub trait MessageDomain: Send + Sync {
 /// 定义消息投递相关的核心业务接口
 #[async_trait::async_trait]
 pub trait MessageDelivery: Send + Sync {
+    /// 按 ID 反查身份（只读查询）
+    ///
+    /// - 空串 / `system` 哨兵 → `System`（无实体，不查表）；
+    /// - `users` 表命中 → `User`；`agents` 表命中 → `Agent`；
+    /// - 都查不到 → `Agent`（兜底，不因脏 ID 中断消息链路）。
+    ///
+    /// ## 职责边界
+    ///
+    /// 这是供**上层适配层**做身份校验 / 补齐用的工具，也用于命令里**没有角色字段**
+    /// 时的域内兜底（当前只有 `send_to_user`）。已带 `from_role` 的命令（如
+    /// `send_to_agent`）由调用方自己保证角色与 ID 一致，本域**不覆盖**——校验与
+    /// 修复属于入口适配层，domain 只兜底「角色未知」，不替上层改数据。
+    async fn resolve_role_by_id(&self, ctx: RequestContext, id: &str) -> Result<MessageRole>;
+
     /// 发送消息给 Agent
     async fn send_to_agent(
         &self,

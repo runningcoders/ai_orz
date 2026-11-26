@@ -70,7 +70,7 @@ source_files:
 | models/project.rs PO | 项目持久化对象 | owner_agent_id(可选 PMO)/last_followup_at/plan+result 同步字段；progress_summary 不落库 | `:L15-L58` |
 | domain/project/task_graph.rs | 依赖图 DAG 构建 | build_task_graph_mermaid(tasks, direction) → 基于 dependencies 数组；A 依赖 B = A.dependencies 含 B → 图上画 B 指向 A；按 TaskStatus 分颜色样式分类 | `:L1-L60` |
 | domain/project/service.rs | 详情聚合编排 | get_project_detail(ctx, project_id) → 基础 PO → 查同项目所有任务 → compute_progress_summary → inject_task_graph → inject_artifacts，典型 Domain 多 DAL 组合 | `:L1-L120` |
-| domain/project/task.rs | Task 子域动作 | update_progress(ctx, task_id, progress, plan_delta, result_delta)：自动联动 status + patch_json 合并 + 校验 + 落库 + 发布 task.status_changed AOP 事件 | `:L1-L150` |
+| domain/project/task.rs | Task 子域动作 | update_progress(ctx, task_id, progress, plan_delta, result_delta)：自动联动 status + patch_json 合并 + 校验 + 落库 + 发布 task.status.changed AOP 事件 | `:L1-L150` |
 | common/api/project_task.rs | DTO 参数约束 | UpdateTaskProgressRequest：progress(0-100) + plan_delta(Option<Value>)+result_delta(Option<Value>)；禁止整字段覆盖 API | 见 DTO 定义 |
 
 **章节来源**

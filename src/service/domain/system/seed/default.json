@@ -310,6 +310,22 @@
       "status": 1,
       "content_path": "skills/TEMPLATE_PROBLEM_SOLVING",
       "package": "skills/TEMPLATE_PROBLEM_SOLVING.zip"
+    },
+    {
+      "id": "TEMPLATE_SCHEDULE_MANAGEMENT",
+      "name": "日程管理",
+      "description": "用户要在将来某个时间做事或提醒自己、或要查改删已有日程时必读：什么意图用哪个日程工具、四工具怎么配合、查到的是实例不是规则、归属身份边界",
+      "tags": [
+        "neural",
+        "scheduling"
+      ],
+      "category": "system",
+      "parent_skill_id": "",
+      "author_id": "TEMPLATE_ADMIN",
+      "author_type": 0,
+      "status": 1,
+      "content_path": "skills/TEMPLATE_SCHEDULE_MANAGEMENT",
+      "package": "skills/TEMPLATE_SCHEDULE_MANAGEMENT.zip"
     }
   ],
   "ontology": {

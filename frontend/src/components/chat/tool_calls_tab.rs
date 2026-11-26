@@ -43,6 +43,7 @@ use crate::components::state::Loading;
 use crate::store::toast::use_toast;
 use crate::utils::format_timestamp_opt;
 use crate::utils::status::{tool_call_status_badge, tool_call_status_text};
+use crate::utils::time::format_duration;
 use common::api::{
     ProcessInfo, QueryToolCallEntriesRequest, ToolCallEntryDetail, ToolCallStatusDto,
 };
@@ -66,15 +67,6 @@ const REFRESH_DEBOUNCE_MS: u64 = 2000;
 
 /// input/output 摘要最大字符数
 const SUMMARY_MAX_CHARS: usize = 300;
-
-/// 耗时格式化（毫秒）：<1s 显示 ms，否则保留一位小数的秒
-pub fn format_duration_ms(ms: u64) -> String {
-    if ms < 1000 {
-        format!("{}ms", ms)
-    } else {
-        format!("{:.1}s", ms as f64 / 1000.0)
-    }
-}
 
 /// JSON 摘要：紧凑序列化后按字符数截断
 pub fn truncate_json_text(value: &serde_json::Value, max_chars: usize) -> String {
@@ -320,7 +312,7 @@ pub fn ToolCallsTab(
                     {
                         let call_id = e.call_id.clone();
                         let tool_name = e.tool_name.clone();
-                        let duration = format_duration_ms(e.duration_ms);
+                        let duration = format_duration(e.duration_ms);
                         let started = format_timestamp_opt(Some(e.started_at as i64));
                         let pid_opt = running_pid_badge(&pid_by_call, &call_id);
                         // 命中存活进程 → 展示「执行中」，与 PID 徽标同源；进程退出后
@@ -536,14 +528,6 @@ mod tests {
             display_status(ToolCallStatusDto::Failed, false),
             ToolCallStatusDto::Failed
         );
-    }
-
-    #[test]
-    fn format_duration_ms_boundaries() {
-        assert_eq!(format_duration_ms(250), "250ms");
-        assert_eq!(format_duration_ms(999), "999ms");
-        assert_eq!(format_duration_ms(1500), "1.5s");
-        assert_eq!(format_duration_ms(65000), "65.0s");
     }
 
     #[test]

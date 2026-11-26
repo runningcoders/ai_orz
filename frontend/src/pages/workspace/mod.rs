@@ -73,6 +73,7 @@ mod dock;
 mod feed;
 mod helpers;
 mod hud;
+mod live_center;
 mod presentation;
 mod scene;
 mod source;

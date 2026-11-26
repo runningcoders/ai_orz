@@ -18,6 +18,7 @@ use crate::pkg::RequestContext;
 use crate::pkg::background_task::{BackgroundTask, registry};
 use crate::service::domain::hr;
 use crate::service::domain::system::seed::default;
+use crate::service::domain::system::seed::defs::{SeedSnapshot, SkillDef};
 use ai_orz_macros::generate_http_handler;
 use async_trait::async_trait;
 use common::api::seed::{
@@ -25,9 +26,46 @@ use common::api::seed::{
     PreviewPresetSkillsResponse, SyncPresetSkillsRequest, SyncPresetSkillsResponse,
 };
 use common::api::{TaskIdResponse, TaskProgressSnapshot, TaskStatus, TaskType};
-use common::error::{Error, Result};
+use common::error::{Error, Result, bail_err};
+use std::collections::HashSet;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
+
+/// 校验选中的技能 ID：`None` = 全部；`Some` 不能为空且必须都在 seed 里。
+/// 早失败在提交任务前完成，避免后台任务跑一半才发现拼错 ID。
+fn validate_skill_ids(snapshot: &SeedSnapshot, ids: Option<&[String]>) -> Result<()> {
+    let Some(ids) = ids else {
+        return Ok(());
+    };
+    if ids.is_empty() {
+        bail_err!(InvalidRequest, "请至少选择一个预置技能");
+    }
+    let known: HashSet<&str> = snapshot.skills.iter().map(|s| s.id.as_str()).collect();
+    let unknown: Vec<&str> = ids
+        .iter()
+        .map(String::as_str)
+        .filter(|id| !known.contains(id))
+        .collect();
+    if !unknown.is_empty() {
+        bail_err!(InvalidRequest, "未知的预置技能 ID: {}", unknown.join(", "));
+    }
+    Ok(())
+}
+
+/// 按 seed 原有顺序筛出本次同步的技能（重复 ID 不影响结果，顺序稳定便于进度展示）
+fn selected_skill_defs<'a>(
+    snapshot: &'a SeedSnapshot,
+    ids: Option<&[String]>,
+) -> Vec<&'a SkillDef> {
+    match ids {
+        None => snapshot.skills.iter().collect(),
+        Some(ids) => snapshot
+            .skills
+            .iter()
+            .filter(|s| ids.iter().any(|id| id == &s.id))
+            .collect(),
+    }
+}
 
 /// 预置技能同步预览
 ///
@@ -103,9 +141,10 @@ pub struct SyncPresetSkillsTask {
 impl SyncPresetSkillsTask {
     /// 创建新的同步任务对象（状态为 Pending，等待 registry spawn 后执行）
     pub fn new(ctx: RequestContext, params: SyncPresetSkillsRequest) -> Self {
-        // 步骤 = 每个预置技能一步 +（可选）已安装副本同步一步
-        let total_steps = default::embedded_default_snapshot().skills.len()
-            + usize::from(params.sync_installed_copies);
+        // 步骤 = 本次选中的每个预置技能一步 +（可选）已安装副本同步一步
+        let snapshot = default::embedded_default_snapshot();
+        let selected_count = selected_skill_defs(&snapshot, params.skill_ids.as_deref()).len();
+        let total_steps = selected_count + usize::from(params.sync_installed_copies);
         Self {
             task_id: common::id::TimeId::generate().to_string(),
             ctx,
@@ -158,7 +197,8 @@ impl SyncPresetSkillsTask {
         let mut updated = 0usize;
         let mut skipped = 0usize;
 
-        for (idx, skill_def) in snapshot.skills.iter().enumerate() {
+        let selected = selected_skill_defs(&snapshot, self.params.skill_ids.as_deref());
+        for (idx, &skill_def) in selected.iter().enumerate() {
             self.set_step(idx + 1, format!("正在同步技能：{}", skill_def.name));
             match super::apply_single_preset_skill(
                 self.ctx.clone(),
@@ -178,8 +218,8 @@ impl SyncPresetSkillsTask {
         // 可选：把已安装到 Agent 的副本一并对齐到源技能最新版本
         let mut updated_copies = 0usize;
         if self.params.sync_installed_copies {
-            let copy_step = snapshot.skills.len() + 1;
-            for skill_def in &snapshot.skills {
+            let copy_step = selected.len() + 1;
+            for &skill_def in &selected {
                 self.set_step(copy_step, format!("正在同步已安装副本：{}", skill_def.name));
                 updated_copies += hr::domain()
                     .skill_manage()
@@ -193,6 +233,7 @@ impl SyncPresetSkillsTask {
             updated,
             skipped,
             total: snapshot.skills.len(),
+            selected: selected.len(),
             updated_copies,
         })
     }
@@ -236,6 +277,7 @@ impl BackgroundTask for SyncPresetSkillsTask {
                     "sync_preset_skills",
                     strategy = ?self.params.strategy,
                     sync_installed_copies = self.params.sync_installed_copies,
+                    skill_ids = ?self.params.skill_ids,
                     "预置技能同步完成"
                 );
                 Ok(v)
@@ -255,6 +297,7 @@ impl BackgroundTask for SyncPresetSkillsTask {
 /// - `OnlyMissing`：跳过已存在技能，只创建缺失的
 /// - `sync_installed_copies`：可选，把 parent_skill_id 指向预置技能的 Agent
 ///   已安装副本一并对齐到源技能最新版本（副本状态保持 Agent 私有 Draft 不变）
+/// - `skill_ids`：可选，只同步指定 ID 的预置技能；缺省 = seed 全部。空列表与未知 ID 直接拒绝。
 ///
 /// 前端通过 `GET /api/v1/system/tasks/{task_id}/progress` 轮询进度与结果。
 #[generate_http_handler]
@@ -262,7 +305,42 @@ pub async fn sync_preset_skills(
     ctx: RequestContext,
     params: SyncPresetSkillsRequest,
 ) -> Result<TaskIdResponse> {
+    validate_skill_ids(
+        &default::embedded_default_snapshot(),
+        params.skill_ids.as_deref(),
+    )?;
     let task = Arc::new(SyncPresetSkillsTask::new(ctx, params));
     let task_id = registry().register(task).await;
     Ok(TaskIdResponse { task_id })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn selected_skill_defs_filters_by_id_and_keeps_seed_order() {
+        let snapshot = default::embedded_default_snapshot();
+        let first = snapshot.skills.first().expect("seed 技能为空").id.clone();
+        let last = snapshot.skills.last().expect("seed 技能为空").id.clone();
+        // 故意逆序传入，结果仍按 seed 顺序，进度展示才稳定
+        let selected = selected_skill_defs(&snapshot, Some(&[last.clone(), first.clone()]));
+        assert_eq!(selected.len(), 2);
+        assert_eq!(selected[0].id, first);
+        assert_eq!(selected[1].id, last);
+        assert_eq!(
+            selected_skill_defs(&snapshot, None).len(),
+            snapshot.skills.len()
+        );
+    }
+
+    #[test]
+    fn validate_skill_ids_rejects_empty_and_unknown_ids() {
+        let snapshot = default::embedded_default_snapshot();
+        assert!(validate_skill_ids(&snapshot, None).is_ok());
+        assert!(validate_skill_ids(&snapshot, Some(&[])).is_err());
+        assert!(validate_skill_ids(&snapshot, Some(&["NO_SUCH_SKILL".to_string()])).is_err());
+        let valid = vec![snapshot.skills[0].id.clone()];
+        assert!(validate_skill_ids(&snapshot, Some(&valid)).is_ok());
+    }
 }

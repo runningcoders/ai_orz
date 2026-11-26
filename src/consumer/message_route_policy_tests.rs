@@ -96,6 +96,8 @@ fn owner_briefing_delivers_to_root_user() {
     for message_type in [
         MessageType::ProjectFollowupNotification,
         MessageType::TaskDispatchNotification,
+        // 日程唤醒也是系统触发、无对等回复方，结论必须交给归属用户而非 Discard
+        MessageType::ScheduleTrigger,
     ] {
         let mut route_input = input(MessageRole::System, "system", message_type, "巡检结论");
         route_input.agent_id = "agent-owner";

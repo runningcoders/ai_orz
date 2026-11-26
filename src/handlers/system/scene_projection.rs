@@ -4,10 +4,13 @@
 //! 做纯推导。语义判定不在这里写，否则 v2 接入事件流时要再实现一遍。
 //!
 //! 数据源：
-//! - 运行态：runtime 域内存态（权威实时）
-//! - 展示名：hr 域 Agent 列表（失败降级为 id）
+//! - 运行态：runtime 域内存态（只作状态源，不作 membership 判据）
+//! - membership + 展示名：hr 域 Agent 档案（已排除 Deleted，查询失败即报错）
 //! - 等待判定：message 域近 24h 窗口查询（失败降级为「不等待」，宁漏不刷屏）
 //! - 队列积压：system 域 AOP monitor 内存态
+//!
+//! ⚠️ 已删除 Agent 可能仍残留 runtime 状态，但档案里查不到 -> 不上席位、
+//! 也不显示裸 ID。名单查询失败若静默降级为空表会让整个席位场消失，故直接返回错误。
 
 use ai_orz_macros::generate_http_handler;
 use common::api::{GetSceneProjectionRequest, SceneProjectionResponse};
@@ -53,14 +56,13 @@ pub async fn get_scene_projection(
 
     let runtime_agents = runtime_domain().list_runtime_agents(None, None, None);
 
-    // 展示名：复用 Agent 档案缓存；失败只影响文案，不影响判定
-    let names = match agent_profile::names(&ctx).await {
-        Ok(names) => names,
-        Err(e) => {
-            log_error!(&ctx, "get_scene_projection", "agent names degraded: {}", e);
-            HashMap::new()
-        }
-    };
+    // membership + 展示名：档案是名单权威（已排除 Deleted）。失败不能降级为空表
+    // —— 那会让所有 Agent 凭空消失；名单是投影的核心输入，查询失败直接返回错误。
+    let active_agents: HashMap<String, String> = agent_profile::profiles(&ctx)
+        .await?
+        .into_iter()
+        .map(|profile| (profile.id, profile.name))
+        .collect();
 
     let waiting = collect_waiting(&ctx, now).await;
 
@@ -69,10 +71,6 @@ pub async fn get_scene_projection(
         .map(|(agent_id, info)| {
             let fact = waiting.get(&agent_id);
             PresenceFacts {
-                display_name: names
-                    .get(&agent_id)
-                    .cloned()
-                    .unwrap_or_else(|| agent_id.clone()),
                 agent_id,
                 runtime_state: info.state,
                 state_started_at: info.state_started_at,
@@ -95,6 +93,7 @@ pub async fn get_scene_projection(
         now,
         seat_limit,
         queue_backlog,
+        active_agents,
         facts,
     };
     let seq = PROJECTION_SEQ.fetch_add(1, Ordering::Relaxed);

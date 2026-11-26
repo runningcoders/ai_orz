@@ -9,7 +9,6 @@
 //! 两层各管各的过期：实体按 id 各自过期，名单过期只影响成员集合，
 //! 不会让某个已缓存的 Agent 凭空消失。运行时状态不进入缓存，由 DAL 实时注入。
 
-use std::collections::HashMap;
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -75,15 +74,6 @@ pub async fn profiles(ctx: &RequestContext) -> Result<Vec<AgentProfile>> {
     let ids: Vec<String> = page.items.iter().map(|po| po.id.clone()).collect();
     ids_cache().insert(ALL_ACTIVE, ids);
     Ok(page.items.iter().map(profile_of).collect())
-}
-
-/// 取 id → 名称映射（scene 投影等只需要名称的消费方）
-pub async fn names(ctx: &RequestContext) -> Result<HashMap<String, String>> {
-    Ok(profiles(ctx)
-        .await?
-        .into_iter()
-        .map(|profile| (profile.id, profile.name))
-        .collect())
 }
 
 /// 第二层失效：Agent 成员 / 状态变化后清空名单

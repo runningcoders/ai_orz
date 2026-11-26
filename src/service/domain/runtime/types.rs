@@ -277,6 +277,11 @@ pub struct ThinkLoopParams<'a> {
     /// 内部小循环（compact / intent / settle）不传：它们的产出不作为用户的
     /// 交付物，自建一个丢弃即可。
     pub collected: Option<Arc<Mutex<super::RoundCollected>>>,
+    /// 静默运行：不发布任何实时观测事件（影子模式 / 对照跑）
+    ///
+    /// 与 `deps.shadow` 同源：影子跑不能引入新副作用（AOP 事件也算）。
+    /// 默认 `false`，正常唤醒链不受影响。
+    pub silent: bool,
 }
 
 impl<'a> ThinkLoopParams<'a> {
@@ -311,6 +316,7 @@ impl<'a> ThinkLoopParams<'a> {
             usage: None,
             inbox: None,
             collected: None,
+            silent: false,
         }
     }
 
@@ -391,6 +397,12 @@ impl<'a> ThinkLoopParams<'a> {
     /// 语义（`base=70` 加场景/动态偏移减不到 0），假语义会骗过「小于基准」这类弱断言。
     pub fn with_force_intensity(mut self, force: Option<common::enums::ThinkingIntensity>) -> Self {
         self.force_intensity = force;
+        self
+    }
+
+    /// 静默运行（影子模式）：关闭实时观测事件发布
+    pub fn with_silent(mut self, silent: bool) -> Self {
+        self.silent = silent;
         self
     }
 }

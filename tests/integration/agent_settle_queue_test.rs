@@ -201,13 +201,13 @@ async fn test_awakening_consumer_rejects_unsubscribed_kind(pool: SqlitePool) {
     let err = MessageConsumer::new()
         .on_event(
             RequestContext::new_system(),
-            json!({"kind": "task.status_changed", "event_id": "evt-unknown"}),
+            json!({"kind": "task.status.changed", "event_id": "evt-unknown"}),
         )
         .await
         .expect_err("未订阅的事件类型必须显式报错");
 
     assert!(
-        err.to_string().contains("task.status_changed"),
+        err.to_string().contains("task.status.changed"),
         "错误信息应指出真实的 kind，实际：{}",
         err
     );

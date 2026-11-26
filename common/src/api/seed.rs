@@ -219,6 +219,10 @@ pub struct SyncPresetSkillsRequest {
     /// 副本元数据与文件对齐源技能最新版本，状态保持 Agent 私有 Draft 不变。
     #[serde(default)]
     pub sync_installed_copies: bool,
+    /// 只同步指定 ID 的预置技能；缺省（None）= 同步 seed 全部技能。
+    /// Some(空列表) 与未知 ID 都会被拒绝（fail fast，避免静默漏同步）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skill_ids: Option<Vec<String>>,
 }
 
 /// 同步预置技能到技能库响应
@@ -232,6 +236,8 @@ pub struct SyncPresetSkillsResponse {
     pub skipped: usize,
     /// seed 中预置技能总数
     pub total: usize,
+    /// 本次实际选中同步的技能数量（skill_ids 缺省时等于 total）
+    pub selected: usize,
     /// 被同步更新的 Agent 已安装副本数量（sync_installed_copies=true 时）
     pub updated_copies: usize,
 }

@@ -1,22 +1,27 @@
 //! 底部横幅（MMORPG 式：左下信息卡 / 中间对话框 / 右下预留，左右通透）
 //!
-//! 纯渲染函数：对话状态与信号由页面壳传入。视觉与交互与拆分前一致 ——
-//! 聚焦与否仅消息区展开高度不同，布局两态相同。
+//! 纯渲染函数：对话状态与信号由页面壳传入。
+//! 紧凑态只保留消息区；专注态左侧是主信息区（主消息链 / 话题 / 详情），
+//! 右侧是总览 + 可拉伸的实时事件中心。
 
 use dioxus::html::HasFileData;
 use dioxus::prelude::*;
 use wasm_bindgen::JsCast;
 
 use common::api::{
-    AgentListItem, GetAgentRequest, GetAgentResponse, GetProjectRequest, GetTaskRequest,
-    GetTaskResponse, MessageListItem, RuntimeStatusRequest, RuntimeStatusResponse,
+    AgentListItem, GetAgentRequest, GetAgentResponse, GetProjectRequest, GetProjectResponse,
+    GetTaskRequest, GetTaskResponse, MessageListItem, RuntimeStatusRequest, RuntimeStatusResponse,
 };
 
 use crate::api::hr::{get_agent, get_runtime_status};
 use crate::api::project::{get_project, get_task};
 use crate::components::avatar_bubble::collapse_avatar_bubble;
-use crate::components::chat::{MessageBubble, TypingIndicator};
+use crate::components::chat::{
+    AgentTracePanel, QuotedPreview, ReplyPreview, RichMessageItem, ThreadChain, TypingIndicator,
+    message_preview_text, truncate_preview,
+};
 use crate::components::hud::HudProgress;
+use crate::components::markdown::MarkdownRenderer;
 use crate::components::mention_picker::{
     MentionCandidate, MentionPickedBar, MentionPicker, MentionState, mention_kinds_for,
     mention_tabs,
@@ -24,24 +29,32 @@ use crate::components::mention_picker::{
 use crate::components::ring_progress::RingProgress;
 use crate::components::state::Loading;
 use crate::hooks::use_attachments::{AttachmentComposer, clipboard_files_from_paste};
+use crate::pages::workspace::live_center::{AgentLiveCenter, LiveDetail, LiveDetailText};
+use crate::store::directory::use_directory;
 use crate::utils::mention::{read_caret, restore_caret};
 use crate::utils::{
     avatar_initials,
     number::format_compact_count,
-    status::{agent_runtime_badge, progress_tone, tag_chip, task_status_badge, task_status_text},
-    time::format_time_hm,
+    status::{
+        agent_runtime_badge, priority_badge, progress_tone, project_status_badge,
+        project_status_text, tag_chip, task_status_badge, task_status_text,
+    },
+    time::format_datetime,
 };
 
 use super::helpers::{WORKSPACE_CHAT_INPUT_ID, WORKSPACE_CHAT_SCROLL_ID, agent_runtime_label};
 
-/// 消息发送方角色文本（0=用户 / 1=Agent / 2=系统）
-fn sender_role_label(role: i32) -> &'static str {
-    match role {
-        0 => "用户",
-        1 => "Agent",
-        2 => "系统",
-        _ => "未知",
-    }
+/// 专注态左侧主区当前展示的详情页
+#[derive(Clone, PartialEq)]
+enum FocusLeftDetail {
+    /// 任务完整上下文
+    Task,
+    /// 项目完整上下文
+    Project,
+    /// 实时事件中心里某条工具/事件的完整载荷
+    LiveText(LiveDetailText),
+    /// 完整思考轨迹
+    LiveTrace,
 }
 
 /// 思考场景中文标签（后端 `scene` 为英文标识）
@@ -69,6 +82,169 @@ pub fn scroll_to_latest() {
     };
     if let Ok(el) = el.dyn_into::<web_sys::HtmlElement>() {
         el.set_scroll_top(el.scroll_height());
+    }
+}
+
+/// 详情页里的一组「小标题 + 卡片」
+#[component]
+fn DetailSection(title: String, children: Element) -> Element {
+    rsx! {
+        section { class: "space-y-1",
+            div { class: "text-xs font-medium text-base-content/60", "{title}" }
+            div { class: "hud-glass rounded-lg p-3 text-sm leading-relaxed", {children} }
+        }
+    }
+}
+
+/// 详情页里的键值对
+fn detail_meta(label: &str, value: String) -> Element {
+    rsx! {
+        div { class: "min-w-0",
+            div { class: "text-[10px] text-base-content/40", "{label}" }
+            div { class: "text-xs text-base-content/75 break-words", "{value}" }
+        }
+    }
+}
+
+/// 任务完整上下文：右栏只留摘要，长内容统一铺在左侧
+fn task_detail_body(t: &GetTaskResponse, project_name: Option<&str>) -> Element {
+    rsx! {
+        div { class: "space-y-4",
+            div { class: "flex flex-wrap items-center gap-2",
+                span { class: "{task_status_badge(t.status)}", "{task_status_text(t.status)}" }
+                span { class: "{priority_badge(t.priority)}", "P{t.priority}" }
+                span { class: "text-[11px] text-base-content/45", "进度 {t.progress}%" }
+                for tag in t.tags.iter() {
+                    span { class: "{tag_chip()}", "{tag}" }
+                }
+            }
+            div { class: "grid grid-cols-2 gap-x-6 gap-y-3",
+                {detail_meta("任务 ID", t.id.clone())}
+                {detail_meta(
+                    "所属项目",
+                    project_name
+                        .map(str::to_string)
+                        .or_else(|| t.project_id.clone())
+                        .unwrap_or_else(|| "—".to_string()),
+                )}
+                {detail_meta("分配对象", t.assignee_id.clone())}
+                {detail_meta("优先级", t.priority.to_string())}
+                {detail_meta("创建者", t.created_by.clone())}
+                {detail_meta(
+                    "截止时间",
+                    t.due_at
+                        .map(format_datetime)
+                        .unwrap_or_else(|| "—".to_string()),
+                )}
+            }
+            if let Some(desc) = &t.description
+                && !desc.trim().is_empty()
+            {
+                DetailSection { title: "任务描述",
+                    MarkdownRenderer { content: desc.clone() }
+                }
+            }
+            if let Some(plan) = &t.execution_plan
+                && !plan.trim().is_empty()
+            {
+                DetailSection { title: "执行计划",
+                    MarkdownRenderer { content: plan.clone() }
+                }
+            }
+            if let Some(result) = &t.execution_result
+                && !result.trim().is_empty()
+            {
+                DetailSection { title: "执行结果",
+                    MarkdownRenderer { content: result.clone() }
+                }
+            }
+            if !t.acceptance_criteria.trim().is_empty() {
+                DetailSection { title: "验收标准",
+                    MarkdownRenderer { content: t.acceptance_criteria.clone() }
+                }
+            }
+            if let Some(artifacts) = &t.artifacts
+                && !artifacts.is_empty()
+            {
+                DetailSection { title: format!("交付产物 · {} 项", artifacts.len()),
+                    div { class: "space-y-2",
+                        for art in artifacts.iter() {
+                            div { class: "flex items-start gap-2", key: "{art.id}",
+                                span { "📄" }
+                                div { class: "min-w-0",
+                                    div { class: "text-xs text-base-content/80", "{art.name}" }
+                                    if !art.description.is_empty() {
+                                        div { class: "text-[11px] text-base-content/45",
+                                            "{art.description}"
+                                        }
+                                    }
+                                    div { class: "font-mono text-[10px] text-base-content/30 break-all",
+                                        "{art.file_path}"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// 项目完整上下文：描述 / 运作流程 / 指导建议可能很长，放到左侧大宽页
+fn project_detail_body(p: &GetProjectResponse) -> Element {
+    rsx! {
+        div { class: "space-y-4",
+            div { class: "flex flex-wrap items-center gap-2",
+                span { class: "{project_status_badge(p.status)}", "{project_status_text(p.status)}" }
+                span { class: "{priority_badge(p.priority)}", "P{p.priority}" }
+                for tag in p.tags.iter() {
+                    span { class: "{tag_chip()}", "{tag}" }
+                }
+            }
+            div { class: "grid grid-cols-2 gap-x-6 gap-y-3",
+                {detail_meta("项目 ID", p.id.clone())}
+                {detail_meta(
+                    "负责人",
+                    p.owner_agent_id.clone().unwrap_or_else(|| "—".to_string()),
+                )}
+                {detail_meta("根用户", p.root_user_id.clone())}
+                {detail_meta(
+                    "开始",
+                    p.start_at
+                        .map(format_datetime)
+                        .unwrap_or_else(|| "—".to_string()),
+                )}
+                {detail_meta(
+                    "截止",
+                    p.due_at
+                        .map(format_datetime)
+                        .unwrap_or_else(|| "—".to_string()),
+                )}
+                {detail_meta("创建", format_datetime(p.created_at))}
+            }
+            if let Some(desc) = &p.description
+                && !desc.trim().is_empty()
+            {
+                DetailSection { title: "项目描述",
+                    MarkdownRenderer { content: desc.clone() }
+                }
+            }
+            if let Some(workflow) = &p.workflow
+                && !workflow.trim().is_empty()
+            {
+                DetailSection { title: "运作流程",
+                    MarkdownRenderer { content: workflow.clone() }
+                }
+            }
+            if let Some(guidance) = &p.guidance
+                && !guidance.trim().is_empty()
+            {
+                DetailSection { title: "指导建议",
+                    MarkdownRenderer { content: guidance.clone() }
+                }
+            }
+        }
     }
 }
 
@@ -103,7 +279,7 @@ pub fn bottom_dock(
     let focus_task = use_signal(|| Option::<GetTaskResponse>::None);
     let focus_profile = use_signal(|| Option::<GetAgentResponse>::None);
     // 项目名：拿到 project_id 后由浮层自己拉详情解析，不依赖上层传快照
-    let focus_project = use_signal(|| Option::<String>::None);
+    let focus_project = use_signal(|| Option::<GetProjectResponse>::None);
     use_effect(use_reactive!(|focus_agent_id| {
         // props → Signal：future 闭包只看 peek，props 更新不会重启循环
         if active_agent.peek().as_ref() != focus_agent_id.as_ref() {
@@ -205,7 +381,7 @@ pub fn bottom_dock(
                                         })
                                         .await
                                         {
-                                            focus_project.set(Some(p.name.clone()));
+                                            focus_project.set(Some(p));
                                         }
                                     }
                                     None => {
@@ -289,18 +465,130 @@ pub fn bottom_dock(
         .as_ref()
         .and_then(|rt| rt.current_message_id.as_ref())
         .and_then(|mid| msgs.iter().find(|m| &m.message_id == mid).cloned());
-    // 纯附件消息没有正文，退回附件名，避免预览区一片空白
-    let focus_msg_preview = focus_msg.as_ref().map(|m| {
-        let text = if m.content.trim().is_empty() {
-            m.file_meta
-                .as_ref()
-                .map(|f| format!("📎 {}", f.name))
-                .unwrap_or_default()
+    // 引用预览：工作台消息区没有 chat.rs 的富引用块，这里补一份轻量预览
+    let directory = use_directory();
+    let dir = directory.read();
+    // 一次建索引，避免每条消息都线性扫全表（专注态可能加载几百条历史）
+    let msg_by_id: std::collections::HashMap<&str, &MessageListItem> =
+        msgs.iter().map(|m| (m.message_id.as_str(), m)).collect();
+    let reply_map: std::collections::HashMap<String, ReplyPreview> = msgs
+        .iter()
+        .filter_map(|m| {
+            let target = msg_by_id.get(m.reply_to_id.as_deref()?)?;
+            let text = truncate_preview(&message_preview_text(target));
+            Some((
+                m.message_id.clone(),
+                ReplyPreview {
+                    message_id: target.message_id.clone(),
+                    root_id: target
+                        .root_id
+                        .clone()
+                        .or_else(|| Some(target.message_id.clone())),
+                    sender: dir.sender_name(target),
+                    text,
+                },
+            ))
+        })
+        .collect();
+
+    // 点击引用块 → 在专注面板打开整条话题；关闭后回到当前消息链
+    let mut thread_root = use_signal(|| Option::<String>::None);
+    // 专注态左侧主区：任务 / 项目 / 实时详情，非空时盖住主消息链
+    let mut left_detail = use_signal(|| Option::<FocusLeftDetail>::None);
+    use_effect(use_reactive!(|focus_agent_id| {
+        let _ = focus_agent_id;
+        thread_root.set(None);
+        left_detail.set(None);
+    }));
+    let thread_now = thread_root();
+    let thread_items: Vec<MessageListItem> = thread_now
+        .as_ref()
+        .map(|root| {
+            msgs.iter()
+                .filter(|m| m.message_id == *root || m.root_id.as_deref() == Some(root.as_str()))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+    let thread_mode = !thread_items.is_empty();
+    // 紧凑态与专注态都能打开话题：紧凑态用浮层，专注态用左侧主区
+    let open_thread: Option<EventHandler<String>> = Some(Callback::new(move |root: String| {
+        left_detail.set(None);
+        thread_root.set(Some(root));
+    }));
+    // 话题窗口：固定保留根消息，再取当前消息附近最多 7 条，避免只看尾部而丢根
+    let focus_chain: Vec<MessageListItem> = if thread_mode {
+        let n = thread_items.len();
+        if n <= 8 {
+            thread_items.clone()
         } else {
-            m.content.clone()
-        };
-        text.chars().take(220).collect::<String>()
-    });
+            let cur_idx = focus_msg
+                .as_ref()
+                .and_then(|f| {
+                    thread_items
+                        .iter()
+                        .position(|m| m.message_id == f.message_id)
+                })
+                .unwrap_or(n - 1);
+            let start = cur_idx.saturating_sub(3).max(1);
+            let end = (start + 7).min(n);
+            let mut window = Vec::with_capacity(8);
+            window.push(thread_items[0].clone());
+            window.extend_from_slice(&thread_items[start..end]);
+            window
+        }
+    } else {
+        if let Some(focus) = &focus_msg {
+            let mut ids = vec![focus.message_id.clone()];
+            let mut cursor = focus.reply_to_id.clone();
+            while ids.len() < 4 {
+                let Some(pid) = cursor else { break };
+                let Some(parent) = msg_by_id.get(pid.as_str()) else {
+                    break;
+                };
+                ids.push(parent.message_id.clone());
+                cursor = parent.reply_to_id.clone();
+            }
+            ids.reverse();
+            let chain: Vec<MessageListItem> = ids
+                .iter()
+                .filter_map(|id| msg_by_id.get(id.as_str()).map(|m| (*m).clone()))
+                .collect();
+            if chain.len() >= 2 {
+                chain
+            } else if let Some(idx) = msgs.iter().position(|m| m.message_id == focus.message_id) {
+                msgs[idx.saturating_sub(3)..=idx].to_vec()
+            } else {
+                chain
+            }
+        } else {
+            msgs.iter().rev().take(3).rev().cloned().collect()
+        }
+    };
+    let chain_items: Vec<(MessageListItem, bool, String)> = focus_chain
+        .iter()
+        .map(|m| {
+            let is_current = focus_msg
+                .as_ref()
+                .is_some_and(|f| f.message_id == m.message_id);
+            (m.clone(), is_current, message_preview_text(m))
+        })
+        .collect();
+    // 专注态话题页用完整线程（不裁窗口）：盖住主消息区后有足够空间滚动
+    let thread_chain_items: Vec<(MessageListItem, bool, String)> = thread_items
+        .iter()
+        .map(|m| {
+            let is_current = focus_msg
+                .as_ref()
+                .is_some_and(|f| f.message_id == m.message_id);
+            (m.clone(), is_current, message_preview_text(m))
+        })
+        .collect();
+    let panel_title = if thread_mode {
+        format!("话题 · {} 条", thread_items.len())
+    } else {
+        "消息链".to_string()
+    };
     let runtime_state_label = match runtime.as_ref().map(|r| r.state.as_str()) {
         Some("busy") => "忙碌",
         Some("resting") => "休息",
@@ -308,8 +596,34 @@ pub fn bottom_dock(
         _ => "离线",
     };
 
-    // 项目名：内部轮询按 project_id 拉过详情后回填，组件不再依赖外部快照
-    let focus_project_name = focus_project.read().clone();
+    // 项目详情：内部轮询按 project_id 拉过详情后回填，组件不再依赖外部快照
+    let project_detail = focus_project.read().clone();
+    let project_loaded = project_detail.is_some();
+    let focus_project_name = project_detail.as_ref().map(|p| p.name.clone());
+
+    // 左侧详情页：标题与副标题在渲染前算好，正文按枚举分支铺开
+    let left_detail_now = left_detail();
+    let (left_detail_title, left_detail_subtitle) = match &left_detail_now {
+        Some(FocusLeftDetail::Task) => (
+            "任务详情".to_string(),
+            task.as_ref().map(|t| t.title.clone()).unwrap_or_default(),
+        ),
+        Some(FocusLeftDetail::Project) => (
+            "项目详情".to_string(),
+            focus_project_name.clone().unwrap_or_default(),
+        ),
+        Some(FocusLeftDetail::LiveText(t)) => (t.title.clone(), t.subtitle.clone()),
+        Some(FocusLeftDetail::LiveTrace) => (
+            "完整轨迹".to_string(),
+            selected_agent
+                .as_ref()
+                .map(|a| a.name.clone())
+                .unwrap_or_default(),
+        ),
+        None => (String::new(), String::new()),
+    };
+    let task_loaded = task.is_some();
+    let trace_available = selected_agent.is_some();
 
     // 用量：token 为近 60 分钟窗口累计，上下文长度为最近一次 LLM 调用的瞬时值。
     // 两者同源于一次 get_agent 响应，避免错代混用。
@@ -399,7 +713,8 @@ pub fn bottom_dock(
             div {
                 id: "workspace-chat-dialog",
                 class: if focus {
-                    "pointer-events-auto relative flex-1 min-w-0 h-full min-h-0 hud-glass rounded-xl border border-base-content/10 flex flex-col"
+                    // 黄金比例：左 1.618 / 右 1（约 61.8% : 38.2%）
+                    "pointer-events-auto relative flex-[1.618] min-w-0 h-full min-h-0 hud-glass rounded-xl border border-base-content/10 flex flex-col"
                 } else {
                     "pointer-events-auto relative flex-1 min-w-0 hud-glass rounded-xl border border-base-content/10 flex flex-col"
                 },
@@ -412,45 +727,167 @@ pub fn bottom_dock(
                         let _ = el.dyn_into::<web_sys::HtmlElement>().map(|h| h.focus());
                     }
                 },
-                // 消息区：未聚焦收起为最近 3 条 + 渐隐蒙版；聚焦展开为可滚动列表
-                // 聚焦态滚到顶 → 上拉续拉更早的历史（页大小 HISTORY_PAGE_SIZE，
-                // 因此「一次拉多少」与「能看到多早」解耦）
-                div {
-                    id: WORKSPACE_CHAT_SCROLL_ID,
-                    class: if focus {
-                        "flex-1 min-h-0 overflow-y-auto p-3 rounded-t-xl"
-                    } else if focused {
-                        "overflow-y-auto p-3 max-h-48 rounded-t-xl"
-                    } else {
-                        "p-2 max-h-24 overflow-hidden rounded-t-xl"
-                    },
-                    style: if focused { "" } else { "opacity: 0.7; mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 100%); -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 100%);" },
-                    onscroll: move |e| {
-                        // 头像浮层用展开瞬间的视口锚点（position: fixed），滚动后先收起
-                        collapse_avatar_bubble();
-                        if e.scroll_top() == 0.0 {
-                            on_load_older.call(());
-                        }
-                    },
-                    if msgs.is_empty() && !is_typing {
-                        div { class: "text-center text-sm text-base-content/40 py-2",
-                            "💬 输入消息开始对话"
-                        }
-                    } else {
-                        div { class: "space-y-1",
-                            // 聚焦时渲染全部**已加载**消息（越往上越早，
-                            // 由 load_older 逐页追加）；未聚焦只留最近 3 条
-                            for msg in (if focused { msgs.iter().collect::<Vec<_>>() } else { msgs.iter().rev().take(3).rev().collect::<Vec<_>>() }).into_iter() {
-                                MessageBubble {
-                                    msg: msg.clone(),
-                                    show_receiver,
-                                    // 只有全屏专注的消息区够高、且无裁切祖先，才开资料卡浮层
-                                    avatar_popover: focus,
-                                    key: "{msg.message_id}",
+                // 消息区：主列表常驻；话题是基础视图层；详情是单层浮层。
+                // 详情/话题都不卸载主列表，返回时滚动位置与长消息展开状态保留。
+                div { class: if focus { "relative flex-1 min-h-0" } else { "relative" },
+                    div {
+                        id: WORKSPACE_CHAT_SCROLL_ID,
+                        class: if focus {
+                            "h-full overflow-y-auto p-3 rounded-t-xl"
+                        } else if focused {
+                            "overflow-y-auto p-3 max-h-48 rounded-t-xl"
+                        } else {
+                            "p-2 max-h-24 overflow-hidden rounded-t-xl"
+                        },
+                        style: if focused {
+                            "opacity: 1; mask-image: none; -webkit-mask-image: none;"
+                        } else {
+                            "opacity: 0.7; mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 100%); -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 100%);"
+                        },
+                        onscroll: move |e| {
+                            // 头像浮层用展开瞬间的视口锚点（position: fixed），滚动后先收起
+                            collapse_avatar_bubble();
+                            if e.scroll_top() == 0.0 {
+                                on_load_older.call(());
+                            }
+                        },
+                        if msgs.is_empty() && !is_typing {
+                            div { class: "text-center text-sm text-base-content/40 py-2",
+                                "💬 输入消息开始对话"
+                            }
+                        } else {
+                            div { class: "space-y-1",
+                                // 聚焦时渲染全部**已加载**消息（越往上越早，
+                                // 由 load_older 逐页追加）；未聚焦只留最近 3 条
+                                for msg in (if focused { msgs.iter().collect::<Vec<_>>() } else { msgs.iter().rev().take(3).rev().collect::<Vec<_>>() }).into_iter() {
+                                    // 与对话页共用同一套富消息渲染：这里只读，
+                                    // 所以不传回复能力（on_reply=None 隐藏回复按钮）
+                                    RichMessageItem {
+                                        key: "{msg.message_id}",
+                                        msg: msg.clone(),
+                                        show_receiver,
+                                        // 只有全屏专注的消息区够高、且无裁切祖先，才开资料卡浮层
+                                        avatar_popover: focus,
+                                        // 紧凑消息区更矮：长消息的折叠上限跟着可视高度走
+                                        collapse_height: if focus { 300 } else if focused { 180 } else { 96 },
+                                        quoted: reply_map.get(&msg.message_id).map(|r| QuotedPreview {
+                                            sender: r.sender.clone(),
+                                            content: r.text.clone(),
+                                            root_id: r.root_id.clone(),
+                                        }),
+                                        on_open_thread: open_thread,
+                                    }
+                                }
+                                if is_typing {
+                                    TypingIndicator {}
                                 }
                             }
-                            if is_typing {
-                                TypingIndicator {}
+                        }
+                    }
+
+                    // 话题基础视图层：详情可以盖在它上面，但不会销毁它
+                    if focus && thread_mode {
+                        div {
+                            class: "absolute inset-0 z-10 flex flex-col rounded-t-xl bg-base-100/95 backdrop-blur-md",
+                            onclick: move |e| e.stop_propagation(),
+                            div { class: "flex items-center gap-2 border-b border-base-content/10 px-3 py-2",
+                                button {
+                                    class: "btn hud-btn btn-ghost btn-xs gap-1",
+                                    onclick: move |_| thread_root.set(None),
+                                    "← 返回"
+                                }
+                                span { class: "text-sm font-medium", "{panel_title}" }
+                                span { class: "ml-auto text-[10px] text-base-content/40",
+                                    "与当前消息相关"
+                                }
+                            }
+                            div { class: "flex-1 min-h-0 overflow-y-auto p-3",
+                                div { class: "hud-glass rounded-lg p-2",
+                                    ThreadChain {
+                                        items: thread_chain_items.clone(),
+                                        reply_map: reply_map.clone(),
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 详情浮层：单槽，新的详情直接替换旧的；关闭后回到话题或主链
+                    if focus && left_detail_now.is_some() {
+                        div {
+                            class: "absolute inset-0 z-20 flex flex-col rounded-t-xl bg-base-100/95 backdrop-blur-md",
+                            onclick: move |e| e.stop_propagation(),
+                            div { class: "flex items-center gap-2 border-b border-base-content/10 px-3 py-2",
+                                button {
+                                    class: "btn hud-btn btn-ghost btn-xs gap-1",
+                                    onclick: move |_| left_detail.set(None),
+                                    "← 返回"
+                                }
+                                div { class: "min-w-0",
+                                    div { class: "text-sm font-medium truncate", "{left_detail_title}" }
+                                    if !left_detail_subtitle.is_empty() {
+                                        div { class: "text-[10px] text-base-content/40 truncate",
+                                            "{left_detail_subtitle}"
+                                        }
+                                    }
+                                }
+                            }
+                            div { class: "flex-1 min-h-0 overflow-y-auto p-4",
+                                if let Some(detail) = &left_detail_now {
+                                    if let FocusLeftDetail::Task = detail {
+                                        if let Some(t) = &task {
+                                            {task_detail_body(t, focus_project_name.as_deref())}
+                                        } else {
+                                            div { class: "text-sm text-base-content/45",
+                                                "任务详情尚未加载完成，请稍后重试。"
+                                            }
+                                        }
+                                    }
+                                    if let FocusLeftDetail::Project = detail {
+                                        if let Some(p) = &project_detail {
+                                            {project_detail_body(p)}
+                                        } else {
+                                            div { class: "text-sm text-base-content/45",
+                                                "项目详情尚未加载完成，请稍后重试。"
+                                            }
+                                        }
+                                    }
+                                    if let FocusLeftDetail::LiveText(t) = detail {
+                                        div { class: "hud-glass rounded-lg p-4",
+                                            pre { class: "whitespace-pre-wrap break-all font-mono text-xs leading-relaxed text-base-content/75",
+                                                "{t.body}"
+                                            }
+                                        }
+                                    }
+                                    if let FocusLeftDetail::LiveTrace = detail {
+                                        if let Some(a) = &selected_agent {
+                                            div { class: "h-full min-h-0",
+                                                AgentTracePanel { agent_id: a.id.clone() }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // 紧凑态的话题浮层：点击引用块后悬在对话框上方，看完可直接关闭
+                if !focus && thread_mode {
+                    div {
+                        class: "absolute inset-x-2 bottom-full z-30 mb-2 max-h-[55vh] overflow-y-auto rounded-xl border border-base-content/10 bg-base-100/95 p-3 shadow-[0_18px_50px_-18px_rgba(0,0,0,0.75)] backdrop-blur-md",
+                        onclick: move |e| e.stop_propagation(),
+                        div { class: "flex items-center text-xs font-medium text-base-content/60",
+                            span { "{panel_title}" }
+                            button {
+                                class: "ml-auto text-[10px] text-base-content/40 transition-colors hover:text-primary",
+                                onclick: move |_| thread_root.set(None),
+                                "关闭话题"
+                            }
+                        }
+                        div { class: "mt-1.5",
+                            ThreadChain {
+                                items: chain_items.clone(),
+                                reply_map: reply_map.clone(),
                             }
                         }
                     }
@@ -631,27 +1068,103 @@ pub fn bottom_dock(
 
             // ---- 聚焦模式右侧：Agent 运行时现场（当前消息 / 任务 / 项目 / 产物） ----
             if focus {
-                div { class: "pointer-events-auto w-80 flex-shrink-0 hud-glass rounded-xl border border-base-content/10 flex flex-col overflow-hidden",
-                    div { class: "p-3 border-b border-base-content/10 flex items-center gap-2",
-                        if let Some(a) = &selected_agent {
-                            span { class: "text-sm font-semibold truncate", "{a.name}" }
-                            span { class: "ml-auto flex-shrink-0 {agent_runtime_badge(a.runtime_state)}",
-                                {runtime
-                                    .as_ref()
-                                    .map(|_| runtime_state_label.to_string())
-                                    .unwrap_or_else(|| agent_runtime_label(a.runtime_state).to_string())}
+                div { class: "pointer-events-auto flex-1 min-w-[300px] min-h-0 h-full hud-glass rounded-xl border border-base-content/10 flex flex-col overflow-hidden",
+                    // 标题行：身份 + 运行时状态 + 用量总览（token / 上下文水位）
+                    // + 运行现场摘要。这些原本占固定区大半高度，上移后把更多
+                    // 竖向空间留给下面的实时事件流。
+                    div { class: "p-3 border-b border-base-content/10 space-y-1.5",
+                        div { class: "flex items-center gap-2 min-w-0",
+                            if let Some(a) = &selected_agent {
+                                span { class: "min-w-0 truncate text-sm font-semibold", "{a.name}" }
+                                span { class: "flex-shrink-0 {agent_runtime_badge(a.runtime_state)}",
+                                    {runtime
+                                        .as_ref()
+                                        .map(|_| runtime_state_label.to_string())
+                                        .unwrap_or_else(|| agent_runtime_label(a.runtime_state).to_string())}
+                                }
+                            } else {
+                                span { class: "text-sm font-semibold", "预览" }
                             }
-                        } else {
-                            span { class: "text-sm font-semibold", "预览" }
+                            // Token：近 60 分钟窗口累计；输入 / 输出固定，
+                            // 缓存命中与思考是各自子集，> 0 才入列。
+                            // 窄面板下允许换行，避免把右端退出按钮挤出可视区。
+                            div { class: "ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1 font-mono text-[10px] text-base-content/50",
+                                if let (Some(input), Some(output)) = (tokens_input, tokens_output) {
+                                    span {
+                                        class: "rounded bg-base-200/60 px-1 py-0.5",
+                                        title: "近 60 分钟输入 Token",
+                                        "入 {format_compact_count(input)}"
+                                    }
+                                    span {
+                                        class: "rounded bg-base-200/60 px-1 py-0.5",
+                                        title: "近 60 分钟输出 Token",
+                                        "出 {format_compact_count(output)}"
+                                    }
+                                    if tokens_cached > 0 {
+                                        span {
+                                            class: "rounded bg-base-200/60 px-1 py-0.5",
+                                            title: "缓存命中 Token（输入的子集）",
+                                            "缓 {format_compact_count(tokens_cached)}"
+                                        }
+                                    }
+                                    if tokens_reasoning > 0 {
+                                        span {
+                                            class: "rounded bg-base-200/60 px-1 py-0.5",
+                                            title: "思考 Token（输出的子集）",
+                                            "思 {format_compact_count(tokens_reasoning)}"
+                                        }
+                                    }
+                                }
+                            }
+                            button {
+                                class: "btn hud-btn btn-ghost btn-xs flex-shrink-0",
+                                title: "退出专注",
+                                onclick: move |_| on_exit_focus.call(()),
+                                "✕"
+                            }
                         }
-                        button {
-                            class: "btn hud-btn btn-ghost btn-xs",
-                            title: "退出专注",
-                            onclick: move |_| on_exit_focus.call(()),
-                            "✕"
+                        // 第二行：上下文水位 + 项目 + 本次思考现场（场景 / 轮次 / 工具数）
+                        div { class: "flex items-center gap-1.5 text-[10px] text-base-content/45 flex-wrap",
+                            if let Some((len, threshold)) = context_usage {
+                                div { class: "flex items-center gap-1",
+                                    if let Some(max) = threshold
+                                        && max > 0
+                                    {
+                                        RingProgress {
+                                            value: len,
+                                            max,
+                                            title: Some(format!(
+                                                "上下文 {} / 压缩阈值 {} tokens",
+                                                format_compact_count(len),
+                                                format_compact_count(max),
+                                            )),
+                                            size: Some(18),
+                                        }
+                                    }
+                                    span { "上下文 {format_compact_count(len)}" }
+                                    if let Some(max) = threshold
+                                        && max > 0
+                                    {
+                                        span { " / {format_compact_count(max)}" }
+                                    }
+                                }
+                            } else {
+                                span { "上下文 —" }
+                            }
+                            if let Some(name) = focus_project_name.clone() {
+                                span { class: "min-w-0 truncate", "· 项目 {name}" }
+                            }
+                            if let Some(think) = runtime.as_ref().and_then(|rt| rt.think_runtime.as_ref()) {
+                                span {
+                                    "· {think_scene_label(&think.scene)} · 第 {think.round}/{think.max_rounds} 轮 · 工具 {think.tool_call_count} 次"
+                                }
+                            }
                         }
                     }
-                    div { class: "flex-1 overflow-y-auto p-3 space-y-3",
+                    // 固定总览：角色 / 描述 / 快捷入口 / 任务上下文。
+                    // 用量与运行现场已上移标题行；内容超过面板 48% 时自身滚动，
+                    // 把更长的一段留给实时事件中心。
+                    div { class: "flex-none max-h-[48%] min-h-0 overflow-y-auto p-3 space-y-3",
                         if let Some(a) = &selected_agent {
                             if !a.roles.is_empty() {
                                 div { class: "flex flex-wrap gap-1",
@@ -661,34 +1174,35 @@ pub fn bottom_dock(
                                 }
                             }
                             if let Some(desc) = &a.description {
-                                p { class: "text-xs text-base-content/60 leading-relaxed", "{desc}" }
+                                p { class: "text-xs text-base-content/60 leading-relaxed line-clamp-2", "{desc}" }
                             }
                         }
 
-                        // ---- 当前处理的消息 ----
-                        div { class: "text-xs font-medium text-base-content/60", "当前处理" }
-                        div { class: "hud-glass rounded-lg p-3",
-                            if let (Some(msg), Some(preview)) = (&focus_msg, &focus_msg_preview) {
-                                div { class: "flex items-center gap-1.5 text-[11px] text-base-content/50",
-                                    span { "{sender_role_label(msg.from_role)}" }
-                                    span { "·" }
-                                    span { "{format_time_hm(msg.created_at)}" }
-                                }
-                                p { class: "text-sm mt-1 whitespace-pre-wrap line-clamp-6", "{preview}" }
-                            } else if let Some(rt) = runtime.as_ref() {
-                                if rt.state == "busy" {
-                                    div { class: "text-sm", "正在处理一条尚未加载到当前会话的消息" }
-                                    div { class: "text-xs text-base-content/50 mt-1",
-                                        "展开消息区或稍等片刻即可看到正文。"
-                                    }
-                                } else {
-                                    div { class: "text-sm", "当前空闲" }
-                                    div { class: "text-xs text-base-content/50 mt-1",
-                                        "接到新消息时会自动出现在这里。"
-                                    }
-                                }
-                            } else {
-                                div { class: "text-sm text-base-content/50", "正在获取运行态…" }
+                        // 快捷入口：长内容统一铺到左侧主区，右栏只留总览
+                        div { class: "flex flex-wrap gap-1",
+                            button {
+                                class: "rounded border border-base-content/15 px-2 py-1 text-[10px] text-base-content/55 transition-colors hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-35",
+                                disabled: !task_loaded,
+                                onclick: move |_| {
+                                    left_detail.set(Some(FocusLeftDetail::Task));
+                                },
+                                "任务详情"
+                            }
+                            button {
+                                class: "rounded border border-base-content/15 px-2 py-1 text-[10px] text-base-content/55 transition-colors hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-35",
+                                disabled: !project_loaded,
+                                onclick: move |_| {
+                                    left_detail.set(Some(FocusLeftDetail::Project));
+                                },
+                                "项目详情"
+                            }
+                            button {
+                                class: "rounded border border-base-content/15 px-2 py-1 text-[10px] text-base-content/55 transition-colors hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-35",
+                                disabled: !trace_available,
+                                onclick: move |_| {
+                                    left_detail.set(Some(FocusLeftDetail::LiveTrace));
+                                },
+                                "完整轨迹"
                             }
                         }
 
@@ -704,41 +1218,11 @@ pub fn bottom_dock(
                                         "{task_status_text(t.status)}"
                                     }
                                 }
-                                if let Some(desc) = &t.description
-                                    && !desc.trim().is_empty()
-                                {
-                                    p { class: "text-xs text-base-content/60 leading-relaxed line-clamp-3",
-                                        "{desc}"
-                                    }
-                                }
                                 div { class: "flex items-center gap-2",
                                     HudProgress {
                                         value: t.progress,
                                         tone: Some(progress_tone(t.progress).to_string()),
                                         show_value: Some(true),
-                                    }
-                                }
-                                // 产物：证明「这件事真的在产出东西」
-                                if let Some(artifacts) = &t.artifacts
-                                    && !artifacts.is_empty()
-                                {
-                                    div { class: "pt-1",
-                                        div { class: "text-[11px] text-base-content/50 mb-1",
-                                            "产物 · {artifacts.len()} 项"
-                                        }
-                                        div { class: "space-y-1",
-                                            for art in artifacts.iter().take(6) {
-                                                div { class: "text-xs flex items-center gap-1 min-w-0", key: "{art.id}",
-                                                    span { "📄" }
-                                                    span { class: "truncate", "{art.name}" }
-                                                }
-                                            }
-                                            if artifacts.len() > 6 {
-                                                div { class: "text-[11px] text-base-content/40",
-                                                    "另有 {artifacts.len() - 6} 项未展开"
-                                                }
-                                            }
-                                        }
                                     }
                                 }
                             }
@@ -756,117 +1240,30 @@ pub fn bottom_dock(
                             }
                         }
 
-                        // ---- 用量：token 窗口累计 + 上下文水位（与对话页运行统计同源） ----
-                        div { class: "text-xs font-medium text-base-content/60", "用量" }
-                        div { class: "hud-glass rounded-lg p-3",
-                            if let (Some(input), Some(output)) = (tokens_input, tokens_output) {
-                                div { class: "text-[11px] text-base-content/50", "Token（近 60 分钟）" }
-                                // 与对话页紧凑统计同口径：输入 / 输出两项固定，
-                                // 缓存命中与思考均为其子集，> 0 才入列（0 = 未上报或无推理）。
-                                // 不设「合计」：对话页也没有，且加减关系用户可自行判断。
-                                div { class: "grid grid-cols-2 gap-1.5 mt-1.5 text-center",
-                                    div { class: "bg-base-200/60 rounded px-1 py-1",
-                                        div { class: "text-[10px] text-base-content/50", "输入" }
-                                        div { class: "font-mono text-sm", "{format_compact_count(input)}" }
-                                    }
-                                    div { class: "bg-base-200/60 rounded px-1 py-1",
-                                        div { class: "text-[10px] text-base-content/50", "输出" }
-                                        div { class: "font-mono text-sm", "{format_compact_count(output)}" }
-                                    }
-                                    if tokens_cached > 0 {
-                                        div { class: "bg-base-200/60 rounded px-1 py-1",
-                                            div { class: "text-[10px] text-base-content/50", "缓存命中" }
-                                            div { class: "font-mono text-sm",
-                                                "{format_compact_count(tokens_cached)}"
-                                            }
-                                        }
-                                    }
-                                    if tokens_reasoning > 0 {
-                                        div { class: "bg-base-200/60 rounded px-1 py-1",
-                                            div { class: "text-[10px] text-base-content/50", "思考" }
-                                            div { class: "font-mono text-sm",
-                                                "{format_compact_count(tokens_reasoning)}"
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                div { class: "text-xs text-base-content/50", "暂无 Token 统计" }
+                        // 用量 / 运行现场已上移到标题行，固定区只保留任务上下文，
+                        // 把剩余高度尽量让给下方实时事件流。
+                    }
+                    // 右侧可拉伸区：实时事件中心（工具调用 / 思考过程）。
+                    // 与左侧同高对齐并独立滚动；详情统一铺到左侧主区。
+                    div { class: "flex-1 min-h-0 overflow-y-auto p-3 space-y-3 border-t border-base-content/10",
+                        // ---- 实时事件中心（大脑图 + 动作层 + 事件流） ----
+                        div { class: "text-xs font-medium text-base-content/60", "实时事件中心" }
+                        if let Some(agent_id) = selected_agent.as_ref().map(|a| a.id.clone()) {
+                            AgentLiveCenter {
+                                agent_id,
+                                on_open_detail: Some(Callback::new(
+                                    move |detail: LiveDetail| {
+                                        // 详情是覆盖层：保留当前话题，返回时回到原视图
+                                        left_detail.set(Some(match detail {
+                                            LiveDetail::Text(t) => FocusLeftDetail::LiveText(t),
+                                            LiveDetail::Trace => FocusLeftDetail::LiveTrace,
+                                        }));
+                                    },
+                                )),
                             }
-                            // 上下文水位：阈值缺失时只能给原始读数（并说明原因）
-                            if let Some((len, threshold)) = context_usage {
-                                div { class: "flex items-center gap-3 mt-3 pt-2 border-t border-base-content/10",
-                                    if let Some(max) = threshold
-                                        && max > 0
-                                    {
-                                        RingProgress {
-                                            value: len,
-                                            max,
-                                            caption: Some("上下文".to_string()),
-                                            title: Some(format!(
-                                                "上下文 {} / 压缩阈值 {} tokens",
-                                                format_compact_count(len),
-                                                format_compact_count(max),
-                                            )),
-                                            size: Some(44),
-                                        }
-                                    }
-                                    div { class: "min-w-0 text-xs text-base-content/60",
-                                        div { "上下文长度" }
-                                        div { class: "font-mono text-sm text-base-content/80",
-                                            "{format_compact_count(len)}"
-                                        }
-                                        if let Some(max) = threshold
-                                            && max > 0
-                                        {
-                                            div { class: "text-[10px] text-base-content/40",
-                                                "压缩阈值 {format_compact_count(max)}"
-                                            }
-                                        } else {
-                                            div { class: "text-[10px] text-base-content/40",
-                                                "未配置压缩阈值，暂无百分比"
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                div { class: "text-[11px] text-base-content/40 mt-2",
-                                    "上下文水位：Agent 尚未思考过"
-                                }
-                            }
-                        }
-
-                        // ---- 项目上下文 + 思考快照 ----
-                        div { class: "text-xs font-medium text-base-content/60", "运行现场" }
-                        div { class: "hud-glass rounded-lg p-3 space-y-1 text-xs text-base-content/60",
-                            div { class: "flex items-center gap-1",
-                                span { "项目" }
-                                span { class: "text-base-content/80 truncate",
-                                    {focus_project_name.clone().unwrap_or_else(|| "未关联项目".to_string())}
-                                }
-                            }
-                            if let Some(think) = runtime.as_ref().and_then(|rt| rt.think_runtime.as_ref()) {
-                                div { class: "flex items-center gap-1",
-                                    span { "场景" }
-                                    span { class: "text-base-content/80", "{think_scene_label(&think.scene)}" }
-                                }
-                                div { class: "flex items-center gap-1",
-                                    span { "轮次" }
-                                    span { class: "text-base-content/80",
-                                        "{think.round} / {think.max_rounds}"
-                                    }
-                                }
-                                div { class: "flex items-center gap-1",
-                                    span { "工具调用" }
-                                    span { class: "text-base-content/80", "{think.tool_call_count} 次" }
-                                }
-                                div { class: "flex items-center gap-1",
-                                    span { "本次思考 Token" }
-                                    span { class: "text-base-content/80", "{think.total_tokens}" }
-                                }
-                            }
-                            div { class: "text-[11px] text-base-content/40 pt-1",
-                                "工具调用流与浏览器画面将在这里实时展开。"
+                        } else {
+                            div { class: "hud-glass rounded-lg p-3 text-xs text-base-content/50",
+                                "选择 Agent 后展示其实时事件流"
                             }
                         }
                     }

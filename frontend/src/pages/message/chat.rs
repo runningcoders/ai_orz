@@ -1,7 +1,7 @@
 use dioxus::html::HasFileData;
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
-use wasm_bindgen::{JsCast, closure::Closure};
+use wasm_bindgen::JsCast;
 
 use crate::Route;
 use crate::api::hr::{get_agent, get_reception_agent, list_agents};
@@ -13,8 +13,10 @@ use crate::components::artifact_preview_modal::{ArtifactPreviewModal, ArtifactPr
 use crate::components::avatar_bubble::{
     AvatarBubble, AvatarTone, BubbleAlign, collapse_avatar_bubble,
 };
-use crate::components::chat::{CancelThinkingButton, ChatSidePanel};
-use crate::components::markdown::MarkdownRenderer;
+use crate::components::chat::{
+    CancelThinkingButton, ChatSidePanel, QuotedPreview, ReplyPreview, RichMessageItem, ThreadChain,
+    message_preview_text, truncate_preview,
+};
 use crate::components::mention_picker::{
     MentionCandidate, MentionPickedBar, MentionPicker, MentionState, MentionTab, mention_kinds_for,
     mention_tabs,
@@ -25,18 +27,17 @@ use crate::hooks::use_attachments::{
     PendingAttachment, clipboard_files_from_paste, compose_outbound_content,
     use_attachment_composer,
 };
+use crate::hooks::{EventSourceOptions, use_event_source};
 use crate::layouts::navbar::Navbar;
 use crate::store::auth::use_auth_state;
-use crate::store::directory::{Directory, use_directory};
+use crate::store::directory::use_directory;
 use crate::store::toast::use_toast;
 use crate::utils::local_store;
 use crate::utils::mention::{read_caret, restore_caret};
+use crate::utils::time::format_date_group_label;
 use crate::utils::{
-    HISTORY_PAGE_SIZE, HISTORY_SCAN_MAX_PAGES, MESSAGE_POLL_LIMIT, MESSAGE_POLL_SECS, MSG_AUDIO,
-    MSG_IMAGE, MSG_MIXED, MSG_TASK_ASSIGNMENT, MSG_TASK_COMPLETED, MSG_TASK_PENDING_REVIEW,
-    MSG_TEXT, MSG_TOOL_CALL_REQUEST, MSG_TOOL_CALL_RESULT, MSG_VIDEO, append_new_messages,
-    avatar_initials, build_optimistic_user_msg, format_file_size,
-    format_message_time as format_time, in_project_context, involves_user, is_attachment_message,
+    HISTORY_PAGE_SIZE, HISTORY_SCAN_MAX_PAGES, MESSAGE_POLL_LIMIT, MESSAGE_POLL_SECS, MSG_TEXT,
+    append_new_messages, build_optimistic_user_msg, in_project_context, is_attachment_message,
     page_hidden, project_status_text as status_text, replace_tmp_with_real, request_scope,
 };
 use common::api::{
@@ -92,54 +93,6 @@ fn open_artifact_preview_from_click(
             Err(e) => err_toast.error(format!("打开产物预览失败: {e}")),
         }
     });
-}
-
-/// 全局名称目录里查不到某 Agent 时，按需拉取该 Agent 的单条详情并回填到目录，
-/// 使气泡能显示真实名字而非兜底「Agent <id>」。每个 id 最多触发一次请求。
-fn ensure_agent_name(
-    mut directory: Signal<Directory>,
-    mut pending: Signal<std::collections::HashSet<String>>,
-    from_id: String,
-) {
-    if directory().agents.contains_key(&from_id) {
-        return;
-    }
-    if pending().contains(&from_id) {
-        return;
-    }
-    pending.write().insert(from_id.clone());
-    spawn(async move {
-        if let Ok(resp) = get_agent(GetAgentRequest {
-            id: from_id.clone(),
-            ..Default::default()
-        })
-        .await
-            && !resp.name.is_empty()
-        {
-            directory.write().agents.insert(from_id, resp.name);
-        }
-    });
-}
-
-/// 被引用消息的预览信息（气泡引用块 / 输入框回复条展示用）
-#[derive(Debug, Clone)]
-struct QuotedPreview {
-    /// 被回复消息的发送者名
-    sender: String,
-    /// 被回复内容（截断后的纯文本预览）
-    content: String,
-    /// 被回复消息所属消息链的 root_id（缺失时回退为其自身 ID），
-    /// 点击引用块用它打开右侧话题讨论区
-    root_id: Option<String>,
-}
-
-/// 气泡的回复/引用上下文：引用块预览 + 回复回调 + 打开话题讨论区回调
-///
-/// 三者总是成对出现（都由消息循环逐条构建），打包传参避免参数列表膨胀。
-struct ReplyCtx {
-    quoted: Option<QuotedPreview>,
-    on_reply: Callback<()>,
-    on_open_thread: Callback<String>,
 }
 
 /// 问题一：左栏项目列表状态子过滤器标签组（单选互斥 + 显式「全部」，AMan 拍板①）
@@ -203,9 +156,6 @@ pub fn MessageChat(project: Option<String>) -> Element {
     let mut project_owner_agent_id = use_signal(|| Option::<String>::None);
     let mut available_agents = use_signal(Vec::<AgentListItem>::new);
 
-    // 工具卡片展开状态（message_id -> expanded）
-    let mut tool_expanded = use_signal(std::collections::HashSet::<String>::new);
-
     // 修复 M3：追踪用户是否滚动到底部附近，用于决定新消息是否自动滚动
     let mut at_bottom = use_signal(|| true);
     // 用户上翻阅读期间有新消息到达的标记：仅展示悬浮提示不拽回底部，点击后回底
@@ -219,18 +169,16 @@ pub fn MessageChat(project: Option<String>) -> Element {
     let drag_hover = attachments.drag_hover;
     // 全局名称目录：用于将消息 from_id 解析为展示名（用户 / Agent 名字）
     let directory = use_directory();
-    // 已发起按需拉取请求的 Agent id（避免重复请求）
-    let pending_agent_ids = use_signal(std::collections::HashSet::<String>::new);
 
     // ===== 消息链（回复 / 话题）状态 =====
     // 正在回复的消息：驱动输入框引用条 + 发送时携带 reply_to_id
     let mut reply_target = use_signal(|| Option::<MessageListItem>::None);
-    // 话题讨论区面板：Some(root_id) 时在右侧展示整条消息链
+    // 话题浏览页：Some(root_id) 时主内容区切换到整条消息链
     let mut thread_root = use_signal(|| Option::<String>::None);
     let mut thread_messages = use_signal(Vec::<MessageListItem>::new);
     let mut thread_loading = use_signal(|| false);
 
-    // 话题面板数据加载：thread_root 变化时按 root_id 拉取整条消息链
+    // 话题浏览页数据加载：thread_root 变化时按 root_id 拉取整条消息链
     use_effect(move || {
         let Some(root) = thread_root() else {
             return;
@@ -611,65 +559,22 @@ pub fn MessageChat(project: Option<String>) -> Element {
         }
     });
 
-    // SSE 资源管理：将 EventSource + Closure 存到 use_signal，
-    // 在顶层 use_drop 中清理（Dioxus 0.7 要求 use_drop 不能在 use_effect 内部）
-    struct SseResource {
-        event_source: web_sys::EventSource,
-        on_message: Option<Closure<dyn FnMut(web_sys::MessageEvent)>>,
-        on_open: Option<Closure<dyn FnMut(web_sys::Event)>>,
-        on_error: Option<Closure<dyn FnMut(web_sys::Event)>>,
-    }
-    let mut sse_resource = use_signal(|| Option::<SseResource>::None);
-
-    use_effect(move || {
-        // 修复 H5：EventSource::new 可能失败（浏览器不支持或 URL 无效），不能 unwrap
-        let event_source = match web_sys::EventSource::new("/api/v1/finance/messages/sse") {
-            Ok(es) => es,
-            Err(_) => {
-                toast.error("SSE 连接初始化失败，实时消息将无法接收");
-                return;
-            }
-        };
-        sse_connected.set(true);
-
-        let on_message = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
-            let data = event.data().as_string().unwrap_or_default();
-            handle_sse_message(data);
-        }) as Box<dyn FnMut(web_sys::MessageEvent)>);
-        event_source.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
-        let on_message = Some(on_message);
-
-        let on_open = Closure::wrap(Box::new(move |_: web_sys::Event| {
-            sse_connected.set(true);
-        }) as Box<dyn FnMut(web_sys::Event)>);
-        event_source.set_onopen(Some(on_open.as_ref().unchecked_ref()));
-        let on_open = Some(on_open);
-
-        let on_error = Closure::wrap(Box::new(move |_: web_sys::Event| {
-            sse_connected.set(false);
-        }) as Box<dyn FnMut(web_sys::Event)>);
-        event_source.set_onerror(Some(on_error.as_ref().unchecked_ref()));
-        let on_error = Some(on_error);
-
-        sse_resource.set(Some(SseResource {
-            event_source,
-            on_message,
-            on_open,
-            on_error,
-        }));
+    // SSE 生命周期统一由 hook 管理：创建失败 / 连接打开 / 连接出错
+    let on_message = EventHandler::new(move |data: String| handle_sse_message(data));
+    let on_open = EventHandler::new(move |_| sse_connected.set(true));
+    let on_error = EventHandler::new(move |_| sse_connected.set(false));
+    let on_create_error = EventHandler::new(move |_| {
+        toast.error("SSE 连接初始化失败，实时消息将无法接收");
     });
-
-    use_drop(move || {
-        if let Some(res) = sse_resource.take() {
-            res.event_source.set_onmessage(None);
-            res.event_source.set_onopen(None);
-            res.event_source.set_onerror(None);
-            drop(res.on_message);
-            drop(res.on_open);
-            drop(res.on_error);
-            res.event_source.close();
-        }
-    });
+    use_event_source(
+        "/api/v1/finance/messages/sse".to_string(),
+        on_message,
+        EventSourceOptions {
+            on_open: Some(on_open),
+            on_error: Some(on_error),
+            on_create_error: Some(on_create_error),
+        },
+    );
 
     // SSE 兜底轮询：可见时每 `MESSAGE_POLL_SECS` 拉一次当前会话的增量消息
     //
@@ -961,8 +866,6 @@ pub fn MessageChat(project: Option<String>) -> Element {
             project: Some(project_id.clone()),
         });
         // 修复 M1：不再直接调用 load_messages，由 use_effect 响应 selected_project 变化触发
-        // 修复 L3：切换会话时清理 tool_expanded 状态
-        tool_expanded.set(std::collections::HashSet::new());
         // 切换会话时同步清理回复 / 话题状态 / 产物预览弹窗
         reply_target.set(None);
         thread_root.set(None);
@@ -985,8 +888,6 @@ pub fn MessageChat(project: Option<String>) -> Element {
     // 点击「默认对话」条目：清空选中项目
     let handle_default_chat_click = move |_| {
         navigator.replace(Route::MessageChat { project: None });
-        // 修复 L3：切换会话时清理 tool_expanded 状态
-        tool_expanded.set(std::collections::HashSet::new());
         // 切换会话时同步清理回复 / 话题状态 / 产物预览弹窗
         reply_target.set(None);
         thread_root.set(None);
@@ -1100,6 +1001,50 @@ pub fn MessageChat(project: Option<String>) -> Element {
         is_typing.set(false);
     });
 
+    // 话题视图：服务端拉回的整条链 → 共享 ThreadChain 需要的形态。
+    // 用 memo 缓存，避免聊天页因 typing / SSE 重渲染时反复克隆整条话题链。
+    let thread_view = use_memo(move || {
+        let root_id = thread_root().as_deref().map(str::to_string)?;
+        let snapshot: Vec<MessageListItem> = thread_messages().to_vec();
+        let dir = directory();
+        let items: Vec<(MessageListItem, bool, String)> = snapshot
+            .iter()
+            .map(|m| {
+                let content =
+                    if is_attachment_message(m.message_type) && m.content.trim().is_empty() {
+                        m.file_meta
+                            .as_ref()
+                            .map(|f| format!("📎 {}", f.name))
+                            .unwrap_or_else(|| "[附件消息]".to_string())
+                    } else {
+                        m.content.clone()
+                    };
+                (
+                    m.clone(),
+                    root_id.as_str() == m.message_id.as_str(),
+                    content,
+                )
+            })
+            .collect();
+        let reply_map: std::collections::HashMap<String, ReplyPreview> = snapshot
+            .iter()
+            .filter_map(|m| {
+                let to = m.reply_to_id.as_ref()?;
+                let target = snapshot.iter().find(|x| &x.message_id == to)?;
+                Some((
+                    m.message_id.clone(),
+                    ReplyPreview {
+                        message_id: target.message_id.clone(),
+                        root_id: target.root_id.clone(),
+                        sender: dir.sender_name(target),
+                        text: target.content.chars().take(80).collect(),
+                    },
+                ))
+            })
+            .collect();
+        Some((items, reply_map))
+    });
+
     let chat_content = if let Some(project) = current_project {
         let project_name = project.name.clone();
         // 状态气泡展示名：项目 owner agent 的目录名，解析不到兜底「Agent」
@@ -1182,110 +1127,44 @@ pub fn MessageChat(project: Option<String>) -> Element {
                                     // 修复 L_NEW2：之前 key 含 messages().len()，切换会话时 len 变化导致 key 不稳定
                                     div { class: "hud-divider my-2", key: "divider-{label}", "{label}" }
                                 },
-                                MessageListEntry::Message(msg) => rsx! {
-                                    {
-        let msg_id = msg.message_id.clone();
-        let msg_role = msg.from_role;
-        let msg_clone = msg.clone();
-        let expanded = tool_expanded.read().contains(&msg_id);
-        let is_user = msg_role == 0;
-        let is_system = msg_role == 2;
-        // 解析不到 Agent 名字时按需拉取并回填目录，气泡即可显示真实名字
-        if msg_role == 1 {
-            ensure_agent_name(directory, pending_agent_ids, msg_clone.from_id.clone());
-        }
-        let sender_name = directory().sender_name(&msg_clone);
-        // 头像气泡形态：用户头像弹用户卡（右对齐），Agent 头像弹 Agent 卡（左对齐，点击时懒加载）
-        let (bubble_agent_id, bubble_user_id, bubble_align) = if is_user {
-            (None, Some(msg_clone.from_id.clone()), BubbleAlign::End)
-        } else {
-            (Some(msg_clone.from_id.clone()), None, BubbleAlign::Start)
-        };
-        // 状态警示环：仅当消息来自当前会话目标 Agent 时显示（复用既有 3s 轮询 target_agent_info）
-        let target_status = target_agent_info()
-            .as_ref()
-            .filter(|a| a.id == msg_clone.from_id)
-            .map(|a| a.status);
-        // 「发给谁」：拼出接收方（复用正文 @ 提及的 chip 写法，同样的 @名 形态 +
-        // 同样的配色），一眼看清这条消息路由给谁。
-        // 项目会话（群聊）里消息不止「你 ↔ 一个 Agent」两条线，Agent 之间也会互相说话；
-        // 默认对话（默认虚拟项目）同样可能有明确收件人（前台 Agent / 被 @ 的游离任务），
-        // 故不再按模式门控 —— 收件人为空时 `receiver_mention` 自身返回 None，不渲染空 chip。
-        let receiver_html = directory().receiver_mention(&msg_clone);
-        // 收发双方都不是当前用户 → 旁听消息，整体降透明度（hover 恢复）
-        let bystander = !involves_user(&msg_clone, &auth.read().user_id);
+                                MessageListEntry::Message(msg) => {
         // 解析被引用消息（气泡引用块展示）：在当前消息列表里找；
         // 找不到（未加载到引用的历史消息）则不展示引用块
-        let quoted = msg_clone.reply_to_id.as_ref().and_then(|rid| {
+        let quoted = msg.reply_to_id.as_ref().and_then(|rid| {
             messages.read().iter().find(|m| &m.message_id == rid).map(|m| QuotedPreview {
                 sender: directory().sender_name(m),
-                content: m.content.chars().take(40).collect(),
+                content: truncate_preview(&message_preview_text(m)),
                 root_id: m.root_id.clone().or_else(|| Some(m.message_id.clone())),
             })
         });
         // hover 回复：把当前消息设为回复目标
         let on_reply = {
-            let reply_msg = msg_clone.clone();
+            let reply_msg = msg.clone();
             Callback::new(move |_: ()| reply_target.set(Some(reply_msg.clone())))
         };
-        // 打开右侧话题讨论区（按消息链根 ID）
+        // 打开话题浏览页（按消息链根 ID）；先清旧链，避免首帧闪出上一个话题
         let on_open_thread = Callback::new(move |root_id: String| {
             artifact_preview.set(None);
             artifact_preview_gen += 1;
+            thread_messages.set(Vec::new());
+            thread_loading.set(true);
             thread_root.set(Some(root_id));
         });
-        let reply_ctx = ReplyCtx {
-            quoted,
-            on_reply,
-            on_open_thread,
-        };
-                                        rsx! {
-                                            div {
-                                                class: if is_user { "chat chat-end" } else if bystander { "chat chat-start chat-bystander" } else { "chat chat-start" },
-                                                key: "{msg_id}",
-                                                div { class: "chat-header pr-1 text-sm opacity-70 flex items-center gap-1",
-                                                    span { "{sender_name}" }
-                                                    // 接收方：与正文 @ 提及同一套 chip 写法（谁在跟谁聊）
-                                                    if let Some(html) = receiver_html {
-                                                        span { class: "message-arrow", "→" }
-                                                        span { class: "message-receiver", dangerous_inner_html: "{html}" }
-                                                    }
-                                                }
-                                                if is_system {
-                                                    div { class: "chat-image avatar",
-                                                        div { class: "w-10 h-10 rounded-full bg-info text-info-content flex items-center justify-center font-bold",
-                                                            "{avatar_initials(&sender_name)}"
-                                                        }
-                                                    }
-                                                } else {
-                                                    // 宿主只提供 `.chat-image`：`.avatar` 由 AvatarBubble 自己贴在
-                                                    // 触发层（详见组件内的结构约束注释）
-                                                    div { class: "chat-image",
-                                                        AvatarBubble {
-                                                            name: sender_name.clone(),
-                                                            tone: if is_user { AvatarTone::User } else { AvatarTone::Agent },
-                                                            agent_id: bubble_agent_id,
-                                                            user_id: bubble_user_id,
-                                                            status: if is_user { None } else { target_status },
-                                                            align: bubble_align,
-                                                        }
-                                                    }
-                                                }
-                                                {
-                                                    render_message_content(&msg_clone, expanded, is_user, is_system, {
-                                                        let mid = msg_id.clone();
-                                                        move || {
-                                                            if tool_expanded.read().contains(&mid) {
-                                                                tool_expanded.write().remove(&mid);
-                                                            } else {
-                                                                tool_expanded.write().insert(mid.clone());
-                                                            }
-                                                        }
-                                                    }, toast, reply_ctx)
-                                                }
-                                            }
-                                        }
-                                    }
+        // 状态警示环：仅当消息来自当前会话目标 Agent 时显示（复用既有 3s 轮询）
+        let agent_status = target_agent_info()
+            .as_ref()
+            .filter(|a| a.id == msg.from_id)
+            .map(|a| a.status);
+        rsx! {
+            RichMessageItem {
+                key: "{msg.message_id}",
+                msg: msg.clone(),
+                quoted,
+                on_reply: Some(on_reply),
+                on_open_thread: Some(on_open_thread),
+                agent_status,
+            }
+        }
                                 },
                             }
                         }
@@ -1471,110 +1350,44 @@ pub fn MessageChat(project: Option<String>) -> Element {
                                     // 修复 L_NEW2：之前 key 含 messages().len()，切换会话时 len 变化导致 key 不稳定
                                     div { class: "hud-divider my-2", key: "divider-{label}", "{label}" }
                                 },
-                                MessageListEntry::Message(msg) => rsx! {
-                                    {
-        let msg_id = msg.message_id.clone();
-        let msg_role = msg.from_role;
-        let msg_clone = msg.clone();
-        let expanded = tool_expanded.read().contains(&msg_id);
-        let is_user = msg_role == 0;
-        let is_system = msg_role == 2;
-        // 解析不到 Agent 名字时按需拉取并回填目录，气泡即可显示真实名字
-        if msg_role == 1 {
-            ensure_agent_name(directory, pending_agent_ids, msg_clone.from_id.clone());
-        }
-        let sender_name = directory().sender_name(&msg_clone);
-        // 头像气泡形态：用户头像弹用户卡（右对齐），Agent 头像弹 Agent 卡（左对齐，点击时懒加载）
-        let (bubble_agent_id, bubble_user_id, bubble_align) = if is_user {
-            (None, Some(msg_clone.from_id.clone()), BubbleAlign::End)
-        } else {
-            (Some(msg_clone.from_id.clone()), None, BubbleAlign::Start)
-        };
-        // 状态警示环：仅当消息来自当前会话目标 Agent 时显示（复用既有 3s 轮询 target_agent_info）
-        let target_status = target_agent_info()
-            .as_ref()
-            .filter(|a| a.id == msg_clone.from_id)
-            .map(|a| a.status);
-        // 「发给谁」：拼出接收方（复用正文 @ 提及的 chip 写法，同样的 @名 形态 +
-        // 同样的配色），一眼看清这条消息路由给谁。
-        // 项目会话（群聊）里消息不止「你 ↔ 一个 Agent」两条线，Agent 之间也会互相说话；
-        // 默认对话（默认虚拟项目）同样可能有明确收件人（前台 Agent / 被 @ 的游离任务），
-        // 故不再按模式门控 —— 收件人为空时 `receiver_mention` 自身返回 None，不渲染空 chip。
-        let receiver_html = directory().receiver_mention(&msg_clone);
-        // 收发双方都不是当前用户 → 旁听消息，整体降透明度（hover 恢复）
-        let bystander = !involves_user(&msg_clone, &auth.read().user_id);
+                                MessageListEntry::Message(msg) => {
         // 解析被引用消息（气泡引用块展示）：在当前消息列表里找；
         // 找不到（未加载到引用的历史消息）则不展示引用块
-        let quoted = msg_clone.reply_to_id.as_ref().and_then(|rid| {
+        let quoted = msg.reply_to_id.as_ref().and_then(|rid| {
             messages.read().iter().find(|m| &m.message_id == rid).map(|m| QuotedPreview {
                 sender: directory().sender_name(m),
-                content: m.content.chars().take(40).collect(),
+                content: truncate_preview(&message_preview_text(m)),
                 root_id: m.root_id.clone().or_else(|| Some(m.message_id.clone())),
             })
         });
         // hover 回复：把当前消息设为回复目标
         let on_reply = {
-            let reply_msg = msg_clone.clone();
+            let reply_msg = msg.clone();
             Callback::new(move |_: ()| reply_target.set(Some(reply_msg.clone())))
         };
-        // 打开右侧话题讨论区（按消息链根 ID）
+        // 打开话题浏览页（按消息链根 ID）；先清旧链，避免首帧闪出上一个话题
         let on_open_thread = Callback::new(move |root_id: String| {
             artifact_preview.set(None);
             artifact_preview_gen += 1;
+            thread_messages.set(Vec::new());
+            thread_loading.set(true);
             thread_root.set(Some(root_id));
         });
-        let reply_ctx = ReplyCtx {
-            quoted,
-            on_reply,
-            on_open_thread,
-        };
-                                        rsx! {
-                                            div {
-                                                class: if is_user { "chat chat-end" } else if bystander { "chat chat-start chat-bystander" } else { "chat chat-start" },
-                                                key: "{msg_id}",
-                                                div { class: "chat-header pr-1 text-sm opacity-70 flex items-center gap-1",
-                                                    span { "{sender_name}" }
-                                                    // 接收方：与正文 @ 提及同一套 chip 写法（谁在跟谁聊）
-                                                    if let Some(html) = receiver_html {
-                                                        span { class: "message-arrow", "→" }
-                                                        span { class: "message-receiver", dangerous_inner_html: "{html}" }
-                                                    }
-                                                }
-                                                if is_system {
-                                                    div { class: "chat-image avatar",
-                                                        div { class: "w-10 h-10 rounded-full bg-info text-info-content flex items-center justify-center font-bold",
-                                                            "{avatar_initials(&sender_name)}"
-                                                        }
-                                                    }
-                                                } else {
-                                                    // 宿主只提供 `.chat-image`：`.avatar` 由 AvatarBubble 自己贴在
-                                                    // 触发层（详见组件内的结构约束注释）
-                                                    div { class: "chat-image",
-                                                        AvatarBubble {
-                                                            name: sender_name.clone(),
-                                                            tone: if is_user { AvatarTone::User } else { AvatarTone::Agent },
-                                                            agent_id: bubble_agent_id,
-                                                            user_id: bubble_user_id,
-                                                            status: if is_user { None } else { target_status },
-                                                            align: bubble_align,
-                                                        }
-                                                    }
-                                                }
-                                                {
-                                                    render_message_content(&msg_clone, expanded, is_user, is_system, {
-                                                        let mid = msg_id.clone();
-                                                        move || {
-                                                            if tool_expanded.read().contains(&mid) {
-                                                                tool_expanded.write().remove(&mid);
-                                                            } else {
-                                                                tool_expanded.write().insert(mid.clone());
-                                                            }
-                                                        }
-                                                    }, toast, reply_ctx)
-                                                }
-                                            }
-                                        }
-                                    }
+        // 状态警示环：仅当消息来自当前会话目标 Agent 时显示（复用既有 3s 轮询）
+        let agent_status = target_agent_info()
+            .as_ref()
+            .filter(|a| a.id == msg.from_id)
+            .map(|a| a.status);
+        rsx! {
+            RichMessageItem {
+                key: "{msg.message_id}",
+                msg: msg.clone(),
+                quoted,
+                on_reply: Some(on_reply),
+                on_open_thread: Some(on_open_thread),
+                agent_status,
+            }
+        }
                                 },
                             }
                         }
@@ -1815,67 +1628,53 @@ pub fn MessageChat(project: Option<String>) -> Element {
                 }
             }
 
-            div { class: "flex-1 flex flex-col min-w-0",
+            div { class: "relative flex-1 flex flex-col min-w-0",
                 {chat_content}
-            }
 
-            // 话题讨论区：点击消息引用块后按消息链根 ID 展示整条消息链
-            if thread_root().is_some() {
-                div {
-                    class: if is_mobile() {
-                        "fixed top-16 bottom-0 right-0 z-40 w-80 bg-base-200 flex flex-col border-l border-base-300"
-                    } else {
-                        "w-80 shrink-0 bg-base-200 flex flex-col border-l border-base-300"
-                    },
-                    div { class: "p-3 border-b border-base-300 flex items-center justify-between",
-                        h3 { class: "font-semibold", "话题讨论区" }
-                        button {
-                            class: "btn hud-btn btn-ghost btn-sm btn-square",
-                            title: "关闭话题讨论区",
-                            onclick: move |_| {
-                                artifact_preview.set(None);
-                                artifact_preview_gen += 1;
-                                thread_root.set(None);
-                            },
-                            "×"
-                        }
-                    }
+                // 话题浏览页：覆盖整个主内容列（聊天头 / 消息列表 / 输入区），
+                // 消息列表保持挂载，返回时滚动位置与展开状态都不丢。
+                if thread_root().is_some() {
                     div {
-                        class: "flex-1 overflow-y-auto p-3 space-y-3",
-                        // 话题面板与主消息流是兄弟节点，冒泡不到上面的委托，单独挂一次
-                        onclick: move |evt| open_artifact_preview_from_click(evt, artifact_preview, artifact_preview_gen, toast),
-                        if thread_loading() {
-                            div { class: "flex items-center justify-center py-8",
-                                Loading { size: "sm" }
+                        class: "absolute inset-0 z-20 flex flex-col bg-base-100",
+                        div { class: "flex items-center gap-3 border-b border-base-300 px-4 py-3",
+                            button {
+                                class: "btn hud-btn btn-ghost btn-sm gap-1",
+                                onclick: move |_| {
+                                    artifact_preview.set(None);
+                                    artifact_preview_gen += 1;
+                                    thread_root.set(None);
+                                },
+                                "← 返回"
                             }
-                        } else if thread_messages().is_empty() {
-                            div { class: "text-center text-sm text-base-content/50 py-8",
-                                "暂无消息"
+                            div { class: "min-w-0",
+                                div { class: "text-sm font-semibold truncate", "话题讨论区" }
+                                div { class: "text-[10px] text-base-content/40 truncate",
+                                    "与当前消息相关"
+                                }
                             }
-                        } else {
-                            for tm in thread_messages().iter() {
-                                {
-                                    let thread_sender = directory().sender_name(tm);
-                                    rsx! {
-                                        div {
-                                            class: "rounded-lg bg-base-100 border border-base-300 p-2",
-                                            key: "{tm.message_id}",
-                                            div { class: "flex items-center gap-2 text-xs text-base-content/60",
-                                                if tm.reply_to_id.is_some() {
-                                                    span { title: "这条消息是对话题内某条消息的回复", "↩" }
-                                                }
-                                                span { class: "font-medium text-base-content/80", "{thread_sender}" }
-                                                span { class: "ml-auto", "{format_time(tm.created_at)}" }
-                                            }
-                                            div { class: "text-sm mt-1 break-words",
-                                                if is_attachment_message(tm.message_type) {
-                                                    span { class: "opacity-60", "[附件消息]" }
-                                                } else {
-                                                    MarkdownRenderer { content: tm.content.clone(), compact: true, resolve_attachment_descriptions: true }
-                                                }
-                                            }
-                                        }
-                                    }
+                            span { class: "ml-auto flex-shrink-0 text-[10px] text-base-content/40",
+                                "{thread_view().as_ref().map_or(0, |(items, _)| items.len())} 条"
+                            }
+                        }
+                        div {
+                            class: "flex-1 min-h-0 overflow-y-auto p-4",
+                            // 话题视图与主消息流是兄弟节点，产物 chip 的点击委托单独挂一次
+                            onclick: move |evt| open_artifact_preview_from_click(evt, artifact_preview, artifact_preview_gen, toast),
+                            if thread_loading() {
+                                div { class: "flex items-center justify-center py-8",
+                                    Loading { size: "sm" }
+                                }
+                            } else if thread_view()
+                                .as_ref()
+                                .is_none_or(|(items, _)| items.is_empty())
+                            {
+                                div { class: "text-center text-sm text-base-content/50 py-8",
+                                    "暂无消息"
+                                }
+                            } else if let Some((items, reply_map)) = thread_view().as_ref() {
+                                ThreadChain {
+                                    items: items.clone(),
+                                    reply_map: reply_map.clone(),
                                 }
                             }
                         }
@@ -2380,372 +2179,6 @@ fn chat_input_area(
     }
 }
 
-fn copy_to_clipboard(content: &str, toast: &crate::store::toast::ToastState) {
-    if let Some(window) = web_sys::window() {
-        let navigator = window.navigator();
-        let clipboard = navigator.clipboard();
-        let promise = clipboard.write_text(content);
-        let toast = *toast;
-        let _content = content.to_string();
-        wasm_bindgen_futures::spawn_local(async move {
-            match wasm_bindgen_futures::JsFuture::from(promise).await {
-                Ok(_) => {
-                    toast.info("已复制到剪贴板");
-                }
-                Err(_) => {
-                    toast.error("复制失败");
-                }
-            }
-        });
-    } else {
-        toast.error("剪贴板不可用");
-    }
-}
-
-/// 根据消息类型渲染不同内容
-fn render_message_content(
-    msg: &MessageListItem,
-    expanded: bool,
-    is_user: bool,
-    is_system: bool,
-    toggle_expand: impl FnMut() + 'static,
-    toast: crate::store::toast::ToastState,
-    reply_ctx: ReplyCtx,
-) -> Element {
-    let ReplyCtx {
-        quoted,
-        on_reply,
-        on_open_thread,
-    } = reply_ctx;
-    // 气泡配色已收敛到 `styles/input.css` 的 `.chat .chat-bubble-{primary,neutral,system}`：
-    // 轻量「浅底 + 正文色 + 细边」，替代 DaisyUI 原生高饱和/近黑实底（背景过重、正文不显眼）。
-    let bubble_class = if is_user {
-        "chat-bubble chat-bubble-primary"
-    } else if is_system {
-        "chat-bubble chat-bubble-system text-xs"
-    } else {
-        "chat-bubble chat-bubble-neutral"
-    };
-    let time_class = "chat-footer text-xs opacity-50 mt-1";
-
-    if is_attachment_message(msg.message_type) {
-        return render_attachment_message(msg, bubble_class, time_class);
-    }
-
-    // 任务完成回执(14) / 任务待验收知会(15) 是动作伴生消息，正文是 Markdown
-    // 表格工作单（「已完成 / 进度」「待验收工作单」等），不是 TaskAssignment 的
-    // JSON 载荷，按普通文本走同一套 Markdown 渲染。
-    // 归一化而不是新开一个 match 臂：避免复制整段渲染块，也不影响
-    // `MSG_TEXT | MSG_MIXED` 合并臂的源码结构守卫。
-    let message_type =
-        if msg.message_type == MSG_TASK_COMPLETED || msg.message_type == MSG_TASK_PENDING_REVIEW {
-            MSG_TEXT
-        } else {
-            msg.message_type
-        };
-
-    match message_type {
-        MSG_TOOL_CALL_REQUEST | MSG_TOOL_CALL_RESULT => render_tool_call_card(
-            &msg.content,
-            msg.message_type == MSG_TOOL_CALL_RESULT,
-            expanded,
-            toggle_expand,
-            msg.created_at,
-            time_class,
-        ),
-        MSG_TASK_ASSIGNMENT => {
-            render_task_card(&msg.content, msg.created_at, bubble_class, time_class)
-        }
-        // 批3 混排主线：Mixed=13 与 Text 同路直渲染（引用块+MarkdownRenderer+hover 操作排），
-        // 协议资源引用经批1 markdown_protocol+批2 render_resource_chip 自动 chip 化。
-        MSG_TEXT | MSG_MIXED => {
-            let content = msg.content.clone();
-            let toast_copy = toast;
-            // 引用块：quote_label 驱动展示，quote_target 供点击回调取链根
-            let quote_label = quoted.clone();
-            let quote_target = quoted;
-            // 有引用时给整块一个最小宽度（见 input.css `.chat-has-quote`）：
-            // 否则「在吗」这类极短消息旁边的引用块会被压成 2 字一行
-            let wrap_class = if quote_label.is_some() {
-                "group relative chat-has-quote"
-            } else {
-                "group relative"
-            };
-            rsx! {
-                div { class: "{wrap_class}",
-                    if let Some(q) = quote_label {
-                        button {
-                            // 宽度以本条消息为准，见 input.css `.chat .chat-quote`
-                            class: "chat-quote mb-1 text-left rounded-lg border border-base-300 bg-base-200/70 px-2 py-1 text-xs text-base-content/70 hover:bg-base-200 transition-colors",
-                            title: "查看话题讨论区",
-                            onclick: move |_| {
-                                if let Some(root) = quote_target
-                                    .as_ref()
-                                    .and_then(|t| t.root_id.clone())
-                                {
-                                    on_open_thread(root);
-                                }
-                            },
-                            span { class: "font-medium", "↩ {q.sender}" }
-                            span { class: "ml-1 opacity-80", "{q.content}" }
-                        }
-                    }
-                    div { class: "{bubble_class} break-words",
-                        MarkdownRenderer { content: msg.content.clone(), compact: true, resolve_attachment_descriptions: true }
-                    }
-                    // hover 操作图标排：复制 / 回复
-                    div { class: "absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity",
-                        button {
-                            class: "btn hud-btn btn-ghost btn-xs btn-square bg-base-100 shadow",
-                            title: "复制",
-                            onclick: move |_| copy_to_clipboard(&content, &toast_copy),
-                            "⧉"
-                        }
-                        button {
-                            class: "btn hud-btn btn-ghost btn-xs btn-square bg-base-100 shadow",
-                            title: "回复",
-                            onclick: move |_| on_reply(()),
-                            "↩"
-                        }
-                    }
-                }
-                div { class: "{time_class}", "{format_time(msg.created_at)}" }
-            }
-        }
-        _ => rsx! {
-            div { class: "{bubble_class} break-words whitespace-pre-wrap", "{msg.content}" }
-            div { class: "{time_class}", "{format_time(msg.created_at)}" }
-        },
-    }
-}
-
-/// 渲染附件消息
-fn render_attachment_message(
-    msg: &MessageListItem,
-    bubble_class: &str,
-    time_class: &str,
-) -> Element {
-    let file_meta = match &msg.file_meta {
-        Some(fm) => fm,
-        None => {
-            return rsx! {
-                div { class: "{bubble_class} break-words", "{msg.content}" }
-                div { class: "{time_class}", "{format_time(msg.created_at)}" }
-            };
-        }
-    };
-
-    let file_path = &msg.content;
-    // /file 返回原始字节流（按 mime 给 Content-Type）；/content 是 JSON 文本信封，
-    // <img>/<video>/<audio> 拿到 JSON 会裂开，不能用于媒体渲染。
-    let file_url = format!("/api/v1/finance/attachments/{}/file", file_path);
-
-    match msg.message_type {
-        MSG_IMAGE => rsx! {
-            div { class: "{bubble_class} p-1",
-                img {
-                    src: "{file_url}",
-                    class: "max-w-xs rounded-lg",
-                    loading: "lazy",
-                }
-            }
-            div { class: "{time_class}", "{format_time(msg.created_at)}" }
-        },
-        MSG_VIDEO => rsx! {
-            div { class: "{bubble_class} p-2 space-y-2",
-                video {
-                    src: "{file_url}",
-                    controls: "true",
-                    class: "max-w-xs rounded-lg",
-                    preload: "metadata",
-                    "您的浏览器不支持视频播放"
-                }
-                div { class: "flex items-center gap-2 text-sm opacity-80",
-                    span { "🎬" }
-                    span { "{file_meta.name}" }
-                    span { class: "opacity-60", "{format_file_size(file_meta.size)}" }
-                }
-            }
-            div { class: "{time_class}", "{format_time(msg.created_at)}" }
-        },
-        MSG_AUDIO => rsx! {
-            div { class: "{bubble_class} p-2 space-y-2 min-w-[200px]",
-                div { class: "flex items-center gap-2 text-sm",
-                    span { "🎵" }
-                    span { "{file_meta.name}" }
-                }
-                audio {
-                    src: "{file_url}",
-                    controls: "true",
-                    class: "w-full",
-                    preload: "metadata",
-                }
-                div { class: "text-xs opacity-60", "{format_file_size(file_meta.size)}" }
-            }
-            div { class: "{time_class}", "{format_time(msg.created_at)}" }
-        },
-        _ => rsx! {
-            a {
-                href: "{file_url}",
-                class: "{bubble_class} flex items-center gap-3 no-underline hover:opacity-90 transition-opacity",
-                div { class: "text-2xl", "📄" }
-                div { class: "flex flex-col",
-                    span { "{file_meta.name}" }
-                    span { class: "text-xs opacity-60", "{format_file_size(file_meta.size)}" }
-                }
-            }
-            div { class: "{time_class}", "{format_time(msg.created_at)}" }
-        },
-    }
-}
-
-/// 渲染工具调用卡片
-fn render_tool_call_card(
-    content: &str,
-    is_result: bool,
-    expanded: bool,
-    mut toggle_expand: impl FnMut() + 'static,
-    time: i64,
-    time_class: &str,
-) -> Element {
-    let parsed: Result<serde_json::Value, _> = serde_json::from_str(content);
-
-    match parsed {
-        Ok(json) => {
-            let tool_name = json
-                .get("tool_name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown")
-                .to_string();
-            let (status_badge, header_class) = if is_result {
-                match json.get("is_success").and_then(|v| v.as_bool()) {
-                    Some(true) => (
-                        "badge hud-badge badge-success",
-                        "flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-base-300/50 transition-colors border-l-4 border-l-success",
-                    ),
-                    Some(false) => (
-                        "badge hud-badge badge-error",
-                        "flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-base-300/50 transition-colors border-l-4 border-l-error",
-                    ),
-                    None => (
-                        "badge hud-badge badge-info",
-                        "flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-base-300/50 transition-colors border-l-4 border-l-info",
-                    ),
-                }
-            } else {
-                (
-                    "badge hud-badge badge-warning",
-                    "flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-base-300/50 transition-colors border-l-4 border-l-warning",
-                )
-            };
-
-            let header_icon = if is_result { "⚙️" } else { "🔧" };
-            let status_label = if is_result {
-                match json.get("is_success").and_then(|v| v.as_bool()) {
-                    Some(true) => "执行成功",
-                    Some(false) => "执行失败",
-                    None => "已执行",
-                }
-            } else {
-                "调用请求"
-            };
-
-            let args_str = json
-                .get("args")
-                .and_then(|v| serde_json::to_string_pretty(v).ok());
-            let result_str = json
-                .get("result")
-                .and_then(|v| serde_json::to_string_pretty(v).ok());
-            let error_msg = json
-                .get("error_message")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-
-            rsx! {
-                div { class: "chat-bubble chat-bubble-neutral p-0 overflow-hidden max-w-md",
-                    div {
-                        class: "{header_class}",
-                        onclick: move |_| toggle_expand(),
-                        span { "{header_icon}" }
-                        span { class: "font-medium text-sm", "{tool_name}" }
-                        span { class: "{status_badge} badge-sm", "{status_label}" }
-                        span { class: "ml-auto text-xs opacity-60",
-                            if expanded { "▼" } else { "▶" }
-                        }
-                    }
-                    if expanded {
-                        div { class: "px-3 pb-3 space-y-2 text-sm",
-                            if let Some(args) = &args_str {
-                                div {
-                                    div { class: "text-xs font-semibold opacity-60 mb-1", "参数" }
-                                    pre { class: "bg-base-200 p-2 rounded text-xs overflow-x-auto", "{args}" }
-                                }
-                            }
-                            if is_result {
-                                if let Some(result) = &result_str {
-                                    div {
-                                        div { class: "text-xs font-semibold opacity-60 mb-1", "结果" }
-                                        pre { class: "bg-base-200 p-2 rounded text-xs overflow-x-auto", "{result}" }
-                                    }
-                                }
-                                if let Some(err) = &error_msg {
-                                    div {
-                                        div { class: "text-xs font-semibold text-error mb-1", "错误" }
-                                        div { class: "text-error text-sm", "{err}" }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                div { class: "{time_class}", "{format_time(time)}" }
-            }
-        }
-        Err(_) => rsx! {
-            div { class: "chat-bubble chat-bubble-neutral break-words", "{content}" }
-            div { class: "{time_class}", "{format_time(time)}" }
-        },
-    }
-}
-
-/// 渲染任务分配卡片
-fn render_task_card(content: &str, time: i64, bubble_class: &str, time_class: &str) -> Element {
-    let parsed: Result<serde_json::Value, _> = serde_json::from_str(content);
-
-    match parsed {
-        Ok(json) => {
-            let title = json
-                .get("task_title")
-                .and_then(|v| v.as_str())
-                .unwrap_or("未知任务")
-                .to_string();
-            let description = json.get("task_description").and_then(|v| v.as_str());
-
-            rsx! {
-                div { class: "{bubble_class} p-0 overflow-hidden max-w-md",
-                    div { class: "flex items-center gap-2 px-3 py-2 border-b border-base-300/30",
-                        span { "📋" }
-                        span { class: "font-medium", "任务分配" }
-                    }
-                    div { class: "px-3 py-2 space-y-1",
-                        div { class: "font-semibold", "{title}" }
-                        if let Some(desc) = description {
-                            if !desc.is_empty() {
-                                div { class: "text-sm opacity-80", "{desc}" }
-                            }
-                        }
-                    }
-                }
-                div { class: "{time_class}", "{format_time(time)}" }
-            }
-        }
-        Err(_) => rsx! {
-            div { class: "{bubble_class} break-words", "{content}" }
-            div { class: "{time_class}", "{format_time(time)}" }
-        },
-    }
-}
-
 /// 消息项：可能是普通消息，也可能是日期分隔条
 #[allow(clippy::large_enum_variant)]
 enum MessageListEntry {
@@ -2770,8 +2203,6 @@ fn group_messages_by_date(messages: &[MessageListItem]) -> Vec<MessageListEntry>
     entries
 }
 
-/// 格式化毫秒时间戳为日期分组标签 (今天 / 昨天 / YYYY-MM-DD)
-// 修复 M5：日期分组使用本地时区，之前用 UTC 深夜时段日期分组错乱
 /// 未读角标（问题二·UI 形态优化）：可伸缩胶囊形红底 + 数字展示。
 ///
 /// 只改「长什么样」，不改「怎么计数」：count > 0 才渲染的显示行为原样保留；
@@ -2788,30 +2219,6 @@ fn unread_badge(count: u32) -> Element {
             "{count}",
         }
     }
-}
-
-fn format_date_group_label(ts_ms: i64) -> String {
-    use chrono::{Datelike, Local, TimeZone};
-    let secs = ts_ms / 1000;
-    let dt = match Local.timestamp_opt(secs, 0) {
-        chrono::LocalResult::Single(dt) => dt,
-        _ => return "未知".to_string(),
-    };
-
-    let now = Local::now();
-    let today_key = (now.year(), now.month(), now.day());
-    let msg_key = (dt.year(), dt.month(), dt.day());
-    if msg_key == today_key {
-        return "今天".to_string();
-    }
-    let yesterday = {
-        let y = now - chrono::Duration::days(1);
-        (y.year(), y.month(), y.day())
-    };
-    if msg_key == yesterday {
-        return "昨天".to_string();
-    }
-    format!("{:04}-{:02}-{:02}", msg_key.0, msg_key.1, msg_key.2)
 }
 
 #[cfg(test)]

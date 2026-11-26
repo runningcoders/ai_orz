@@ -11,9 +11,11 @@
 //!   仍然合法，故注册期仍需运行期占用校验。
 //!
 //! ## 线格式
-//! [`EventTopic::as_str`] 与历史字符串**逐字一致**（如 `"message.created"`）；注入事件
-//! JSON 的 `kind` 字段、`AopEventMeta.event_kind`、前端展示全部零变化。
-//! 字符串字面量只在 `as_str` / `parse` 各出现一次，避免两处各写一遍而漂移。
+//! [`EventTopic::as_str`] 与历史字符串基本**逐字一致**（如 `"message.created"`）；
+//! 唯一例外是 `TaskStatusChanged`：2026-11-23 从下划线旧串收敛为点分三段式
+//! `"task.status.changed"`（AOP 事件只在进程内存流转，无存量数据需要迁移）。
+//! 注入事件 JSON 的 `kind` 字段、`AopEventMeta.event_kind`、前端展示全部取同一份
+//! 字符串；字符串字面量只在 `as_str` / `parse` 各出现一次，避免两处各写一遍而漂移。
 //!
 //! ## 严格 / 宽容的分工
 //! - **请求侧严格**：查询参数用 `Option<EventTopic>`。
@@ -40,11 +42,22 @@ pub enum EventTopic {
     AgentLoop,
     /// `agent.think.round`
     AgentThinkRound,
+    /// `agent.think.graph`（思考图骨架：节点 / 阶段 / 边 / 选路）
+    AgentThinkGraph,
+    /// `agent.think.output`（轮次级思考输出，细节层）
+    AgentThinkOutput,
     /// `agent.tool.executed`
     AgentToolExecuted,
+    /// `agent.tool.started`（工具调用开始：意图 + 参数，细节层）
+    AgentToolStarted,
+    /// `agent.cerebellum.decided`（小脑决策摘要）
+    AgentCerebellumDecided,
     /// `agent.state.changed`（当前无消费者：P5，见设计稿 §8）
     AgentStateChanged,
-    /// `task.status_changed`
+    /// `task.status.changed`
+    ///
+    /// 线格式 2026-11-23 由 `task.status_changed` 收敛为点分三段式：
+    /// AOP 事件仅在进程内存中流转（队列 / 统计均不落库），无需存量数据迁移。
     TaskStatusChanged,
     /// `task.dispatched`（任务落库后请求派发 TaskAssignment）
     TaskDispatched,
@@ -76,7 +89,11 @@ impl EventTopic {
         EventTopic::CronTrigger,
         EventTopic::AgentLoop,
         EventTopic::AgentThinkRound,
+        EventTopic::AgentThinkGraph,
+        EventTopic::AgentThinkOutput,
         EventTopic::AgentToolExecuted,
+        EventTopic::AgentToolStarted,
+        EventTopic::AgentCerebellumDecided,
         EventTopic::AgentStateChanged,
         EventTopic::TaskStatusChanged,
         EventTopic::TaskDispatched,
@@ -91,8 +108,9 @@ impl EventTopic {
         EventTopic::MemoryTermsWritten,
     ];
 
-    /// 线格式：与历史 `EventKind` 的字符串**逐字一致**
+    /// 线格式：与历史 `EventKind` 的字符串一致
     ///
+    /// 例外见 `TaskStatusChanged`（下划线旧串 → 点分三段式，无存量迁移）。
     /// 注入事件 JSON 的 `kind` 字段、`AopEventMeta.event_kind` 都取它。
     pub const fn as_str(&self) -> &'static str {
         match self {
@@ -101,9 +119,13 @@ impl EventTopic {
             EventTopic::CronTrigger => "cron.trigger",
             EventTopic::AgentLoop => "agent.loop",
             EventTopic::AgentThinkRound => "agent.think.round",
+            EventTopic::AgentThinkGraph => "agent.think.graph",
+            EventTopic::AgentThinkOutput => "agent.think.output",
             EventTopic::AgentToolExecuted => "agent.tool.executed",
+            EventTopic::AgentToolStarted => "agent.tool.started",
+            EventTopic::AgentCerebellumDecided => "agent.cerebellum.decided",
             EventTopic::AgentStateChanged => "agent.state.changed",
-            EventTopic::TaskStatusChanged => "task.status_changed",
+            EventTopic::TaskStatusChanged => "task.status.changed",
             EventTopic::TaskDispatched => "task.dispatched",
             EventTopic::OrganizationChanged => "organization.changed",
             EventTopic::EmailInboundMessage => "email.inbound.message",
@@ -127,9 +149,13 @@ impl EventTopic {
             "cron.trigger" => Some(EventTopic::CronTrigger),
             "agent.loop" => Some(EventTopic::AgentLoop),
             "agent.think.round" => Some(EventTopic::AgentThinkRound),
+            "agent.think.graph" => Some(EventTopic::AgentThinkGraph),
+            "agent.think.output" => Some(EventTopic::AgentThinkOutput),
             "agent.tool.executed" => Some(EventTopic::AgentToolExecuted),
+            "agent.tool.started" => Some(EventTopic::AgentToolStarted),
+            "agent.cerebellum.decided" => Some(EventTopic::AgentCerebellumDecided),
             "agent.state.changed" => Some(EventTopic::AgentStateChanged),
-            "task.status_changed" => Some(EventTopic::TaskStatusChanged),
+            "task.status.changed" => Some(EventTopic::TaskStatusChanged),
             "task.dispatched" => Some(EventTopic::TaskDispatched),
             "organization.changed" => Some(EventTopic::OrganizationChanged),
             "email.inbound.message" => Some(EventTopic::EmailInboundMessage),
@@ -235,6 +261,11 @@ mod tests {
             "federation.inbound.send_task"
         );
         assert_eq!(EventTopic::A2aPollRequested.as_str(), "a2a.poll.requested");
+        // 命名收敛：禁止回退到下划线旧串
+        assert_eq!(
+            EventTopic::TaskStatusChanged.as_str(),
+            "task.status.changed"
+        );
     }
 
     /// 未知字符串反序列化失败（保护「拼错 → 静默丢弃」不再发生）

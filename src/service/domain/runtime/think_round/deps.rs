@@ -29,6 +29,8 @@ pub(crate) struct RoundDeps {
     pub scene: ThinkingScene,
     /// 本次思考的模型调用参数（思考强度已按三层规则解析，能力开关关闭时为 None）
     pub call_options: ModelCallOptions,
+    /// 本图的唯一身份（骨架事件与细节事件共用）
+    pub graph_id: String,
     pub trace_id: String,
     pub tool_descriptors: Vec<ToolDescriptor>,
     /// 总轮次上限（跨压缩累计）

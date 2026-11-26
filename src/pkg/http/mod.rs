@@ -1,6 +1,6 @@
-//! HTTP 出站基建层
+//! HTTP 协议基建层
 //!
-//! 全项目出站 HTTP 请求的统一基建，与 `pkg/ws`（长连接基建）同层同级。
+//! 全项目 HTTP 协议相关的统一基建，与 `pkg/ws`（长连接基建）同层同级。
 //!
 //! # 分层职责
 //!
@@ -14,6 +14,9 @@
 //!   安全头 / Content-Disposition 策略）。附件、产物下载等「把用户字节吐给浏览器」
 //!   的场景统一走这里，不要各 handler 手搓 `Body::from(bytes)`。
 //!   ⚠️ 条件请求（ETag / If-Range / If-Modified-Since）尚未实现，见该模块文档。
+//! - [`sse`]：**入站**方向的流式响应基建——`text/event-stream` 的广播订阅装配、
+//!   心跳、丢帧策略与连接清理。各 SSE handler 只保留「订阅谁、丢帧怎么表达、
+//!   断开怎么清理」三处业务差异。
 //!
 //! # 硬约束
 //!
@@ -23,10 +26,12 @@
 //!   一律走本模块。
 //! - 返回文件字节一律走 [`file::serve_file`]：`inline` / `attachment` 的安全判定
 //!   （HTML、SVG 不得内联执行）必须由基建统一把关，不能由调用方各自决定。
+//! - SSE 响应一律走 [`sse`]：心跳与丢帧策略不在 handler 里各写一份。
 
 pub mod client;
 pub mod file;
 pub mod presets;
+pub mod sse;
 pub mod ssrf;
 
 pub use client::{
@@ -40,6 +45,7 @@ pub use presets::{
     LLM_STREAM_IDLE_TIMEOUT, LLM_STREAM_TOTAL_TIMEOUT, LLM_TIMEOUT_MS, llm, outbound, ssrf_guarded,
     with_timeout, with_timeout_ms,
 };
+pub use sse::{CleanupStream, KEEP_ALIVE_SECS, event_stream, keep_alive, ping_event};
 pub use ssrf::{
     DEFAULT_RESPONSE_MAX_BYTES, HARD_RESPONSE_MAX_BYTES, domain_matches, is_local_network_host,
     is_local_network_ip, is_sensitive_header, normalize_domain, read_limited_response_body,

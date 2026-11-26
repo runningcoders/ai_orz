@@ -107,6 +107,12 @@ pub enum MessageType {
     /// ⚠️ 与 `TaskCompleted` 严格分工：14 是「验收通过后的交付回执」，本值是
     /// 「请负责人验收」的请求。只有 14 会伴随 DAG 后继补发与归属用户交付。
     TaskPendingReview = 15,
+    /// 日程触发通知（System→Agent，定时日程到点唤醒执行 / System→User 用户提醒）
+    ///
+    /// ⚠️ 数值 16：15 已被 `TaskPendingReview` 占用（前端常量与滞留重投白名单
+    /// 均依赖它），不能复用；`TaskAssignment(9)` 会误触任务门闩
+    /// （`applies_task_scope_gates`），故独立开值。
+    ScheduleTrigger = 16,
 }
 
 impl From<i32> for MessageType {
@@ -128,6 +134,7 @@ impl From<i32> for MessageType {
             13 => MessageType::Mixed,
             14 => MessageType::TaskCompleted,
             15 => MessageType::TaskPendingReview,
+            16 => MessageType::ScheduleTrigger,
             // ⚠️ 口径分裂已知：这里未知值静默落 `Default`(Text)，而 DAO 侧
             // `sqlx::Type` decode 对同一未知值会**报错**。新增变体必须同时补
             // 上面这一行，否则消息在一条路径变 Text、另一条路径炸库。

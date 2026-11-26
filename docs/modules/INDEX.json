@@ -2,8 +2,8 @@
   "generated_by": "tools/wiki_index.py",
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
-  "total": 677,
-  "total_bytes": 14351190,
+  "total": 683,
+  "total_bytes": 14443514,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -1828,11 +1828,11 @@
     {
       "id": "05-任务与项目",
       "counts": {
-        "A-设计": 6,
-        "B-落地方案": 6,
+        "A-设计": 7,
+        "B-落地方案": 11,
         "C-知识": 53
       },
-      "total": 65,
+      "total": 71,
       "docs": [
         {
           "tier": "A-设计",
@@ -1915,6 +1915,36 @@
           "related": []
         },
         {
+          "tier": "A-设计",
+          "path": "05-任务与项目/A-设计/unified_scheduling_design.md",
+          "name": "unified_scheduling_design",
+          "title": "统一定时调度器与日程设计",
+          "bytes": 38114,
+          "status": "草案",
+          "scope": [
+            "src/models/cron_trigger.rs",
+            "src/config.rs",
+            "src/service/dao/cron_trigger/mod.rs",
+            "src/service/dao/cron_trigger/sqlite.rs",
+            "src/service/dal/cron_trigger.rs",
+            "src/service/domain/system/mod.rs",
+            "src/producer/cron_trigger.rs",
+            "src/consumer/scheduler.rs",
+            "src/pkg/aop/core/registry.rs",
+            "src/pkg/aop/core/consumer.rs",
+            "common/src/enums/cron_trigger.rs",
+            "common/src/api/cron_trigger.rs",
+            "common/src/schedule/{mod,cron,occurrence}.rs（前后端共用的时间算法）",
+            "src/handlers/system/cron_trigger/query_schedule.rs",
+            "frontend/src/pages/system/triggers.rs",
+            "migrations/20260420000000_initial.sql"
+          ],
+          "related": [
+            "10-异步基建(AOP)/A-设计/aop_producer_consumer_contract_design.md",
+            "02-Agent运行时/A-设计/runtime_design.md"
+          ]
+        },
+        {
           "tier": "B-落地方案",
           "path": "05-任务与项目/B-落地方案/Agent Artifact 创建能力实施（执行蓝图）.md",
           "name": "Agent Artifact 创建能力实施（执行蓝图）",
@@ -1962,6 +1992,122 @@
           "bytes": 28928,
           "status": "已完成",
           "scope": [],
+          "related": []
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "05-任务与项目/B-落地方案/统一定时调度器P0P1落地方案.md",
+          "name": "统一定时调度器P0P1落地方案",
+          "title": "统一定时调度器 P0/P1 落地方案",
+          "bytes": 17459,
+          "status": "现行",
+          "scope": [
+            "migrations/20260420000000_initial.sql",
+            "src/models/cron_trigger.rs",
+            "common/src/enums/cron_trigger.rs",
+            "common/src/enums/mod.rs",
+            "common/src/api/cron_trigger.rs",
+            "src/service/dao/cron_trigger/mod.rs",
+            "src/service/dao/cron_trigger/sqlite.rs",
+            "src/service/dao/cron_trigger/sqlite_test.rs",
+            "src/service/dal/cron_trigger.rs",
+            "src/service/domain/system/mod.rs",
+            "src/handlers/system/cron_trigger/response.rs",
+            "src/models/events/cron_trigger.rs",
+            "src/producer/cron_trigger.rs",
+            "src/consumer/scheduler.rs"
+          ],
+          "related": [
+            "../A-设计/unified_scheduling_design.md"
+          ]
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "05-任务与项目/B-落地方案/统一定时调度器P2落地方案.md",
+          "name": "统一定时调度器P2落地方案",
+          "title": "统一定时调度器 P2 落地方案（Agent 自主日程与真实派发）",
+          "bytes": 7537,
+          "status": "现行",
+          "scope": [
+            "common/src/enums/message.rs",
+            "common/src/api/cron_trigger.rs",
+            "src/models/message.rs",
+            "src/consumer/scheduler.rs",
+            "src/consumer/message.rs",
+            "src/consumer/message_route_policy.rs",
+            "src/consumer/message_route_policy_tests.rs",
+            "src/service/dal/agent/builder/default.rs",
+            "src/service/domain/message/mod.rs",
+            "src/service/domain/system/mod.rs",
+            "src/handlers/system/cron_trigger/schedule_agent_task.rs",
+            "src/handlers/system/cron_trigger/mod.rs",
+            "src/router.rs",
+            "frontend/src/utils/message.rs"
+          ],
+          "related": [
+            "../A-设计/unified_scheduling_design.md",
+            "./统一定时调度器P0P1落地方案.md"
+          ]
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "05-任务与项目/B-落地方案/统一定时调度器P3落地方案.md",
+          "name": "统一定时调度器P3落地方案",
+          "title": "统一定时调度器 P3 落地方案（前端页面按四组模型升级）",
+          "bytes": 5112,
+          "status": "现行",
+          "scope": [
+            "frontend/src/pages/system/triggers.rs"
+          ],
+          "related": [
+            "../A-设计/unified_scheduling_design.md",
+            "./统一定时调度器P0P1落地方案.md",
+            "./统一定时调度器P2落地方案.md"
+          ]
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "05-任务与项目/B-落地方案/统一定时调度器P4落地方案.md",
+          "name": "统一定时调度器P4落地方案",
+          "title": "统一定时调度器 P4 落地方案（时间语义、日程查询与三天/周视图）",
+          "bytes": 9649,
+          "status": "现行",
+          "scope": [
+            "common/src/enums/cron_trigger.rs",
+            "common/src/api/cron_trigger.rs",
+            "common/src/schedule/",
+            "src/config.rs",
+            "src/handlers/system/cron_trigger/query_schedule.rs",
+            "src/router.rs",
+            "frontend/src/api/system.rs",
+            "frontend/src/pages/system/triggers.rs"
+          ],
+          "related": [
+            "../A-设计/unified_scheduling_design.md",
+            "./统一定时调度器P0P1落地方案.md",
+            "./统一定时调度器P2落地方案.md",
+            "./统一定时调度器P3落地方案.md"
+          ]
+        },
+        {
+          "tier": "B-落地方案",
+          "path": "05-任务与项目/B-落地方案/统一定时调度器P5落地方案.md",
+          "name": "统一定时调度器P5落地方案",
+          "title": "统一定时调度器 P5 落地方案（日程更新与取消）",
+          "bytes": 10522,
+          "status": "现行",
+          "scope": [
+            "common/src/api/cron_trigger.rs",
+            "src/service/domain/system/mod.rs",
+            "src/service/domain/system/schedule_mutation.rs",
+            "src/handlers/system/cron_trigger/cancel_schedule.rs",
+            "src/handlers/system/cron_trigger/update_schedule.rs",
+            "src/handlers/system/cron_trigger/update_cron_trigger.rs",
+            "src/service/domain/message/delivery.rs",
+            "src/consumer/scheduler.rs",
+            "common/src/constants/message.rs",
+            "src/router.rs"
+          ],
           "related": []
         },
         {
@@ -2126,7 +2272,7 @@
           "path": "05-任务与项目/C-知识/定时任务管理.md",
           "name": "定时任务管理",
           "title": "定时任务管理",
-          "bytes": 21259
+          "bytes": 21544
         },
         {
           "tier": "C-知识",
@@ -2259,7 +2405,7 @@
           "path": "05-任务与项目/C-知识/系统管理功能.md",
           "name": "系统管理功能",
           "title": "系统管理功能",
-          "bytes": 16576
+          "bytes": 16597
         },
         {
           "tier": "C-知识",
@@ -3985,7 +4131,7 @@
           "path": "10-异步基建(AOP)/C-知识/定时触发生产者.md",
           "name": "定时触发生产者",
           "title": "定时触发生产者",
-          "bytes": 21051
+          "bytes": 21131
         },
         {
           "tier": "C-知识",
@@ -4758,7 +4904,7 @@
           "path": "11-前端应用/C-知识/系统管理页面.md",
           "name": "系统管理页面",
           "title": "系统管理页面",
-          "bytes": 18918
+          "bytes": 21255
         },
         {
           "tier": "C-知识",
@@ -5230,7 +5376,7 @@
           "path": "12-基础设施与部署/C-知识/定时任务处理器.md",
           "name": "定时任务处理器",
           "title": "定时任务处理器",
-          "bytes": 21186
+          "bytes": 21266
         },
         {
           "tier": "C-知识",
@@ -5461,7 +5607,7 @@
           "path": "12-基础设施与部署/C-知识/种子数据管理.md",
           "name": "种子数据管理",
           "title": "种子数据管理（业务功能层）",
-          "bytes": 32596
+          "bytes": 33116
         },
         {
           "tier": "C-知识",
@@ -5897,7 +6043,7 @@
           "path": "13-数据模型/C-知识/请求上下文.md",
           "name": "请求上下文",
           "title": "请求上下文",
-          "bytes": 21055
+          "bytes": 21663
         },
         {
           "tier": "C-知识",

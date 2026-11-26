@@ -449,6 +449,7 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             common::enums::MessageType::TaskCompleted => "【任务完成回执】",
             common::enums::MessageType::TaskPendingReview => "【任务待验收知会】",
             common::enums::MessageType::AgentNotify => "【Agent 知会通知】",
+            common::enums::MessageType::ScheduleTrigger => "【日程触发通知】",
             _ => "【当前消息】",
         };
         let mut body = format!("{}\n{}", label, message.to_prompt());

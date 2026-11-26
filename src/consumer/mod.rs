@@ -5,6 +5,7 @@ pub mod email_inbound;
 pub mod federation_directory;
 pub mod federation_inbound_task;
 pub mod federation_ws_outbound;
+pub mod focus_live_consumer;
 pub mod lark_inbound;
 pub mod message;
 pub mod message_route_policy;
@@ -97,6 +98,24 @@ pub(crate) fn task_sender_identity<'a>(
     }
 }
 
+/// 上层身份门闩：确认 `from_id` 对应真实 Agent。
+///
+/// `SendToAgentCommand` / `SendTaskAssignmentCommand` 都带 `from_role`，投递域信任
+/// 不覆盖（domain 只兜底没有角色字段的命令）。调用方若把 `system` 哨兵拼成 Agent
+/// 角色，会写出 `from_id=system + from_role=Agent` 的错位消息：前端按角色查不到
+/// 发送者，接收方回复会落到不存在的 Agent。这里复用 domain 的只读反查把错误拦在
+/// 入口层；返回 false 表示「没有合法 Agent 发送者」，调用方按场景跳过投递或降级。
+pub(crate) async fn is_agent_sender(ctx: &RequestContext, from_id: &str) -> Result<bool> {
+    if from_id.is_empty() || common::constants::message::is_system_sender(from_id) {
+        return Ok(false);
+    }
+    Ok(crate::service::domain::message::domain()
+        .delivery()
+        .resolve_role_by_id(ctx.clone(), from_id)
+        .await?
+        == common::enums::MessageRole::Agent)
+}
+
 pub async fn init() -> Result<()> {
     sys_info!("registering business consumers to AOP event center...");
 
@@ -124,6 +143,8 @@ pub async fn init() -> Result<()> {
         tool_exec_stats_consumer::ToolExecStatsConsumer::new(),
     ))?;
     aop::registry().register_consumer(Arc::new(agent_loop_consumer::AgentLoopConsumer::new()))?;
+    // 专注浮层：思考图 / 轮次输出 / 工具 / 小脑事件 → 进程内 broadcast → SSE
+    aop::registry().register_consumer(Arc::new(focus_live_consumer::FocusLiveConsumer::new()))?;
     aop::registry().register_consumer(Arc::new(
         think_round_stats_consumer::ThinkRoundStatsConsumer::new(),
     ))?;
@@ -160,3 +181,17 @@ pub async fn init() -> Result<()> {
 }
 
 pub use aop_stats_hook::AopStatsHook;
+
+#[cfg(test)]
+mod sender_identity_tests {
+    use super::*;
+
+    /// 哨兵 / 空串必须短路为 false（这两类 ID 在 agent 表里不存在，且不能查库兜底）
+    #[tokio::test]
+    async fn is_agent_sender_rejects_sentinel_and_empty_id() {
+        crate::pkg::storage::test_support::init_for_test().await;
+        let ctx = RequestContext::new_system();
+        assert!(!is_agent_sender(&ctx, "").await.unwrap());
+        assert!(!is_agent_sender(&ctx, "system").await.unwrap());
+    }
+}

@@ -1,4 +1,4 @@
-//! Integration test for `TaskEventConsumer` (AOP async `task.status_changed`).
+//! Integration test for `TaskEventConsumer` (AOP async `task.status.changed`).
 //!
 //! Owner 通知的语义：**机械性兜底，只做确定性去重，不做「谁在忙」的猜测**。
 //! - **baseline**: owner idle、项目无人忙、无 Pending 跟进 → 恰好一条 `TaskCompleted`（完成知会）。
@@ -54,7 +54,7 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-/// 手工构造 `task.status_changed` 事件（`new_status = Completed`）。
+/// 手工构造 `task.status.changed` 事件（`new_status = Completed`）。
 fn build_completed_event(
     task_id: &str,
     task_title: &str,

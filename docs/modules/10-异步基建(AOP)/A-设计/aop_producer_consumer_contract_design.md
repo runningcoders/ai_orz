@@ -90,7 +90,7 @@ related: []
 | `think_round_stats` | `agent.think.round` | Sync | — | [think_round_stats_consumer.rs](src/consumer/think_round_stats_consumer.rs#L36-L42) |
 | `tool_exec_log` | `agent.tool.executed` | Sync | — | [tool_exec_log_consumer.rs](src/consumer/tool_exec_log_consumer.rs#L33-L39) |
 | `tool_exec_stats` | `agent.tool.executed` | Sync | — | [tool_exec_stats_consumer.rs](src/consumer/tool_exec_stats_consumer.rs#L34-L40) |
-| `task_event` | `task.status_changed` | Async | 1 | [task_event_consumer.rs](src/consumer/task_event_consumer.rs#L44-L50) |
+| `task_event` | `task.status.changed` | Async | 1 | [task_event_consumer.rs](src/consumer/task_event_consumer.rs#L44-L50) |
 | `lark_inbound` | `lark.inbound.message` | Async | 1 | [lark_inbound.rs](src/consumer/lark_inbound.rs#L34-L41) |
 | `wechat_inbound` | `wechat.inbound.message` | Async | 1 | [wechat_inbound.rs](src/consumer/wechat_inbound.rs#L33-L40) |
 | `email_inbound` | `email.inbound.message` | Async | 1 | [email_inbound.rs](src/consumer/email_inbound.rs#L34-L41) |
@@ -109,7 +109,7 @@ related: []
 | `email.inbound.message` | `credential_id`（[email.rs](src/models/events/email.rs#L55-L57)） | email_inbound | ⚠️ 名义生效、实无差异（并发 1） |
 | `lark.inbound.message` | `app_id`（[lark.rs](src/models/events/lark.rs#L131-L134)） | lark_inbound | ⚠️ 同上 |
 | `wechat.inbound.message` | `bot_id`（[wechat.rs](src/models/events/wechat.rs#L125-L127)） | wechat_inbound | ⚠️ 同上 |
-| `task.status_changed` | `task_id`（[task_status.rs](src/models/events/task_status.rs#L58-L60)） | task_event | ⚠️ 同上 |
+| `task.status.changed` | `task_id`（[task_status.rs](src/models/events/task_status.rs#L58-L60)） | task_event | ⚠️ 同上 |
 | `organization.changed` | `organization_id`（[organization.rs](src/models/events/organization.rs#L43-L45)） | federation_directory | ⚠️ 同上 |
 | `federation.outbound` | `peer_org`（[federation.rs](src/models/events/federation.rs#L100-L103)） | federation_ws_outbound | ⚠️ 同上 |
 | `federation.inbound.send_task` | `peer_org`（[federation.rs](src/models/events/federation.rs#L126-L128)） | federation_inbound_task | ⚠️ 同上 |
@@ -365,7 +365,7 @@ pub enum EventTopic {
     AgentThinkRound,            // agent.think.round
     AgentToolExecuted,          // agent.tool.executed
     AgentStateChanged,          // agent.state.changed
-    TaskStatusChanged,          // task.status_changed
+    TaskStatusChanged,          // task.status.changed
     OrganizationChanged,        // organization.changed
     EmailInboundMessage,        // email.inbound.message
     LarkInboundMessage,         // lark.inbound.message
@@ -580,7 +580,7 @@ if hits.iter().any(|id| id == "mail_parse_fatal") {
 | `lark.inbound.message` | **飞书 DAL 单例自身**（`service/dal/lark/`） | `EventTopic::LarkInboundMessage` | DAO，[lark/ws.rs](src/service/dao/lark/ws.rs#L187) | ⚠️ **没有游标可推进** —— `FrameAction::Continue` 是 WS 读循环控制（[pkg/ws/mod.rs](src/pkg/ws/mod.rs#L59-L66)），**不是**服务端确认（此处修正本稿早期版本的误判）→ 该 topic 的"收尾"目前无事可做，`notify_producer` 可先不声明 | P2 |
 | `federation.inbound.send_task` | 待定 | — | DAO，[session.rs](src/service/dao/organization_link/ws/session.rs#L67-L77) | 待定 —— 应用层回执已由**响应帧**承载（对端 `pending()` 按 `correlation_id` 等超时），不是"帧级 ack"（见 §8） | P2（本轮不做） |
 
-**其余 topic 不需要注册生产者**（`agent.loop`、`agent.think.round`、`agent.tool.executed`、`agent.state.changed`、`organization.changed`、`task.status_changed`、`federation.outbound`、`federation.inbound.other` + 各 inbound 渠道）—— 反查落空就是明确表达「①类纯通知」，**零改动**。其中 `agent.state.changed` 与 `federation.inbound.other` 更进一步：**连消费者都没有**（前者 §2.1 注，后者 [federation.rs](src/models/events/federation.rs#L79-L80) 自称"无 consumer 订阅，仅可观测"）→ publish 后直接静默丢弃（P5）。
+**其余 topic 不需要注册生产者**（`agent.loop`、`agent.think.round`、`agent.tool.executed`、`agent.state.changed`、`organization.changed`、`task.status.changed`、`federation.outbound`、`federation.inbound.other` + 各 inbound 渠道）—— 反查落空就是明确表达「①类纯通知」，**零改动**。其中 `agent.state.changed` 与 `federation.inbound.other` 更进一步：**连消费者都没有**（前者 §2.1 注，后者 [federation.rs](src/models/events/federation.rs#L79-L80) 自称"无 consumer 订阅，仅可观测"）→ publish 后直接静默丢弃（P5）。
 
 ### 5.3 `A2aPollingProducer`：加一个 topic（不摘成 ScheduledJob）
 

@@ -14,6 +14,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed=styles/input.css");
     println!("cargo:rerun-if-changed=package.json");
     println!("cargo:rerun-if-changed=package-lock.json");
+    // Tailwind 的 @source 会扫描 Rust 源码里的类名；Rust 改了必须重跑 CSS，
+    // 否则新增的任意值类（如 flex-[1.618]）不会出现在 output.css。
+    println!("cargo:rerun-if-changed=src");
+    println!("cargo:rerun-if-changed=index.html");
 
     compile_tailwind()?;
     copy_docs()?;

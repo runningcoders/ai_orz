@@ -1,5 +1,7 @@
 //! 时间格式化工具
 
+use crate::utils::number::format_decimal;
+
 /// 当前毫秒时间戳
 ///
 /// 注意：wasm32-unknown-unknown 下 `std::time::SystemTime::now()` 未实现
@@ -8,6 +10,42 @@
 /// 历史上这里用 SystemTime，导致发送消息/生成临时 ID 时崩溃。
 pub fn now_ms() -> i64 {
     js_sys::Date::now() as i64
+}
+
+/// 耗时（毫秒）→ 自动对齐最佳单位的可读文本
+///
+/// 逐档降精度：`<1s` 用 ms，`<1min` 用 s（一位小数），`<1h` 用 `m s`，
+/// 更长用 `h m`；整分/整时不带零尾巴。工具卡、轮次时间线等所有「耗时」
+/// 读数统一走这里，避免同一时长在不同面板显示成 `500ms` / `0.5s` 两种口径。
+pub fn format_duration(ms: u64) -> String {
+    if ms < 1_000 {
+        return format!("{ms}ms");
+    }
+    let total_seconds = ms / 1_000;
+    if total_seconds < 60 {
+        // 一位小数四舍五入会让 59.95s~59.999s 变成 "60s"，与下一档
+        // 60000ms → "1m" 冲突。达到 60 时直接进位到分钟档。
+        if format_decimal(ms as f64 / 1_000.0, 1) == "60" {
+            return "1m".to_string();
+        }
+        return format!("{}s", format_decimal(ms as f64 / 1_000.0, 1));
+    }
+    let total_minutes = total_seconds / 60;
+    if total_minutes < 60 {
+        let seconds = total_seconds % 60;
+        return if seconds == 0 {
+            format!("{total_minutes}m")
+        } else {
+            format!("{total_minutes}m {seconds}s")
+        };
+    }
+    let hours = total_minutes / 60;
+    let minutes = total_minutes % 60;
+    if minutes == 0 {
+        format!("{hours}h")
+    } else {
+        format!("{hours}h {minutes}m")
+    }
 }
 
 /// 毫秒时间戳 → "HH:MM"（本地时区，解析失败返回 "--:--"）
@@ -49,6 +87,35 @@ fn format_message_time_with_now(ts_ms: i64, now: i64) -> String {
     } else {
         format!("{}", msg.format("%Y-%m-%d %H:%M"))
     }
+}
+
+/// 毫秒时间戳 → 消息列表的日期分隔条标签（本地时区）
+///
+/// 按日历日判定：今天 → "今天"，昨天 → "昨天"，其余 → "YYYY-MM-DD"。
+/// 与 `format_message_time` 共用「今天/昨天按日历日而非 24 小时窗口」的口径，
+/// 但词表刻意不同（分隔条只要日期，消息时间要带时分）。
+pub fn format_date_group_label(ts_ms: i64) -> String {
+    use chrono::{Datelike, Local, TimeZone};
+    let dt = match Local.timestamp_opt(ts_ms / 1000, 0) {
+        chrono::LocalResult::Single(dt) => dt,
+        _ => return "未知".to_string(),
+    };
+    let msg_date = dt.date_naive();
+    let today = Local::now().date_naive();
+    if msg_date == today {
+        return "今天".to_string();
+    }
+    // 与 format_message_time 同口径：按日历日前一天判定「昨天」。
+    // 不用 now - Duration::days(1)——那是固定 24h，DST 切换日会算错。
+    if Some(msg_date) == today.pred_opt() {
+        return "昨天".to_string();
+    }
+    format!(
+        "{:04}-{:02}-{:02}",
+        msg_date.year(),
+        msg_date.month(),
+        msg_date.day()
+    )
 }
 
 /// 毫秒时间戳 → "YYYY-MM-DD HH:MM"（本地时区，解析失败回退为原始值）
@@ -123,7 +190,7 @@ pub fn ms_to_datetime_local_value(ts_ms: i64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::format_message_time_with_now;
+    use super::{format_date_group_label, format_duration, format_message_time_with_now};
     use chrono::{Datelike, Local, NaiveDate, TimeZone};
 
     /// 各分支的样本时间都相对「真实现在」派生，测试在任何日期/时区运行都不漂移
@@ -187,6 +254,38 @@ mod tests {
             format_message_time_with_now(ms_at(last_year, 8, 8), now.timestamp_millis()),
             format!("{} 08:08", last_year.format("%Y-%m-%d"))
         );
+    }
+
+    #[test]
+    fn date_group_label_uses_calendar_days() {
+        let now = now_dt();
+        assert_eq!(format_date_group_label(now.timestamp_millis()), "今天");
+        let yesterday = now.date_naive().pred_opt().unwrap();
+        assert_eq!(
+            format_date_group_label(ms_at(yesterday, 23, 59)),
+            "昨天",
+            "昨天即使跨过 24 小时窗口也按日历日判为昨天"
+        );
+        let older = yesterday.pred_opt().unwrap();
+        assert_eq!(
+            format_date_group_label(ms_at(older, 12, 0)),
+            format!("{}", older.format("%Y-%m-%d"))
+        );
+    }
+
+    #[test]
+    fn duration_scales_to_readable_units() {
+        assert_eq!(format_duration(420), "420ms");
+        assert_eq!(format_duration(1_000), "1s");
+        assert_eq!(format_duration(1_500), "1.5s");
+        assert_eq!(format_duration(61_000), "1m 1s");
+        assert_eq!(format_duration(600_000), "10m");
+        assert_eq!(format_duration(3_600_000), "1h");
+        assert_eq!(format_duration(3_720_000), "1h 2m");
+        // 秒档四舍五入到 60 必须进位到分钟档，不能停在 "60s"
+        assert_eq!(format_duration(59_950), "1m");
+        assert_eq!(format_duration(59_999), "1m");
+        assert_eq!(format_duration(59_949), "59.9s");
     }
 
     #[test]

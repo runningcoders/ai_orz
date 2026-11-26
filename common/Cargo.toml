@@ -11,6 +11,10 @@ aho-corasick = "1.1.4"
 anyhow = { version = "1.0", default-features = true, features = ["std"] }
 bincode = "2.0"
 chrono = { version = "0.4", default-features = false, features = ["serde", "std", "clock"] }
+# 日程展开 / cron 解析是前后端共用的纯算法，依赖随之进 common。
+# 两个 crate 均已在后端 lock 中，版本不新增；wasm32 下均为纯 Rust 实现。
+cron = "0.15"
+chrono-tz = "0.10"
 schemars = { version = "1.2", features = ["derive"] }
 sqlx = { version = "0.8.6", features = ["macros"], default-features = false, optional = true }
 jsonwebtoken = { version = "9", optional = true }

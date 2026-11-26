@@ -1,6 +1,6 @@
 //! 任务验收链路消费者（AOP **Sync**）
 //!
-//! 订阅 `task.status_changed`，处理两种转换：
+//! 订阅 `task.status.changed`，处理两种转换：
 //!
 //! 1. `→ PendingReview`：给项目 Owner（owner → initiator fallback）发一条
 //!    `TaskPendingReview(15)` 工作单，正文带验收标准 / 提交说明 / 产物清单 /
@@ -182,7 +182,32 @@ impl Consumer for TaskPendingReviewConsumer {
             // `agent_notify` 规则把 Final Discard，不会形成「返工通知 → 回复 → 再催」乒乓。
             let from_id = reviewer_id
                 .filter(|id| *id != event.assignee_id.as_str())
-                .unwrap_or("system");
+                .unwrap_or(common::constants::message::SYSTEM_SENDER_ID);
+            // 身份门闩：System 消息不会被 `handle_system_message` 唤醒，故这里不能
+            // 简单把角色改成 System；没有真实验收 Agent 时宁可不发，也不能落
+            // `from_id=system + from_role=Agent` 的错位消息。
+            let sender_ok = crate::consumer::is_agent_sender(&ctx, from_id)
+                .await
+                .inspect_err(|e| {
+                    log_warn!(
+                        &ctx,
+                        "task_pending_review_delivery",
+                        task_id = %event.task_id,
+                        error = ?e,
+                        "驳回通知发送者身份反查失败"
+                    );
+                })
+                .unwrap_or(false);
+            if !sender_ok {
+                log_warn!(
+                    &ctx,
+                    "task_pending_review_delivery",
+                    task_id = %event.task_id,
+                    from_id,
+                    "驳回通知无合法 Agent 发送者，跳过投递"
+                );
+                return Ok(());
+            }
             let cmd = SendToAgentCommand {
                 from_id,
                 from_role: MessageRole::Agent,
@@ -257,10 +282,33 @@ impl Consumer for TaskPendingReviewConsumer {
         // from 取执行 Agent：Owner 看到的是「谁交上来的」，且回复义务判据
         // 因此成立；ReplyObligation 对本类型返回 NotifyOnly，不会形成乒乓。
         let from_id = if event.assignee_id.is_empty() {
-            "system"
+            common::constants::message::SYSTEM_SENDER_ID
         } else {
             event.assignee_id.as_str()
         };
+        // 执行人空 ⇒ 哨兵；与上一分支同理，宁可不发也不伪造 Agent 身份。
+        let sender_ok = crate::consumer::is_agent_sender(&ctx, from_id)
+            .await
+            .inspect_err(|e| {
+                log_warn!(
+                    &ctx,
+                    "task_pending_review_delivery",
+                    task_id = %event.task_id,
+                    error = ?e,
+                    "待验收通知发送者身份反查失败"
+                );
+            })
+            .unwrap_or(false);
+        if !sender_ok {
+            log_warn!(
+                &ctx,
+                "task_pending_review_delivery",
+                task_id = %event.task_id,
+                from_id,
+                "待验收通知无合法 Agent 发送者，跳过投递"
+            );
+            return Ok(());
+        }
         let cmd = SendToAgentCommand {
             from_id,
             from_role: MessageRole::Agent,

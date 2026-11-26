@@ -45,7 +45,8 @@ impl RuntimeDomainImpl {
         let mut picked: Vec<Memory> = Vec::new(); // DESC 页序
 
         for page in 0..MEMORY_INDEX_MAX_PAGES {
-            let mut rows = crate::service::dal::memory::dal()
+            let mut rows = self
+                .memory_dal
                 .query(
                     scoped.clone(),
                     MemoryQuery {
@@ -97,12 +98,12 @@ impl RuntimeMemory for RuntimeDomainImpl {
         limit: usize,
     ) -> Result<Vec<Memory>> {
         let ctx = ctx.to_builder().agent_id(agent_id).build();
-        use crate::service::dal::memory::dal;
         // DB 侧取的是「最近 N 条」的倒序（created_at DESC），这里翻转成时间正序。
         // 【历史对话】的渲染顺序直接决定前缀缓存命中：倒序时新增一条记忆会插到
         // 整块最前面，令其后的所有区块从第一个字符起失配；正序在窗口未满时是纯
         // 尾部追加，整块前缀可继续命中（满了以后按窗口滑动）。
-        let mut memories = dal()
+        let mut memories = self
+            .memory_dal
             .query(
                 ctx,
                 MemoryQuery {
@@ -126,8 +127,6 @@ impl RuntimeMemory for RuntimeDomainImpl {
         ctx: RequestContext,
         mut trace: MemoryTrace,
     ) -> Result<Memory> {
-        use crate::service::dal::memory::dal;
-
         // 可选：内部统一补充信息（如果缺失）
         if trace.log_id.is_empty() {
             trace.log_id = ctx.log_id.clone();
@@ -142,7 +141,8 @@ impl RuntimeMemory for RuntimeDomainImpl {
             trace.task_id = ctx.task_id().cloned();
         }
 
-        let mut results = dal()
+        let mut results = self
+            .memory_dal
             .create(ctx, MemoryCreateParams::AppendTraces(vec![trace]))
             .await?;
 
@@ -154,13 +154,11 @@ impl RuntimeMemory for RuntimeDomainImpl {
     // === 公开方法（供 Handler/神经工具调用） ===
 
     async fn search(&self, ctx: RequestContext, search: MemorySearch) -> Result<Vec<Memory>> {
-        use crate::service::dal::memory::dal;
-        dal().search(ctx, search).await
+        self.memory_dal.search(ctx, search).await
     }
 
     async fn query(&self, ctx: RequestContext, query: MemoryQuery) -> Result<Vec<Memory>> {
-        use crate::service::dal::memory::dal;
-        dal().query(ctx, query).await
+        self.memory_dal.query(ctx, query).await
     }
 
     async fn resolve_trace_positions(
@@ -169,8 +167,7 @@ impl RuntimeMemory for RuntimeDomainImpl {
         agent_id: &str,
         trace_ids: &[String],
     ) -> Result<std::collections::HashMap<String, MemoryTracePosition>> {
-        use crate::service::dal::memory::dal;
-        dal()
+        self.memory_dal
             .resolve_trace_positions(ctx, agent_id, trace_ids)
             .await
     }
@@ -181,8 +178,7 @@ impl RuntimeMemory for RuntimeDomainImpl {
         agent_id: &str,
         memory_ids: &[String],
     ) -> Result<usize> {
-        use crate::service::dal::memory::dal;
-        dal()
+        self.memory_dal
             .mark_short_term_settled(ctx, agent_id, memory_ids)
             .await
     }
@@ -193,8 +189,9 @@ impl RuntimeMemory for RuntimeDomainImpl {
         agent_id: Option<String>,
         limit: usize,
     ) -> Result<Vec<crate::models::memory::SeedNodeRecommendation>> {
-        use crate::service::dal::memory::dal;
-        dal().recommend_seed_nodes(ctx, agent_id, limit).await
+        self.memory_dal
+            .recommend_seed_nodes(ctx, agent_id, limit)
+            .await
     }
 
     async fn get_knowledge_graph(
@@ -202,13 +199,10 @@ impl RuntimeMemory for RuntimeDomainImpl {
         ctx: RequestContext,
         agent_id: Option<String>,
     ) -> Result<crate::models::memory::KnowledgeGraphData> {
-        use crate::service::dal::memory::dal;
-        dal().get_knowledge_graph(ctx, agent_id).await
+        self.memory_dal.get_knowledge_graph(ctx, agent_id).await
     }
 
     async fn create(&self, ctx: RequestContext, params: MemoryCreateParams) -> Result<Vec<Memory>> {
-        use crate::service::dal::memory::dal;
-
         // 写路径单管道（design 决策 #16）：原文落库成功后的唯一动作是 publish
         // 词条事件——不打点、不解析、不调 domain/dal，认证与漂移记账全在消费侧
         let written = extract_written_terms(&ctx, &params);
@@ -217,11 +211,11 @@ impl RuntimeMemory for RuntimeDomainImpl {
             MemoryCreateParams::CreateRelations(relations) => Some(relations.clone()),
             _ => None,
         };
-        let results = dal().create(ctx.clone(), params).await?;
+        let results = self.memory_dal.create(ctx.clone(), params).await?;
 
         if let Some(edges) = edges_for_skeleton {
             // 软门禁：类型不匹配只留痕（log + 漂移打点），绝不阻断/回滚写入
-            apply_skeleton_soft_gate(&ctx, &edges).await;
+            self.apply_skeleton_soft_gate(&ctx, &edges).await;
         }
 
         if let Some((agent_id, terms)) = written {
@@ -237,13 +231,11 @@ impl RuntimeMemory for RuntimeDomainImpl {
     }
 
     async fn update(&self, ctx: RequestContext, memory: Memory) -> Result<Memory> {
-        use crate::service::dal::memory::dal;
-        dal().update(ctx, memory).await
+        self.memory_dal.update(ctx, memory).await
     }
 
     async fn delete(&self, ctx: RequestContext, memory: Memory) -> Result<()> {
-        use crate::service::dal::memory::dal;
-        dal().delete(ctx, memory).await
+        self.memory_dal.delete(ctx, memory).await
     }
 
     async fn traverse_graph(
@@ -255,8 +247,7 @@ impl RuntimeMemory for RuntimeDomainImpl {
         strategy: TraversalStrategy,
         include_retired: bool,
     ) -> Result<Vec<Memory>> {
-        use crate::service::dal::memory::dal;
-        dal()
+        self.memory_dal
             .traverse_knowledge_graph(
                 ctx,
                 seed_node_ids,
@@ -277,8 +268,7 @@ impl RuntimeMemory for RuntimeDomainImpl {
         target_id: &str,
         entries: Vec<PropertyEntry>,
     ) -> Result<PropertySaveReport> {
-        use crate::service::dal::memory::dal;
-        dal()
+        self.memory_dal
             .save_entity_properties(ctx, target_type, target_id, entries)
             .await
     }
@@ -289,8 +279,7 @@ impl RuntimeMemory for RuntimeDomainImpl {
         target_type: PropertyTargetType,
         target_id: &str,
     ) -> Result<Vec<KnowledgePropertyPo>> {
-        use crate::service::dal::memory::dal;
-        dal()
+        self.memory_dal
             .list_entity_properties(ctx, target_type, target_id)
             .await
     }
@@ -300,8 +289,9 @@ impl RuntimeMemory for RuntimeDomainImpl {
         ctx: RequestContext,
         targets: &[(PropertyTargetType, String)],
     ) -> Result<std::collections::HashMap<(String, String), Vec<KnowledgePropertyPo>>> {
-        use crate::service::dal::memory::dal;
-        dal().list_entity_properties_batch(ctx, targets).await
+        self.memory_dal
+            .list_entity_properties_batch(ctx, targets)
+            .await
     }
 
     async fn list_entity_properties_batch_with_history(
@@ -309,8 +299,7 @@ impl RuntimeMemory for RuntimeDomainImpl {
         ctx: RequestContext,
         targets: &[(PropertyTargetType, String)],
     ) -> Result<std::collections::HashMap<(String, String), Vec<KnowledgePropertyPo>>> {
-        use crate::service::dal::memory::dal;
-        dal()
+        self.memory_dal
             .list_entity_properties_batch_with_history(ctx, targets)
             .await
     }
@@ -320,8 +309,9 @@ impl RuntimeMemory for RuntimeDomainImpl {
         ctx: RequestContext,
         filters: &[PropertyFilter],
     ) -> Result<Vec<String>> {
-        use crate::service::dal::memory::dal;
-        dal().query_entities_by_properties(ctx, filters).await
+        self.memory_dal
+            .query_entities_by_properties(ctx, filters)
+            .await
     }
 }
 
@@ -333,99 +323,101 @@ impl RuntimeMemory for RuntimeDomainImpl {
 /// - 无任何三元组约束时 `check` 返回 `Unconstrained`，不产生噪声
 /// - 两端节点缺失（并发删除等）时跳过；骨架加载失败只降级为一条 warn
 /// - 只做大小写/空白归一（`normalize`），不做同义映射（同义归并走异步认证链路）
-async fn apply_skeleton_soft_gate(
-    ctx: &RequestContext,
-    edges: &[crate::models::memory::KnowledgeNodeRelationPo],
-) {
-    use crate::models::memory::MemoryPo;
-    use common::ontology::{SkeletonVerdict, normalize};
+impl RuntimeDomainImpl {
+    async fn apply_skeleton_soft_gate(
+        &self,
+        ctx: &RequestContext,
+        edges: &[crate::models::memory::KnowledgeNodeRelationPo],
+    ) {
+        use crate::models::memory::MemoryPo;
+        use common::ontology::{SkeletonVerdict, normalize};
 
-    if edges.is_empty() {
-        return;
-    }
-
-    let node_ids: Vec<String> = edges
-        .iter()
-        .flat_map(|e| [e.source_node_id.clone(), e.target_node_id.clone()])
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
-        .collect();
-
-    let nodes = match crate::service::dal::memory::dal()
-        .query(
-            ctx.clone(),
-            MemoryQuery {
-                ids: Some(node_ids),
-                ..Default::default()
-            },
-        )
-        .await
-    {
-        Ok(nodes) => nodes,
-        Err(e) => {
-            crate::log_warn!(
-                ctx,
-                "memory_skeleton_gate",
-                "加载边端点失败，跳过校验: {}",
-                e
-            );
+        if edges.is_empty() {
             return;
         }
-    };
 
-    let node_types: std::collections::HashMap<String, String> = nodes
-        .into_iter()
-        .filter_map(|m| match m.po {
-            MemoryPo::KnowledgeNode(node) => Some((node.id, normalize(&node.node_type))),
-            _ => None,
-        })
-        .collect();
+        let node_ids: Vec<String> = edges
+            .iter()
+            .flat_map(|e| [e.source_node_id.clone(), e.target_node_id.clone()])
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
 
-    let skeleton = match crate::service::dal::ontology::dal()
-        .load_skeleton(ctx.clone())
-        .await
-    {
-        Ok(skeleton) => skeleton,
-        Err(e) => {
-            crate::log_warn!(
-                ctx,
-                "memory_skeleton_gate",
-                "加载本体骨架失败，跳过校验: {}",
-                e
-            );
-            return;
-        }
-    };
-
-    for edge in edges {
-        let (Some(subject), Some(object)) = (
-            node_types.get(&edge.source_node_id),
-            node_types.get(&edge.target_node_id),
-        ) else {
-            continue;
+        let nodes = match self
+            .memory_dal
+            .query(
+                ctx.clone(),
+                MemoryQuery {
+                    ids: Some(node_ids),
+                    ..Default::default()
+                },
+            )
+            .await
+        {
+            Ok(nodes) => nodes,
+            Err(e) => {
+                crate::log_warn!(
+                    ctx,
+                    "memory_skeleton_gate",
+                    "加载边端点失败，跳过校验: {}",
+                    e
+                );
+                return;
+            }
         };
-        let relation = normalize(&edge.relation_type);
-        if skeleton.check(&relation, subject, object) != SkeletonVerdict::Mismatch {
-            continue;
-        }
 
-        let triple = format!("{subject} -[{relation}]-> {object}");
-        crate::log_warn!(
-            ctx,
-            "memory_skeleton_gate",
-            "骨架类型不匹配（软门禁，写入保留）: {}",
-            triple
-        );
+        let node_types: std::collections::HashMap<String, String> = nodes
+            .into_iter()
+            .filter_map(|m| match m.po {
+                MemoryPo::KnowledgeNode(node) => Some((node.id, normalize(&node.node_type))),
+                _ => None,
+            })
+            .collect();
 
-        // 漂移打点失败不阻塞主流程（与词元认证消费者同一兜底口径）
-        if let Some(stats) = crate::pkg::stats::global_stats() {
-            let stats_event =
-                crate::pkg::stats::OntologyDriftEvent::new(chrono::Utc::now().timestamp())
-                    .with_agent_id(ctx.agent_id().cloned().unwrap_or_default())
-                    .with_kind("skeleton".to_string())
-                    .with_raw_term(triple);
-            if let Err(e) = stats.record(ctx.clone(), stats_event).await {
-                crate::log_warn!(ctx, "memory_skeleton_gate", "骨架漂移打点失败: {}", e);
+        let skeleton = match self.ontology_dal.load_skeleton(ctx.clone()).await {
+            Ok(skeleton) => skeleton,
+            Err(e) => {
+                crate::log_warn!(
+                    ctx,
+                    "memory_skeleton_gate",
+                    "加载本体骨架失败，跳过校验: {}",
+                    e
+                );
+                return;
+            }
+        };
+
+        for edge in edges {
+            let (Some(subject), Some(object)) = (
+                node_types.get(&edge.source_node_id),
+                node_types.get(&edge.target_node_id),
+            ) else {
+                continue;
+            };
+            let relation = normalize(&edge.relation_type);
+            if skeleton.check(&relation, subject, object) != SkeletonVerdict::Mismatch {
+                continue;
+            }
+
+            let triple = format!("{subject} -[{relation}]-> {object}");
+            crate::log_warn!(
+                ctx,
+                "memory_skeleton_gate",
+                "骨架类型不匹配（软门禁，写入保留）: {}",
+                triple
+            );
+
+            // 漂移打点失败不阻塞主流程（与词元认证消费者同一兜底口径）
+            // Stats 是请求级基础设施，统一从 ctx 取，不额外注入。
+            if let Some(stats) = ctx.stats_opt() {
+                let stats_event =
+                    crate::pkg::stats::OntologyDriftEvent::new(chrono::Utc::now().timestamp())
+                        .with_agent_id(ctx.agent_id().cloned().unwrap_or_default())
+                        .with_kind("skeleton".to_string())
+                        .with_raw_term(triple);
+                if let Err(e) = stats.record(ctx.clone(), stats_event).await {
+                    crate::log_warn!(ctx, "memory_skeleton_gate", "骨架漂移打点失败: {}", e);
+                }
             }
         }
     }

@@ -12,6 +12,7 @@ use common::api::scene::{
 };
 use common::enums::AgentRuntimeState;
 use std::cmp::Reverse;
+use std::collections::HashMap;
 
 /// 停滞阈值：Busy 且超过该时长状态未变 → `Stalled`（仅 Info）
 pub const STALLED_THRESHOLD_MS: i64 = 30 * 60 * 1000;
@@ -26,6 +27,11 @@ pub struct SceneInput {
     pub now: i64,
     pub seat_limit: u32,
     pub queue_backlog: u64,
+    /// 在役 Agent 的 `id → 展示名`（HR 档案口径，已排除 Deleted）
+    ///
+    /// 同时作为**membership 白名单**：runtime 注册表可能残留已删除 Agent 的状态，
+    /// 但只有档案里仍在役的 Agent 才有资格上席位。展示名也从这里取，不再回退 id。
+    pub active_agents: HashMap<String, String>,
     /// 只包含运行时已注册的 Agent；未注册的不进入投影
     pub facts: Vec<PresenceFacts>,
 }
@@ -37,7 +43,6 @@ pub struct SceneInput {
 #[derive(Debug, Clone, Default)]
 pub struct PresenceFacts {
     pub agent_id: String,
-    pub display_name: String,
     pub runtime_state: AgentRuntimeState,
     /// 当前状态的起始时间（毫秒）
     pub state_started_at: i64,
@@ -51,16 +56,28 @@ pub struct PresenceFacts {
 pub fn derive(input: SceneInput, seq: u64) -> SceneProjectionResponse {
     let limit = input.seat_limit.clamp(1, MAX_SEAT_LIMIT);
 
+    // membership 由 HR 档案决定，runtime 只提供状态：档案里不在役的（如已删除）
+    // 即使 runtime 仍残留状态也不进入投影，避免席位数与右侧 Agent 列表对不上。
+    let active: Vec<(&PresenceFacts, &String)> = input
+        .facts
+        .iter()
+        .filter_map(|facts| {
+            input
+                .active_agents
+                .get(&facts.agent_id)
+                .map(|name| (facts, name))
+        })
+        .collect();
+
     let mut stats = SceneStats {
-        agent_total: input.facts.len() as u32,
+        agent_total: active.len() as u32,
         queue_backlog: input.queue_backlog,
         ..Default::default()
     };
 
-    let mut entities: Vec<SceneEntity> = input
-        .facts
-        .iter()
-        .map(|facts| entity_of(facts, input.now))
+    let mut entities: Vec<SceneEntity> = active
+        .into_iter()
+        .map(|(facts, name)| entity_of(facts, name, input.now))
         .collect();
 
     for entity in &entities {
@@ -142,7 +159,7 @@ fn owes_reply(facts: &PresenceFacts) -> bool {
         .is_none_or(|last_user| last_agent > last_user)
 }
 
-fn entity_of(facts: &PresenceFacts, now: i64) -> SceneEntity {
+fn entity_of(facts: &PresenceFacts, display_name: &str, now: i64) -> SceneEntity {
     let category = category_of(facts, now);
     let attention = attention_of(category);
     let last_activity_at = [
@@ -158,7 +175,7 @@ fn entity_of(facts: &PresenceFacts, now: i64) -> SceneEntity {
     SceneEntity {
         id: facts.agent_id.clone(),
         kind: SceneEntityKind::Agent,
-        display_name: facts.display_name.clone(),
+        display_name: display_name.to_string(),
         dims: PresenceDims {
             interruptible: !matches!(
                 category,
@@ -215,7 +232,6 @@ mod tests {
     fn facts(state: AgentRuntimeState, since: i64) -> PresenceFacts {
         PresenceFacts {
             agent_id: "agent-1".to_string(),
-            display_name: "A".to_string(),
             runtime_state: state,
             state_started_at: since,
             ..Default::default()
@@ -224,7 +240,7 @@ mod tests {
 
     #[test]
     fn busy_is_working_and_interruptible() {
-        let entity = entity_of(&facts(AgentRuntimeState::Busy, NOW - 1_000), NOW);
+        let entity = entity_of(&facts(AgentRuntimeState::Busy, NOW - 1_000), "A", NOW);
         assert_eq!(entity.dims.category, SceneCategory::Working);
         assert!(entity.dims.interruptible);
         assert_eq!(entity.attention, SceneAttention::None);
@@ -232,7 +248,7 @@ mod tests {
 
     #[test]
     fn resting_is_not_interruptible() {
-        let entity = entity_of(&facts(AgentRuntimeState::Resting, NOW - 1_000), NOW);
+        let entity = entity_of(&facts(AgentRuntimeState::Resting, NOW - 1_000), "A", NOW);
         assert_eq!(entity.dims.category, SceneCategory::Resting);
         assert!(!entity.dims.interruptible);
     }
@@ -241,6 +257,7 @@ mod tests {
     fn busy_over_threshold_is_stalled_info_only() {
         let entity = entity_of(
             &facts(AgentRuntimeState::Busy, NOW - STALLED_THRESHOLD_MS),
+            "A",
             NOW,
         );
         assert_eq!(entity.dims.category, SceneCategory::Stalled);
@@ -253,7 +270,7 @@ mod tests {
         f.is_task_context = true;
         f.last_agent_message_at = Some(NOW - 500);
         f.last_user_message_at = Some(NOW - 900);
-        let entity = entity_of(&f, NOW);
+        let entity = entity_of(&f, "A", NOW);
         assert_eq!(entity.dims.category, SceneCategory::Waiting);
         assert_eq!(entity.attention, SceneAttention::NeedsYou);
         assert_eq!(entity.dims.blocked_on, Some(BlockReason::UserReply));
@@ -282,11 +299,15 @@ mod tests {
             now: NOW,
             seat_limit: 2,
             queue_backlog: 3,
+            active_agents: HashMap::new(),
             facts: Vec::new(),
         };
         for index in 0..5 {
             let mut f = facts(AgentRuntimeState::Idle, NOW - 1_000);
             f.agent_id = format!("agent-{index}");
+            input
+                .active_agents
+                .insert(f.agent_id.clone(), format!("A{index}"));
             input.facts.push(f);
         }
         let projection = derive(input, 7);
@@ -303,12 +324,19 @@ mod tests {
             now: NOW,
             seat_limit: 8,
             queue_backlog: 0,
+            active_agents: HashMap::new(),
             facts: Vec::new(),
         };
         let mut working = facts(AgentRuntimeState::Busy, NOW - 1_000);
         working.agent_id = "working".to_string();
+        input
+            .active_agents
+            .insert(working.agent_id.clone(), "Working".to_string());
         let mut waiting = facts(AgentRuntimeState::Idle, NOW - 1_000);
         waiting.agent_id = "waiting".to_string();
+        input
+            .active_agents
+            .insert(waiting.agent_id.clone(), "Waiting".to_string());
         waiting.is_task_context = true;
         waiting.last_agent_message_at = Some(NOW - 500);
         input.facts.push(working);
@@ -317,5 +345,32 @@ mod tests {
         let projection = derive(input, 0);
         assert_eq!(projection.entities[0].id, "waiting");
         assert_eq!(projection.attention_total, 1);
+    }
+
+    #[test]
+    fn deleted_agent_still_in_runtime_does_not_take_a_seat() {
+        let mut input = SceneInput {
+            now: NOW,
+            seat_limit: 8,
+            queue_backlog: 0,
+            active_agents: HashMap::new(),
+            facts: Vec::new(),
+        };
+        let mut active = facts(AgentRuntimeState::Idle, NOW - 1_000);
+        active.agent_id = "active".to_string();
+        input
+            .active_agents
+            .insert(active.agent_id.clone(), "在役".to_string());
+        // 已删除但 runtime 注册表仍残留的 Agent：有状态、无档案
+        let mut deleted = facts(AgentRuntimeState::Busy, NOW - 2_000);
+        deleted.agent_id = "000000006a91aaf2ab8d94aa".to_string();
+        input.facts.push(active);
+        input.facts.push(deleted);
+
+        let projection = derive(input, 0);
+        assert_eq!(projection.entities.len(), 1);
+        assert_eq!(projection.entities[0].id, "active");
+        assert_eq!(projection.entities[0].display_name, "在役");
+        assert_eq!(projection.stats.agent_total, 1);
     }
 }

@@ -4,9 +4,9 @@
 
 你通过 function calling 调用平台工具，系统按工具的 `dispatch_mode` 配置**自动决定同步/异步分发**，你无需关心内部路由细节，只需处理结果：**同步立即用、异步等下一轮 ToolCallResult 消息**。
 
-## 你可能调用的工具查询（neural 常驻）
+## 你可能调用的工具查询（出生自带）
 
-不熟悉当前可用工具时，先用以下 4 个查清楚再调用（tags 均为 `tool_management`；参数与默认值见工具 Schema，此处只记 Schema 看不出来的语义）：
+不熟悉当前可用工具时，先用以下 4 个查清楚再调用（tags 均为 `tool_management`，属 `BASE_AGENT_PACKS` 出生自带、卸载受保护，但**不是 neural**；参数与默认值见工具 Schema，此处只记 Schema 看不出来的语义）：
 
 | 工具 | 用途与语义 |
 |------|------|

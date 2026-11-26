@@ -100,12 +100,25 @@ pub async fn run_legacy_awaken(deps: Arc<AwakenDeps>) -> Result<LegacyAwakenOutc
         Arc::new(PollNode::new(Arc::clone(&deps), PollKind::Exit)),
         Arc::new(ConsolidateNode::new(Arc::clone(&deps))),
     ];
-    let engine = ThinkPathEngine::new(
+    let mut engine = ThinkPathEngine::new(
         blueprint,
         nodes,
         Arbiter::deterministic(),
         build_providers(Arc::clone(&deps)),
     )?;
+    // 影子模式观测也一并关闭：影子跑不能引入任何新副作用（含 AOP 事件）
+    if !deps.shadow {
+        let path_id = engine.blueprint().id.clone();
+        engine = engine.with_observer(super::super::focus_graph::AopGraphObserver::new(
+            deps.ctx.clone(),
+            agent_id.clone(),
+            "awaken",
+            common::id::TimeId::generate().to_string(),
+            path_id,
+            deps.ctx.task_id().cloned(),
+            deps.ctx.project_id().cloned(),
+        ));
+    }
 
     crate::log_info!(
         &deps.ctx,

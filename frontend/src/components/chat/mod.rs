@@ -1,6 +1,9 @@
 //! 聊天共享组件
 //!
 //! - `MessageBubble`: 单条消息气泡（文本/图片/文件），简版渲染，不含工具卡片
+//! - `RichMessageItem`: 单条富消息（头像 / 引用 / 工具卡 / 任务卡 / 复制回复），
+//!   对话页与工作台专注态共用，仅尺寸、数据来源与能力开关不同
+//! - `ThreadChain`: 话题消息链（对话页话题浏览页 / 专注态话题层共用）
 //! - `TypingIndicator`: 输入指示器（三点动画）
 //! - `MessageList`: 消息列表（含空状态 + typing 指示器）
 //! - `ChatSidePanel`: 聊天信息侧栏（项目模式：总览/任务/产物/Agent/工具/思考；默认对话：任务/产物/Agent/工具/思考，只读）
@@ -23,18 +26,22 @@ pub mod chat_side_panel;
 pub mod memory_trace_detail;
 pub mod message_bubble;
 pub mod project_agents_tab;
+pub mod rich_message;
 pub mod think_path_graph_view;
 pub mod think_rounds_timeline;
 pub mod think_traces_tab;
+pub mod thread_chain;
 pub mod tool_calls_tab;
 pub mod typing_indicator;
 
 pub use agent_trace_panel::AgentTracePanel;
 pub use cancel_thinking_button::CancelThinkingButton;
 pub use chat_side_panel::ChatSidePanel;
-pub use message_bubble::MessageBubble;
+pub use message_bubble::{MessageBubble, ReplyPreview};
 pub use project_agents_tab::ProjectAgentsTab;
+pub use rich_message::{QuotedPreview, RichMessageItem, message_preview_text, truncate_preview};
 pub use think_path_graph_view::ThinkPathGraphView;
 pub use think_traces_tab::ThinkTracesTab;
+pub use thread_chain::ThreadChain;
 pub use tool_calls_tab::ToolCallsTab;
 pub use typing_indicator::TypingIndicator;

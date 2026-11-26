@@ -22,6 +22,7 @@ use super::project_event::ProjectStatTable;
 use super::task_event::TaskStatTable;
 use super::tool_call::ToolCallStatTable;
 use super::traits::{StatEvent, StatTable};
+use super::trigger_exec::TriggerExecStatTable;
 use crate::pkg::request_context::RequestContext;
 
 /// 类型安全的 SQL 参数枚举（Send + Sync，替代 `dyn ToSql`）
@@ -196,6 +197,7 @@ impl Stats {
         self.register_table(ProjectStatTable)?;
         self.register_table(TaskStatTable)?;
         self.register_table(OntologyDriftStatTable)?;
+        self.register_table(TriggerExecStatTable)?;
         Ok(())
     }
 

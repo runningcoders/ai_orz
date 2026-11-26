@@ -56,6 +56,7 @@ use crate::pages::system::logs::SystemLogs;
 use crate::pages::system::processes::SystemProcesses;
 use crate::pages::system::seed::SystemSeed;
 use crate::pages::system::tasks::SystemTasks;
+use crate::pages::system::trigger_detail::SystemTriggerDetail;
 use crate::pages::system::triggers::SystemTriggers;
 use crate::pages::user::profile::UserProfile;
 use crate::pages::workspace::Workspace;
@@ -142,6 +143,8 @@ pub enum Route {
     // System 模块
     #[route("/system/triggers")]
     SystemTriggers {},
+    #[route("/system/triggers/:id")]
+    SystemTriggerDetail { id: String },
     #[route("/system/health")]
     SystemHealth {},
     #[route("/system/docs")]

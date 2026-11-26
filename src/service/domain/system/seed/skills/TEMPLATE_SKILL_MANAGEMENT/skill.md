@@ -19,15 +19,15 @@
 > **工具包 vs 技能包是两个语义面**：`installed_tags` 是工具授权面（决定你能调哪些工具），
 > `installed_skill_packs` 是技能包记录（决定你批量装了哪些方法论）。装技能包 ≠ 授权工具，两者互不同步。
 
-## 技能查询 / 发现（你常用的都是 neural 常驻）
+## 技能查询 / 发现（你常用的都出生自带）
 
-> 参数与默认值见工具 Schema，此处只记 Schema 看不出来的语义与坑。
+> 参数与默认值见工具 Schema，此处只记 Schema 看不出来的语义与坑。本组工具不都是 neural——`skill_management` 属 `BASE_AGENT_PACKS`，同样是出生自带、卸载受保护。
 
 | 工具 | 用途与语义 |
 |------|------|
 | **`search_skill`**（你最常用，neural 常驻） | 按关键词 / tags 搜技能库；多 tag 为 **OR 命中任一** |
 | `list_skill_tags` | 列出所有 Published 技能的不重复 tags（了解技能分类全貌） |
-| `uninstall_skill_from_agent`（neural 常驻） | 卸载你目录下的技能副本；**只能卸副本，不能卸原始技能** |
+| `uninstall_skill_from_agent` | 卸载你目录下的技能副本；**只能卸副本，不能卸原始技能** |
 
 ### 其他技能管理工具（非 neural 或管理用，简写）
 
@@ -65,7 +65,7 @@ Agent 上下文调用时技能自动归属于你（author_id = 你的 agent_id�
 - **建完即生效，不用再装**：创建出的自有草稿会出现在你的技能区块里（它就是你的、非 Published），下次干活就能直接用到，**不需要**再调 `install_skill_to_agent`
 - **不能自己发布**：Agent 上下文传 `status=Published` 会被服务端拒绝（InvalidRequest）——发布收敛为共享库根技能的单一入口。草稿台只是起点，成熟判据与两条发布路径见**自我进化技能**
 
-> **沉淀场景（settle）可用**：休息沉淀时技能管理工具在白名单内，可以在沉淀里把浮现出的可复用操作路径直接建成技能，并在图谱里配一个 `node_type=skill` 的摘要节点 + `distilled_from` 来源边。完整判据与流程见**自我进化技能**的「休息沉淀时的技能沉淀」章节。
+> **沉淀场景（settle）部分可用**：settle 白名单只放 `neural` / `memory` / `self_evolution`，所以 `create_skill` / `update_skill`（含 `self_evolution`）与 `search_skill`（neural）能用，`install_skill_*` / `uninstall_skill_*` 等纯 `skill_management` 工具不能用。沉淀里可以把可复用操作路径直接建成技能，并在图谱里配一个 `node_type=skill` 的摘要节点 + `distilled_from` 来源边。完整判据与流程见**自我进化技能**的「休息沉淀时的技能沉淀」章节。
 
 ## 能力成长闭环（简要）
 
