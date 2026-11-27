@@ -20,14 +20,14 @@
 > - [docs/diagrams/ai-orz-memory.html](docs/diagrams/ai-orz-memory.html) — 记忆子系统专题图
 > - [docs/diagrams/ai-orz-tools.html](docs/diagrams/ai-orz-tools.html) — 工具与技能专题图（三层调用 / 授权 / 技能装配）
 > - [docs/diagrams/ai-orz-tool-context.html](docs/diagrams/ai-orz-tool-context.html) — 工具调用上下文（身份）数据流转专题图（声明 / 解析 / 注入 / 使用四层）
-> - [docs/diagrams/ai-orz-aop.html](docs/diagrams/ai-orz-aop.html) — 异步基建专题图（AOP 生产消费事件中心 · 18 处消费者注册）
+> - [docs/diagrams/ai-orz-aop.html](docs/diagrams/ai-orz-aop.html) — 异步基建专题图（AOP 生产消费事件中心 · 20 处消费者注册）
 > - [docs/diagrams/ai-orz-org-federation.html](docs/diagrams/ai-orz-org-federation.html) — 组织与权限专题图（含联邦组网）
 > - [docs/diagrams/ai-orz-task-project.html](docs/diagrams/ai-orz-task-project.html) — 任务与项目专题图（六态状态机 / 验收闭环 / DAG 依赖就绪判定 / 制品）
 > - [docs/diagrams/ai-orz-messaging.html](docs/diagrams/ai-orz-messaging.html) — 对话与消息专题图（渠道入站 / 入站过滤 / 消息编排 / SSE）
 > - [docs/diagrams/ai-orz-a2a.html](docs/diagrams/ai-orz-a2a.html) — 外部 Agent 接入专题图（A2A JSON-RPC / 轮询兜底 / 联邦签名）
 > - [docs/diagrams/ai-orz-search.html](docs/diagrams/ai-orz-search.html) — 搜索专题图（三路召回 / 属性过滤 / 存储面）
 > - [docs/diagrams/ai-orz-stats.html](docs/diagrams/ai-orz-stats.html) — 统计与监控专题图（事件采集 / 聚合 / 看板）
-> - [docs/diagrams/ai-orz-schedule.html](docs/diagrams/ai-orz-schedule.html) — 日程与定时调度专题图（四组参数 / occurrence 展开 / 执行留痕）
+> - [docs/diagrams/ai-orz-schedule.html](docs/diagrams/ai-orz-schedule.html) — 日程与定时调度专题图（四组参数 / occurrence 展开 / 事件驱动派发 / 执行留痕）
 > - [docs/diagrams/ai-orz-frontend.html](docs/diagrams/ai-orz-frontend.html) — 前端应用专题图（Dioxus WASM / 页面 / API 客户端）
 > - [docs/diagrams/ai-orz-infra.html](docs/diagrams/ai-orz-infra.html) — 基础设施与部署专题图（启动装配 / 存储 / 发布）
 > - [docs/diagrams/ai-orz-data-model.html](docs/diagrams/ai-orz-data-model.html) — 数据模型 ER 图（三族九表 / 字段来自现网 schema）
@@ -344,14 +344,14 @@ data/
 | [docs/diagrams/ai-orz-memory.html](docs/diagrams/ai-orz-memory.html) | 记忆子系统：四层记忆 + 两条 JSONL + 三路召回 + 沉淀 | 四层 / 存储面 / 检索与沉淀 |
 | [docs/diagrams/ai-orz-tools.html](docs/diagrams/ai-orz-tools.html) | 工具与技能：三层调用 + 凭据编排 + 策略拦截与六态授权 + 技能包 | 三层调用 / 策略与授权 / 注册与装配 |
 | [docs/diagrams/ai-orz-tool-context.html](docs/diagrams/ai-orz-tool-context.html) | 工具调用上下文（身份）数据流转：声明（CredentialKind 的 UserInfo / AgentInfo + field 白名单 + binding）→ 解析（is_identity 二元分派 + 失败语义按来源分叉）→ 注入（check + base_env 九键末位 insert）→ 使用（git 子进程 / commit-msg hook） | 四层主链路 / 失败语义分叉 / 注入与优先级 |
-| [docs/diagrams/ai-orz-aop.html](docs/diagrams/ai-orz-aop.html) | 异步基建：pkg/aop 六 Trait + Registry + 13 类消费者（19 处注册 / 9 Sync + 10 Async）+ 3 生产者 | 一次事件流转 / 启动顺序 / 生产者与兜底 |
+| [docs/diagrams/ai-orz-aop.html](docs/diagrams/ai-orz-aop.html) | 异步基建：pkg/aop 六 Trait + Registry + 14 类消费者（20 处注册 / 10 Sync + 10 Async）+ 3 生产者 | 一次事件流转 / 启动顺序 / 生产者与兜底 |
 | [docs/diagrams/ai-orz-org-federation.html](docs/diagrams/ai-orz-org-federation.html) | 组织与权限：多级组织 + 角色继承 + 双模式认证 + 联邦组网 | 组织与角色 / 认证与凭证 / 联邦组网 |
 | [docs/diagrams/ai-orz-task-project.html](docs/diagrams/ai-orz-task-project.html) | 任务与项目：六态状态机（含 PendingReview）+ 验收闭环 + DAG 唤醒（依赖就绪判定下沉 project domain，创建/门闩/补发共用同一口径）+ 制品聚合；看板/工作台落 `pages/workspace/`（三栏 + 固定席位场） | 任务状态机 / DAG 与唤醒 / 项目聚合 |
 | [docs/diagrams/ai-orz-messaging.html](docs/diagrams/ai-orz-messaging.html) | 对话与消息：渠道入站归一化 + 路由策略 + 入站过滤（规则门 + 小脑相关性门）+ MessageDomain（builder / 出站媒体分类 + delivery）+ 附件字节流与正文引用 + SSE | 入站与路由 / 编排与投递 / 存储与唤醒 |
 | [docs/diagrams/ai-orz-a2a.html](docs/diagrams/ai-orz-a2a.html) | 外部 Agent：Agent Card + JSON-RPC 四方法 + 协议映射与回调 + 30s 轮询兜底 | 协议入口 / 结果与兜底 / 联邦与长连接 |
 | [docs/diagrams/ai-orz-search.html](docs/diagrams/ai-orz-search.html) | 搜索：FTS5 + 向量 + 图谱三路召回 + 属性精确过滤 | 工具入口 / 三路召回 / 存储面 |
 | [docs/diagrams/ai-orz-stats.html](docs/diagrams/ai-orz-stats.html) | 统计与监控：事件采集（采集器落 pkg/stats/runtime，全局单例）→ AOP 消费 → 四类指标落库 → 监控 API | 采集 / 聚合 / 读取与看板 |
-| [docs/diagrams/ai-orz-schedule.html](docs/diagrams/ai-orz-schedule.html) | 日程与定时调度：`cron_triggers` 四组顶层参数（When / Who / What / How）+ `common/schedule/` 纯计算展开（cron > interval > run_at）→ Scheduler Consumer 租约领取后三分派（SyncMaintenance / AsyncNotify / AsyncAgentWakeup）→ `TriggerExecEvent` 落 DuckDB 执行留痕 → 管理端列表（筛选与分页下沉数据端）与详情页（按需展开编辑） | 配置写入 / 触发与留痕 / 管理端回读 |
+| [docs/diagrams/ai-orz-schedule.html](docs/diagrams/ai-orz-schedule.html) | 日程与定时调度：`cron_triggers` 四组顶层参数（When / Who / What / How）+ `common/schedule/` 纯计算展开（cron > interval > run_at）→ `CronDispatchQueue` 事件驱动派发（`schedule.changed` 即时入队 + 1s tick + 60s 兜底）→ Scheduler Consumer 租约领取后三分派（SyncMaintenance / AsyncNotify / AsyncAgentWakeup）→ `TriggerExecEvent` 落 DuckDB 执行留痕 → 管理端列表（筛选与分页下沉数据端）与详情页（按需展开编辑） | 配置写入 / 触发与留痕 / 管理端回读 |
 | [docs/diagrams/ai-orz-frontend.html](docs/diagrams/ai-orz-frontend.html) | 前端应用：Dioxus WASM 入口 / 路由（45 条）/ 页面模块（72 个 .rs）/ HUD / API 客户端 + 工作台现场化（workspace/ 十模块）+ 缓存管理页 + build.rs | 应用骨架 / 页面与组件 / 数据与产物 |
 | [docs/diagrams/ai-orz-infra.html](docs/diagrams/ai-orz-infra.html) | 基础设施：配置 → 连接池与迁移 → 路径与 JSONL → 后台任务 → 发布 | 启动与配置 / 运行期资源 / 构建与发布 |
 | [docs/diagrams/ai-orz-data-model.html](docs/diagrams/ai-orz-data-model.html) | 数据模型（ER 图）：三族九表，字段取自现网 SQLite schema | 身份与组织 / 任务与消息 / 知识图谱三件套 |

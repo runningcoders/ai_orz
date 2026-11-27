@@ -20,7 +20,7 @@
 | [ai-orz-think-path.html](./ai-orz-think-path.html) | 组件级 | 两阶段唤醒 → 小脑决策契约（entry_gate / entry_pool / chain_reply, close_default）→ 思考中注入新输入 → 三层预算循环（跨周期 RoundCollected 收集）→ 七相位图引擎 → 两段式落盘（增量 + 收尾，TraceFinishGuard 五条退出路径兜底 close 行）→ 前端时间线 → 专注浮层实时（RunObserver 骨架事件经 FocusLiveConsumer 出 SSE）；轨迹查询走 `.jsonl.idx` 旁车索引（索引过滤 + seek 命中行），返回契约为 PagedResult（items + total，total 取自索引命中数），作用域新增 `without_project` 无项目口径（带 ctx.project_id 时拒绝）；含思考强度判相对偏移、先验与兜底分离 | 一轮思考 / 两阶段唤醒 / 轨迹链路 / 认知分层 | 02-Agent运行时 |
 | [ai-orz-tools.html](./ai-orz-tools.html) | 组件级 | CoreTool 三协议路由（Builtin / HTTP / MCP）+ 工具级凭据契约与身份注入 + 策略拦截与六态授权 + 技能包装配 | 三层调用 / 策略与授权 / 注册与装配 | 06-工具与技能 |
 | [ai-orz-tool-context.html](./ai-orz-tool-context.html) | 组件级 | 工具调用中的上下文（身份）数据流转：声明（`CredentialKind` 的 `UserInfo` / `AgentInfo` 两个非凭据变体 + `field` 白名单 + `binding` 四注入点）→ 解析（`is_identity` 二元分派 + 未命中按来源分叉）→ 注入（`check` 注入 + `base_env` 九键末位硬 insert）→ 使用（git 子进程 4 个 `GIT_*` / commit-msg hook） | 四层主链路 / 失败语义分叉 / 注入与优先级 / 落点实证 | 06-工具与技能 |
-| [ai-orz-aop.html](./ai-orz-aop.html) | 组件级 | pkg/aop 六 Trait + Registry 单例 + 13 类业务消费者（19 处注册 / 9 Sync + 10 Async）+ 3 类 tick 生产者 + context_carrier 贯穿 | 一次事件流转 / 启动顺序 / 生产者与兜底 | 10-异步基建(AOP) |
+| [ai-orz-aop.html](./ai-orz-aop.html) | 组件级 | pkg/aop 六 Trait + Registry 单例 + 14 类业务消费者（20 处注册 / 10 Sync + 10 Async）+ 3 类 tick 生产者 + context_carrier 贯穿 | 一次事件流转 / 启动顺序 / 生产者与兜底 | 10-异步基建(AOP) |
 | [ai-orz-memory.html](./ai-orz-memory.html) | 组件级 | 四层记忆（Core / Working / Short / Long）+ 两条 JSONL（writer + 旁车索引）+ 三路召回 + 短期记忆索引分层 + 睡眠沉淀 | 四层记忆 / 存储面 / 检索与沉淀 | 03-记忆系统 |
 | [ai-orz-ontology.html](./ai-orz-ontology.html) | 组件级 | 受控词表 TBox + 属性定义与门闩 + 骨架三元组 + 漂移与有效性治理（口径与现网 `get_ontology_drift_dashboard` / `get_property_effectiveness` 同源） | 读侧链路 / 写入门闩 / 治理面 | 00-总览与架构 |
 | [ai-orz-org-federation.html](./ai-orz-org-federation.html) | 组件级 | 多级组织 + UserRole 并查集继承 + JWT 双模式 + 身份凭证 + 配对码建联与跨组织签名 | 组织与角色 / 认证与凭证 / 联邦组网 | 01-组织与权限 |
@@ -29,7 +29,7 @@
 | [ai-orz-a2a.html](./ai-orz-a2a.html) | 组件级 | Agent Card + JSON-RPC 四方法 + 协议映射与回调 + 30s 轮询兜底 + 联邦签名 | 协议入口 / 结果与兜底 / 联邦与长连接 | 07-外部Agent(A2A) |
 | [ai-orz-search.html](./ai-orz-search.html) | 组件级 | FTS5 全文 + 向量检索 + 图谱遍历三路召回 + 属性精确过滤 + `ids` 直取与 `include_retired` / `include_history` 受控出口 | 工具入口 / 三路召回 / 存储面 | 08-搜索 |
 | [ai-orz-stats.html](./ai-orz-stats.html) | 组件级 | 业务事件 → AOP 同步消费 → 四类指标落库（含按时序桶的耗时统计）→ 采集器落 pkg/stats/runtime（全局单例，handler 直读）→ 监控 API 与看板 | 采集 / 聚合 / 读取与看板 | 09-统计与监控 |
-| [ai-orz-schedule.html](./ai-orz-schedule.html) | 组件级 | `cron_triggers` 四组顶层参数（When 时间规则三选一 / Who 三字段分工 / What action 列优先回落 payload / How behavior 三值静态决定消费语义） → `common/schedule/` 纯计算（`cron` > `interval` > `run_at` 优先级 · occurrence 展开 · `MAX_SCAN_STEPS=100_000`） → Scheduler Consumer 租约领取后三分派（SyncMaintenance / AsyncNotify / AsyncAgentWakeup） → `TriggerExecEvent` 按「一次 attempt」落 DuckDB `trigger_exec_events`（success / skipped / failed 都记，与 `cron_triggers.total_runs` 配额游标是两张账） → 管理端列表（状态过滤与分页下沉数据端、筛选变更自动重查）与详情页（编辑区按需展开） | 配置写入 / 触发与留痕 / 管理端回读 | 05-任务与项目 |
+| [ai-orz-schedule.html](./ai-orz-schedule.html) | 组件级 | `cron_triggers` 四组顶层参数（When 时间规则三选一 / Who 三字段分工 / What action 列优先回落 payload / How behavior 三值静态决定消费语义） → `common/schedule/` 纯计算（`cron` > `interval` > `run_at` 优先级 · occurrence 展开 · `MAX_SCAN_STEPS=100_000`） → `CronDispatchQueue` 事件驱动派发（`schedule.changed` 即时入队 · 1s tick · 60s 兜底扫 DB · 版本两道防线）→ Scheduler Consumer 租约领取后三分派（SyncMaintenance / AsyncNotify / AsyncAgentWakeup）→ 时刻型按 `fired_at` / Interval 按 `finished_at` 推进 → `TriggerExecEvent` 按「一次 attempt」落 DuckDB `trigger_exec_events`（success / skipped / failed 都记，与 `cron_triggers.total_runs` 配额游标是两张账） → 管理端列表（状态过滤与分页下沉数据端、筛选变更自动重查）与详情页（编辑区按需展开） | 配置写入 / 触发与留痕 / 管理端回读 | 05-任务与项目 |
 | [ai-orz-frontend.html](./ai-orz-frontend.html) | 组件级 | Dioxus WASM 入口 / 路由（45 条）/ 页面模块（72 个 .rs）/ HUD / API 客户端 + 产物预览（HtmlPreview 唯一渲染出口）+ 工作台现场化（workspace/ 十模块，固定席位场 + 5s 场景投影轮询）+ 缓存管理页 + build.rs 产物 | 应用骨架 / 页面与组件 / 数据与产物 | 11-前端应用 |
 | [ai-orz-infra.html](./ai-orz-infra.html) | 组件级 | 配置 → 连接池与迁移 → 路径与 JSONL（pkg/jsonl：writer + sidecar）→ 向量重建三档 → 后台任务 → 打包发布 | 启动与配置 / 运行期资源 / 构建与发布 | 12-基础设施与部署 |
 | [ai-orz-data-model.html](./ai-orz-data-model.html) | ER 图（表级） | 三族九表：身份 / 工作 / 知识图谱，字段取自现网 SQLite schema | 身份与组织 / 任务与消息 / 知识图谱三件套 | 13-数据模型 |
@@ -719,6 +719,39 @@
 - 18 张图总数、各图 evidence 数与 `referenceCount` 均未变
 
 **如实声明**：本次重渲染未做人眼视觉复核（`finalize` 输出 `perceptual visual review not-requested`；四道门禁的结构化检查全 pass 不等于人眼观感合格）。
+
+### 2026-11-28 增量同步（2 张重渲染：schedule / aop，revision → `97a38b30`）
+
+本轮改动主题＝**日程派发从 60s 轮询改事件驱动 + 通用优先级队列基建下沉**，两张图的抽象层都发生了实质变化，故重渲染；其余 16 张求交为 0 或仅机械适配，判不刷新。
+
+**求交矩阵（本批 25 路径 × 各图 `components[].sources`）**
+
+| 图 | 判定 | 依据 |
+|---|---|---|
+| ai-orz-schedule | **刷新** | 新增组件 `CronDispatchQueue`（`src/producer/cron_dispatch_queue.rs`）+ 2 条连线 + 第 7 张卡「派发队列与时间基准」 |
+| ai-orz-aop | **刷新** | 消费者口径由 13 类 / 19 处 / 9 Sync 变为 **14 类 / 20 处 / 10 Sync**（`src/producer/cron_trigger.rs` 同实例兼作 `schedule.changed` 的 Sync 消费者）+ 第 6 张卡「队列基建下沉（pkg/priority_queue）」 |
+| 其余 16 张 | 不刷 | `pkg/priority_queue.rs` 是 pkg 内部基建，不改变任何专题图的抽象层；`common/schedule/occurrence.rs` 的 2/1 改动是纯注释级 |
+
+**两张图的实测指标**
+
+| 图 | 结构 | 字节 | sha256 前 16 | 几何 |
+|---|---|---|---|---|
+| ai-orz-schedule | 17 组件 / 16 连线 / 7 卡片 / 3 视图 | 867,763 | `7cf9d8ef7fa28e17` | `maxBends=3`，唯一超建议弯道 `duckdb→stats_dao`（stretch 1.34 ≤ 1.35） |
+| ai-orz-aop | 14 组件 / 14 连线 / 6 卡片 / 3 视图 | 858,849 | `8f97ccdce7e04717` | 无 `visualReviewRecommendation`（0 交叉 / 0 超限弯道） |
+
+**AOP 消费者口径（本轮实测，含口径说明）**
+- `src/consumer/mod.rs` 内 `.register_consumer(` = **19 处**；含 `ConsumeMode` 的消费者文件 = **19 个**（Sync 9 / Async 10）
+- `src/producer/mod.rs` 另有 **1 处** `.register_consumer(cron)` —— `CronTriggerProducer` 同实例兼作 `schedule.changed` 的 **Sync** 消费者
+- ⇒ 全仓注册点合计 **20 处**，Sync **10** / Async **10**；**「类」按 14 计**（13 类业务消费者 + cron_dispatch）
+- 判据：报消费者规模时必须显式说明数的是「类」还是「处」，两个数不可互相替代
+
+**时间基准口径（本轮新增）**
+- `mark_executed` 拆 `fired_at` / `finished_at`：**时刻型（Once / Cron）按 `fired_at`** 推进规则点，**Interval 按 `finished_at`** 推进（跑完再等 N，执行耗时不吃掉空档）
+- `last_run_at` 恒记 `fired_at`，保持「上次触发」语义
+
+**如实声明**
+- 本次两张图均未做人眼视觉复核（`finalize` 输出 `visualReview: not-requested`）；四道门禁的结构化检查全 pass 不等于人眼观感合格
+- `schedule` 图有一处 `routesOverSuggestedBends=1`（`duckdb → stats_dao`，3 弯道 / stretch 1.34），在阈值内但非零，如实记录
 
 ## 五、维护约定
 
