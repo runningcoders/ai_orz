@@ -352,10 +352,16 @@ Active ──到期+领取成功──▶ Dispatched ──消费成功──▶
 
 - **Models**：`CronTriggerPo` 扩展字段；`TriggerType` / `TriggerBehavior` / `CreatorType` / `TargetType` 枚举放 `common/src/enums/`（DB 映射型，`#[repr(i32)]` + `sqlx::Type` + `From<i64>`）。
 - **DAO**：`cron_trigger` 增加租约领取 SQL、按 `behavior` 过滤；不引入跨域查询。
-- **DAL**：`create` 做条件必填校验与归属固化；`mark_executed` 处理租约清除 + 三种时间推进 + `total_runs` / `last_error`；兼容老 payload 解析。
+- **DAL**：`create` 做条件必填校验与归属固化；`mark_executed(fired_at, finished_at)` 处理租约清除 + 三种时间推进 + `total_runs` / `last_error`；兼容老 payload 解析。
+  - 时间基准按类型分：时刻型（Once / Cron）按规则触发时刻 `fired_at` 推进，业务耗时不影响规则点；Interval 按业务完成时刻 `finished_at` 推进（`finished_at + interval`），语义是「跑完再等 N」。`last_run_at` 始终记 `fired_at`，保持「上次触发」语义。
 - **Domain**：`CronManager` 增加 `create_schedule` / `cancel` / `list_by_owner`；校验规则集中在此，不散落在 handler。查询能力（含 `query_schedules`）同样归属 domain。参数是否另立领域结构体，判据是「DAO Query 能否表达全部查询意图」：能表达的（如 `list_triggers`）直接复用 `CronTriggerQuery`，表达不了的（日期词/关键词/展开）才定义 `ScheduleQuery`，下传时再转成 DAO Query。核心是查询逻辑不写 handler，DAL/DAO 是 domain 的基建。
 - **Handler**：`schedule_agent_task` 工具（Agent 自主创建）；`create_cron_trigger` 保持系统/管理员用途，增加 `behavior` 白名单；`query_schedule` 只做参数映射与 DTO 透传，不碰 DAO、不写查询逻辑。
-- **Producer**：`CronTriggerProducer` 增加窗口判断与租约领取，事件载荷扩展。
+- **Producer**：`CronTriggerProducer` 同时是 `cron.trigger` 生产者与 `schedule.changed` 的 Sync 消费者，派发队列是它的私有字段（不进 domain）：
+  - domain 的日程 CRUD 在统一出口发 `ScheduleChangedEvent`（含 `next_run_at` + DB 版本 `updated_at`），handler 不参与发事件，domain 不感知队列；
+  - 版本两道防线：基建层 `PriorityQueue::upsert_if_newer` 做入队门禁（同 key 旧版本拒绝，新版本仍走标准 `upsert` —— 新堆项 + 旧项惰性失效，堆序始终正确），出队时版本随载荷带出、业务层按 id 回查 DB 二次校验（防事件丢失 / DB 被外部改动）；AOP 队列不实现版本 trait，继续用普通 `upsert`（`event_id` 天然唯一）；
+  - 60s 兜底扫 DB（`next_run_before = now + 5min` + SQL 参数化排除已在队列 / 处理中的 id，按 `next_run_at ASC` 优先补最早到期）；
+  - 1s tick 逐个 `pop_one_due(now)`（无批量上限），按 id 回查 DB 校验时间 / 版本是否仍对应 —— 对不上即数据已变更、跳过执行，变更事件会带新版本重新入队；
+  - 校验通过才按 id 原子领取（不按全表排序批量领，避免取到别的条目白占租约），投递 spawn 独立 task（consumer 保持 Sync，同步维护的等待不压 tick），`on_consumed` 成功后 mark + 带新版本重新入队。
 - **Consumer**：`CronTriggerConsumer` 升级为按 behavior 分发；Sync 分支只派发，不复写业务逻辑。
 - **编排**：`AsyncAgentWakeup` 的消息构造由上层 handler/consumer 编排（先取 trigger 记录，再构造 `SendToAgentCommand`），不让 `cron_trigger` 域直接引用 message 域。
 
