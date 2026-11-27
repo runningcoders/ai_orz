@@ -22,7 +22,7 @@
 > - [docs/diagrams/ai-orz-tool-context.html](docs/diagrams/ai-orz-tool-context.html) — 工具调用上下文（身份）数据流转专题图（声明 / 解析 / 注入 / 使用四层）
 > - [docs/diagrams/ai-orz-aop.html](docs/diagrams/ai-orz-aop.html) — 异步基建专题图（AOP 生产消费事件中心 · 18 处消费者注册）
 > - [docs/diagrams/ai-orz-org-federation.html](docs/diagrams/ai-orz-org-federation.html) — 组织与权限专题图（含联邦组网）
-> - [docs/diagrams/ai-orz-task-project.html](docs/diagrams/ai-orz-task-project.html) — 任务与项目专题图（六态状态机 / 验收闭环 / DAG / 制品）
+> - [docs/diagrams/ai-orz-task-project.html](docs/diagrams/ai-orz-task-project.html) — 任务与项目专题图（六态状态机 / 验收闭环 / DAG 依赖就绪判定 / 制品）
 > - [docs/diagrams/ai-orz-messaging.html](docs/diagrams/ai-orz-messaging.html) — 对话与消息专题图（渠道入站 / 入站过滤 / 消息编排 / SSE）
 > - [docs/diagrams/ai-orz-a2a.html](docs/diagrams/ai-orz-a2a.html) — 外部 Agent 接入专题图（A2A JSON-RPC / 轮询兜底 / 联邦签名）
 > - [docs/diagrams/ai-orz-search.html](docs/diagrams/ai-orz-search.html) — 搜索专题图（三路召回 / 属性过滤 / 存储面）
@@ -346,7 +346,7 @@ data/
 | [docs/diagrams/ai-orz-tool-context.html](docs/diagrams/ai-orz-tool-context.html) | 工具调用上下文（身份）数据流转：声明（CredentialKind 的 UserInfo / AgentInfo + field 白名单 + binding）→ 解析（is_identity 二元分派 + 失败语义按来源分叉）→ 注入（check + base_env 九键末位 insert）→ 使用（git 子进程 / commit-msg hook） | 四层主链路 / 失败语义分叉 / 注入与优先级 |
 | [docs/diagrams/ai-orz-aop.html](docs/diagrams/ai-orz-aop.html) | 异步基建：pkg/aop 六 Trait + Registry + 13 类消费者（19 处注册 / 9 Sync + 10 Async）+ 3 生产者 | 一次事件流转 / 启动顺序 / 生产者与兜底 |
 | [docs/diagrams/ai-orz-org-federation.html](docs/diagrams/ai-orz-org-federation.html) | 组织与权限：多级组织 + 角色继承 + 双模式认证 + 联邦组网 | 组织与角色 / 认证与凭证 / 联邦组网 |
-| [docs/diagrams/ai-orz-task-project.html](docs/diagrams/ai-orz-task-project.html) | 任务与项目：六态状态机（含 PendingReview）+ 验收闭环 + DAG 唤醒 + 制品聚合；看板/工作台落 `pages/workspace/`（三栏 + 固定席位场） | 任务状态机 / DAG 与唤醒 / 项目聚合 |
+| [docs/diagrams/ai-orz-task-project.html](docs/diagrams/ai-orz-task-project.html) | 任务与项目：六态状态机（含 PendingReview）+ 验收闭环 + DAG 唤醒（依赖就绪判定下沉 project domain，创建/门闩/补发共用同一口径）+ 制品聚合；看板/工作台落 `pages/workspace/`（三栏 + 固定席位场） | 任务状态机 / DAG 与唤醒 / 项目聚合 |
 | [docs/diagrams/ai-orz-messaging.html](docs/diagrams/ai-orz-messaging.html) | 对话与消息：渠道入站归一化 + 路由策略 + 入站过滤（规则门 + 小脑相关性门）+ MessageDomain（builder / 出站媒体分类 + delivery）+ 附件字节流与正文引用 + SSE | 入站与路由 / 编排与投递 / 存储与唤醒 |
 | [docs/diagrams/ai-orz-a2a.html](docs/diagrams/ai-orz-a2a.html) | 外部 Agent：Agent Card + JSON-RPC 四方法 + 协议映射与回调 + 30s 轮询兜底 | 协议入口 / 结果与兜底 / 联邦与长连接 |
 | [docs/diagrams/ai-orz-search.html](docs/diagrams/ai-orz-search.html) | 搜索：FTS5 + 向量 + 图谱三路召回 + 属性精确过滤 | 工具入口 / 三路召回 / 存储面 |

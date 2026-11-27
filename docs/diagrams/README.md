@@ -24,7 +24,7 @@
 | [ai-orz-memory.html](./ai-orz-memory.html) | 组件级 | 四层记忆（Core / Working / Short / Long）+ 两条 JSONL（writer + 旁车索引）+ 三路召回 + 短期记忆索引分层 + 睡眠沉淀 | 四层记忆 / 存储面 / 检索与沉淀 | 03-记忆系统 |
 | [ai-orz-ontology.html](./ai-orz-ontology.html) | 组件级 | 受控词表 TBox + 属性定义与门闩 + 骨架三元组 + 漂移与有效性治理（口径与现网 `get_ontology_drift_dashboard` / `get_property_effectiveness` 同源） | 读侧链路 / 写入门闩 / 治理面 | 00-总览与架构 |
 | [ai-orz-org-federation.html](./ai-orz-org-federation.html) | 组件级 | 多级组织 + UserRole 并查集继承 + JWT 双模式 + 身份凭证 + 配对码建联与跨组织签名 | 组织与角色 / 认证与凭证 / 联邦组网 | 01-组织与权限 |
-| [ai-orz-task-project.html](./ai-orz-task-project.html) | 组件级 | TaskStatus 六态（含 PendingReview=5）+ 验收闭环 + dependencies DAG + execution_plan / result 增量 + Project 五字段注入；看板/工作台落 `frontend/src/pages/workspace/`（三栏布局 + 固定席位场，`WorkspaceView` 四变体）| 任务状态机 / DAG 与唤醒 / 项目聚合 | 05-任务与项目 |
+| [ai-orz-task-project.html](./ai-orz-task-project.html) | 组件级 | TaskStatus 六态（含 PendingReview=5）+ 验收闭环 + dependencies DAG（`DependencyReadiness` 单一口径：pending/stale 分箱，创建时未就绪不派发、就绪后按任务去重补发）+ execution_plan / result 增量 + Project 五字段注入；看板/工作台落 `frontend/src/pages/workspace/`（三栏布局 + 固定席位场，`WorkspaceView` 四变体）| 任务状态机 / DAG 与唤醒 / 项目聚合 | 05-任务与项目 |
 | [ai-orz-messaging.html](./ai-orz-messaging.html) | 组件级 | 渠道入站归一化 → 路由策略（含回复仲裁与协作压力）→ 入站过滤（规则门 + 小脑相关性门，渠道无关）→ MessageDomain（builder / delivery）→ 出站媒体分类（MIME 单点判定 / 超限跳过）→ 附件字节流与正文引用 → DAL/DAO → SSE 与唤醒 | 入站与路由 / 编排与投递 / 存储与唤醒 | 04-对话与消息 |
 | [ai-orz-a2a.html](./ai-orz-a2a.html) | 组件级 | Agent Card + JSON-RPC 四方法 + 协议映射与回调 + 30s 轮询兜底 + 联邦签名 | 协议入口 / 结果与兜底 / 联邦与长连接 | 07-外部Agent(A2A) |
 | [ai-orz-search.html](./ai-orz-search.html) | 组件级 | FTS5 全文 + 向量检索 + 图谱遍历三路召回 + 属性精确过滤 + `ids` 直取与 `include_retired` / `include_history` 受控出口 | 工具入口 / 三路召回 / 存储面 | 08-搜索 |
@@ -668,6 +668,57 @@
 
 **未做人眼视觉复核**：以上交叉/弯道数是 archify 的自动几何度量。四道门禁全 pass 只说明「几何与结构不违规」，是否真的好看仍需人眼确认。
 
+
+### 2026-11-27 增量同步（1 张重渲染：task-project，revision → `f5dd6208`）
+
+**起因**：AMan 本地批次（1 笔 commit `f5dd6208`「refactor(task): 依赖就绪判定下沉 project domain，创建时按 DAG 就绪派发」）把 DAG 依赖就绪判定收敛为单一口径，并改了创建派发时机与补发去重粒度。8 个改动文件全在 `src/`，其中 3 条正是本图的 evidence 路径。
+
+**touched 求交（`archify-source-evidence-data` 的 `nodes{}` × 本批 8 条 diff 路径，18 张全量现算）**
+
+| 图 | evidence 数 | touched | 命中路径 | 判定 |
+|---|---|---|---|---|
+| task-project | 23 | **3** | `src/consumer/task_event_consumer.rs`、`src/service/domain/project/mod.rs`、`src/service/domain/project/task.rs` | **真需刷** |
+| messaging | 21 | 2 | `src/service/dal/message.rs`、`src/service/domain/message/mod.rs` | 不刷（见下） |
+| stats | 14 | 1 | `src/consumer/task_event_consumer.rs` | 不刷（见下） |
+| 其余 15 张（a2a / aop / architecture / data-model / frontend / infra / memory / ontology / org-federation / schedule / search / testing / think-path / tool-context / tools） | — | **0** | — | 不刷（交集为空） |
+
+- **task-project 真需刷**：图上 `consumer`（TaskEventConsumer · 「依赖就绪补发」）、`taskdomain`（任务 Domain）、`projectdomain`（项目 Domain）三个组件都以本批命中路径为 source，且本批改变的正是它们承载的机制——「全部前置 Completed 才算就绪」这条规则从两处各写一份收敛为 `DependencyReadiness` 单一口径（pending/stale 分箱），创建时未就绪**不再落派单消息**改由补发，补发去重粒度从 Agent 收紧到任务。图里「DAG 决定谁先跑」卡片原文写的是旧口径三条，不刷就会让读者按旧规则理解派发时机。
+- **messaging 不刷**：两条命中（`dal/message.rs`、`domain/message/mod.rs`）改动仅为 `has_unfinished_message_for_agent` → `has_unfinished_message_for_task` 的**签名与查询条件替换**（`to_id`+`to_role` → `task_id`）。这是消息 DAL 层的一个去重判据改参数，messaging 图承载的是「渠道入站 → 路由 → 编排 → 附件/引用 → 出站」的链路形状与组件划分，**一条组件与连线都没变**；把「某个 DAO 方法查哪个字段」画进消息链路图等于把实现细节当机制。
+- **stats 不刷**：唯一命中 `src/consumer/task_event_consumer.rs` 在图里是 `TaskEvent`（任务事件）组件，本批改的是它内部后继补发的就绪判定与去重，**统计事件采集口径（`StatsEvent` 结构、五个 tag 维度）一字未动**。
+
+**候选稿改动**（母本复用 `work/diagrams-sync-r29/task-project/candidate.json`，改字段重编译，未从 HTML 逆向）
+
+1. `meta.repository.revision` → `f5dd6208724a7b917d8e40f0664558bf3bb2aca3`
+2. `meta.subtitle`：DAG 段补「依赖就绪判定下沉 project domain，创建/门闩/补发共用同一口径」
+3. 卡片「DAG 决定谁先跑」items 3→**4**：新增 `DependencyReadiness` 分箱（pending 含查不到 / stale＝撤销·归档的死锁信号）；原第 2 条「唤醒前先过 wake_gate_policy」保留；把「补发」那条改写为「创建时前置未就绪不落派单消息，由 TaskEventConsumer 在最后一个前置 Completed 时补发」；新增「补发去重粒度是任务而非 Agent，避免同一 Agent 多任务时被误判已派发而饿死」
+4. `consumer` 组件副标补「（按任务去重）」；`taskdomain` 副标由「六态状态机 + progress」改为「六态状态机 + 依赖就绪判定」
+5. `views[id=dag].note` 同步为新口径
+
+组件 22 / 连线 28 / 卡片 8 均**不变**（本批是判定口径收敛，不是新增结构）。
+
+**四道门禁（逐张现测，exit code 与字节）**
+
+| 门禁 | exit | 证据 |
+|---|---|---|
+| `archify validate architecture --quality showcase --repo-root .` | **0** | `9 artifact checks; composition showcase: 0 errors, 0 warnings` |
+| `archify finalize ... --browser-check --out-dir review-1` | **0** | `gates validate:pass deliver:pass check:pass browser-check:pass` |
+| `archify check` | **0** | 9 项全 `ok: true`（single_svg / finite_svg / orthogonal_arrows / label_route_clearance / relationships_crossings / relationship_corridors / container_border_runs / route_rhythm / legend_clearance） |
+
+产物：**886,072 B**，sha256 前 16 位 `4a9e0cb58c32516a`（旧图 885,570 B / `5217d2487ddda961`）。
+`*.delivery.json` 未入仓（仓内 `docs/diagrams/*.delivery.json` 计数 **0**）。
+
+**入口三处同步**（每处 `grep -c` 断言 = 1，只命中应改那一处）
+- `docs/index.html`：专题子图 desc「DAG 与唤醒」→「DAG 依赖就绪判定与补发」
+- `docs/ARCHITECTURE.md` 两处：文件清单行「六态状态机 / 验收闭环 / DAG / 制品」→「… / DAG 依赖就绪判定 / 制品」；导航表「DAG 唤醒」→「DAG 唤醒（依赖就绪判定下沉 project domain，创建/门闩/补发共用同一口径）」
+- 本 README 图清单行：DAG 段补 `DependencyReadiness` 单一口径一句话
+
+**声明值当场实测（未变亦写实测未变）**
+- `src/service/domain/project/task.rs` `classify_dependencies` 新入口 = **1 处**；`DependencyReadiness` 定义与 `classify`/`all_ready` 在 `src/service/domain/project/mod.rs`
+- 代码侧 `has_unfinished_message_for_agent` 全仓残留 = **0**（已全部改名，`grep -rn` 实测 0 命中）
+- 本批 `git diff --shortstat origin/main...HEAD` = **8 files changed, 235 insertions(+), 93 deletions(-)**（rename-aware 与 `--no-renames` 同值）
+- 18 张图总数、各图 evidence 数与 `referenceCount` 均未变
+
+**如实声明**：本次重渲染未做人眼视觉复核（`finalize` 输出 `perceptual visual review not-requested`；四道门禁的结构化检查全 pass 不等于人眼观感合格）。
 
 ## 五、维护约定
 
