@@ -1,4 +1,3 @@
-use dioxus::html::HasFileData;
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 use wasm_bindgen::JsCast;
@@ -14,26 +13,19 @@ use crate::components::avatar_bubble::{
     AvatarBubble, AvatarTone, BubbleAlign, collapse_avatar_bubble,
 };
 use crate::components::chat::{
-    CancelThinkingButton, ChatSidePanel, QuotedPreview, ReplyPreview, RichMessageItem, ThreadChain,
-    message_preview_text, truncate_preview,
+    CancelThinkingButton, ChatInputArea, ChatSidePanel, QuotedPreview, ReplyPreview,
+    RichMessageItem, ThreadChain, message_preview_text, truncate_preview,
 };
-use crate::components::mention_picker::{
-    MentionCandidate, MentionPickedBar, MentionPicker, MentionState, MentionTab, mention_kinds_for,
-    mention_tabs,
-};
+use crate::components::mention_picker::{MentionState, mention_kinds_for, mention_tabs};
 use crate::components::modal::Modal;
 use crate::components::state::Loading;
-use crate::hooks::use_attachments::{
-    PendingAttachment, clipboard_files_from_paste, compose_outbound_content,
-    use_attachment_composer,
-};
+use crate::hooks::use_attachments::{compose_outbound_content, use_attachment_composer};
 use crate::hooks::{EventSourceOptions, use_event_source};
 use crate::layouts::navbar::Navbar;
 use crate::store::auth::use_auth_state;
 use crate::store::directory::use_directory;
 use crate::store::toast::use_toast;
 use crate::utils::local_store;
-use crate::utils::mention::{read_caret, restore_caret};
 use crate::utils::time::format_date_group_label;
 use crate::utils::{
     HISTORY_PAGE_SIZE, HISTORY_SCAN_MAX_PAGES, MESSAGE_POLL_LIMIT, MESSAGE_POLL_SECS, MSG_TEXT,
@@ -105,6 +97,256 @@ const FILTER_TABS: [(&str, Option<i32>); 4] = [
     ("已归档", Some(3)), // Archived
 ];
 
+/// 对话页「现场」快照句柄：页面壳只创建、不 `.read()`。
+///
+/// 与工作台 `dock::SceneSnapshots` 同一范式 —— 谁读谁重渲染，
+/// 页面壳持有句柄不会因此订阅 3s 轮询。
+#[derive(Clone, Copy, PartialEq)]
+struct ChatSceneSignals {
+    agent_state: Signal<i32>,
+    agent_state_owner: Signal<Option<String>>,
+    target_agent_id: Signal<Option<String>>,
+    target_agent_info: Signal<Option<GetAgentResponse>>,
+}
+
+/// 置底 Agent 状态气泡：独占 3s 轮询的现场 signal。
+///
+/// ⚠️ 这些 signal 一旦在消息列表组件的渲染作用域里读取，轮询每 3s
+/// 就会让整块消息区重渲染；独立组件把重渲染半径收敛到气泡本身。
+#[component]
+fn ChatAgentStatusBubble(
+    scene: ChatSceneSignals,
+    is_typing: Signal<bool>,
+    sender_name: String,
+    on_cancelled: EventHandler<()>,
+) -> Element {
+    let state = *scene.agent_state.read();
+    let owner = scene.agent_state_owner.read().clone();
+    let target = scene.target_agent_id.read().clone();
+    let typing = *is_typing.read();
+    let info = scene.target_agent_info.read().clone();
+    let Some(status) = agent_status_line(
+        typing,
+        state,
+        agent_state_owner_matches(owner.as_deref(), target.as_deref()),
+    ) else {
+        return VNode::empty();
+    };
+    rsx! {
+        div { class: "chat chat-start",
+            div { class: "chat-header pr-1 text-sm opacity-70", "{sender_name}" }
+            div { class: "chat-image",
+                AvatarBubble {
+                    name: sender_name.clone(),
+                    tone: AvatarTone::Agent,
+                    agent_id: info.as_ref().map(|a| a.id.clone()),
+                    status: info.as_ref().map(|a| a.status),
+                    align: BubbleAlign::Start,
+                }
+            }
+            div { class: "chat-bubble chat-bubble-neutral",
+                div { class: "flex items-center gap-2",
+                    if state == 1 {
+                        span { "🌙" }
+                    } else {
+                        div { class: "typing-indicator flex gap-1",
+                            div { class: "typing-dot" }
+                            div { class: "typing-dot" }
+                            div { class: "typing-dot" }
+                        }
+                    }
+                    span { class: "text-sm", "{status}" }
+                    // Busy(2) 才给就地出口；Resting(1) 取消思考无意义。
+                    if state == 2 {
+                        if let Some(aid) = target {
+                            CancelThinkingButton { agent_id: aid, on_cancelled }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// 单条消息：引用解析 / 状态环这类现场读取下沉到这里，
+/// 3s 轮询只重渲染当前消息项，不波及滚动容器。
+#[component]
+fn ChatMessageRow(
+    msg: MessageListItem,
+    messages: Signal<Vec<MessageListItem>>,
+    reply_target: Signal<Option<MessageListItem>>,
+    scene: ChatSceneSignals,
+    on_open_thread: EventHandler<String>,
+) -> Element {
+    let directory = use_directory();
+    let dir = directory.read();
+    let quoted = msg.reply_to_id.as_ref().and_then(|rid| {
+        messages
+            .read()
+            .iter()
+            .find(|m| &m.message_id == rid)
+            .map(|m| QuotedPreview {
+                sender: dir.sender_name(m),
+                content: truncate_preview(&message_preview_text(m)),
+                root_id: m.root_id.clone().or_else(|| Some(m.message_id.clone())),
+            })
+    });
+    let reply_msg = msg.clone();
+    let on_reply = Callback::new(move |_: ()| reply_target.set(Some(reply_msg.clone())));
+    let agent_status = scene
+        .target_agent_info
+        .read()
+        .as_ref()
+        .filter(|a| a.id == msg.from_id)
+        .map(|a| a.status);
+    rsx! {
+        RichMessageItem {
+            key: "{msg.message_id}",
+            msg: msg.clone(),
+            quoted,
+            on_reply: Some(on_reply),
+            on_open_thread: Some(on_open_thread),
+            agent_status,
+        }
+    }
+}
+
+/// 对话页消息列表：两个对话分支（项目 / 默认）共用的唯一实现。
+///
+/// ⚠️ 本组件只订阅消息、加载态与滚动态；3s Agent 轮询、SSE 计数、
+/// 30s 统计节拍全部留在页面壳 / 各自子组件里，不进入本组件的渲染作用域。
+/// 与工作台 `dock::ChatMessageList` 同一隔离范式。
+#[component]
+#[allow(clippy::too_many_arguments)]
+fn ChatMessageList(
+    messages: Signal<Vec<MessageListItem>>,
+    loading_messages: Signal<bool>,
+    is_typing: Signal<bool>,
+    at_bottom: Signal<bool>,
+    has_new_messages: Signal<bool>,
+    reply_target: Signal<Option<MessageListItem>>,
+    scene: ChatSceneSignals,
+    on_load_older: EventHandler<()>,
+    on_open_thread: EventHandler<String>,
+    on_artifact_click: EventHandler<MouseEvent>,
+    on_thinking_cancelled: EventHandler<()>,
+    status_sender_name: String,
+    empty_emoji: String,
+    empty_title: String,
+    empty_text: String,
+) -> Element {
+    // ⚠️ 滚动恢复只跟随「消息数 / typing / 用户回到顶部意图」。
+    // 绝不把现场轮询状态放进依赖：Signal::set 不去重，
+    // 每拍都会让这里无条件滚底，打断上翻阅读。
+    use_effect(move || {
+        let msg_count = messages().len();
+        let typing = is_typing();
+        if !at_bottom() {
+            return;
+        }
+        let _ = (msg_count, typing);
+        spawn(async move {
+            if let Some(window) = web_sys::window()
+                && let Some(doc) = window.document()
+                && let Some(el) = doc.query_selector("#chat-scroll-container").ok().flatten()
+                && let Ok(html_el) = el.dyn_into::<web_sys::HtmlElement>()
+            {
+                html_el.set_scroll_top(html_el.scroll_height());
+            }
+        });
+    });
+
+    let mut at_bottom = at_bottom;
+    let mut has_new_messages = has_new_messages;
+    let loading = *loading_messages.read();
+    let msgs = messages.read();
+
+    rsx! {
+        div { class: "flex-1 overflow-y-auto p-4 bg-base-100", id: "chat-scroll-container",
+            // scroll 不冒泡，监听必须挂在真正滚动的容器本体上
+            onscroll: move |_e| {
+                collapse_avatar_bubble();
+                if let Some(html_el) = web_sys::window()
+                    .and_then(|w| w.document())
+                    .and_then(|d| d.query_selector("#chat-scroll-container").ok().flatten())
+                    .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
+                {
+                    let scroll_top = html_el.scroll_top();
+                    let max_scroll = html_el.scroll_height() - html_el.client_height();
+                    let is_bottom = scroll_top as f64 >= (max_scroll - 50) as f64;
+                    // 仅在状态翻转时写回：Signal::set 不做相等去重
+                    if at_bottom() != is_bottom {
+                        at_bottom.set(is_bottom);
+                    }
+                    if is_bottom && has_new_messages() {
+                        has_new_messages.set(false);
+                    }
+                    if scroll_top == 0 {
+                        on_load_older.call(());
+                    }
+                }
+            },
+            if loading && msgs.is_empty() {
+                div { class: "flex items-center justify-center py-12",
+                    Loading { size: "md" }
+                    span { class: "ml-2 text-base-content/60", "加载消息中..." }
+                }
+            } else if msgs.is_empty() {
+                div { class: "text-center py-12",
+                    div { class: "text-5xl mb-3", "{empty_emoji}" }
+                    if !empty_title.is_empty() {
+                        div { class: "text-base-content/70 font-medium mb-2", "{empty_title}" }
+                    }
+                    div { class: "text-base-content/60", "{empty_text}" }
+                }
+            } else {
+                div {
+                    class: "flex flex-col gap-1 min-h-full",
+                    // 正文产物 chip 是注入 HTML（无 VNode），在这里做事件委托
+                    onclick: on_artifact_click,
+                    for entry in group_messages_by_date(&msgs) {
+                        match entry {
+                            MessageListEntry::DateDivider(label) => rsx! {
+                                // key 不含 messages().len()，切会话时保持稳定
+                                div { class: "hud-divider my-2", key: "divider-{label}", "{label}" }
+                            },
+                            MessageListEntry::Message(msg) => rsx! {
+                                ChatMessageRow {
+                                    key: "{msg.message_id}",
+                                    msg,
+                                    messages,
+                                    reply_target,
+                                    scene,
+                                    on_open_thread,
+                                }
+                            },
+                        }
+                    }
+                    ChatAgentStatusBubble {
+                        scene,
+                        is_typing,
+                        sender_name: status_sender_name.clone(),
+                        on_cancelled: on_thinking_cancelled,
+                    }
+                    // 新消息提示：用户上翻阅读时悬浮底部，点击回最新消息
+                    if has_new_messages() && !at_bottom() {
+                        div { class: "sticky bottom-2 z-10 flex justify-center pointer-events-none",
+                            button {
+                                class: "btn hud-btn btn-sm btn-primary rounded-full shadow-lg pointer-events-auto",
+                                onclick: move |_| {
+                                    has_new_messages.set(false);
+                                    at_bottom.set(true);
+                                },
+                                "↓ 有新消息"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[component]
 pub fn MessageChat(project: Option<String>) -> Element {
     // 修复 HIGH #3：之前 use_require_auth 提前 return 会跳过后续所有 use_signal，
@@ -131,7 +373,7 @@ pub fn MessageChat(project: Option<String>) -> Element {
     // 修复 L1：删除未使用的 error signal（之前从未 set，is_empty() 永远为 true）
     let mut loading_projects = use_signal(|| true);
     // 问题一：左栏状态子过滤器当前选中下标（AMan 拍板②：默认「未完成」，见 FILTER_TABS 下标 1）
-    let mut status_filter = use_signal(|| 1usize);
+    let status_filter = use_signal(|| 1usize);
     // 问题一（第三批·候选一）：过滤器点击改走后端 query_projects 拉最新数据。
     // filter_loading=局部加载态（仅标签组细条提示，不复用全局 loading_projects 避免整块闪烁）；
     // filter_request_id=自增竞态守卫（快速连点丢弃过期响应，与项目页 search_request_id 同款）。
@@ -198,10 +440,6 @@ pub fn MessageChat(project: Option<String>) -> Element {
             thread_loading.set(false);
         });
     });
-
-    // 快捷指令菜单状态
-    let mut show_slash_menu = use_signal(|| false);
-    let selected_slash_index = use_signal(|| 0);
 
     // 移动端 sidebar 抽屉状态
     let mut sidebar_open = use_signal(|| false);
@@ -285,7 +523,7 @@ pub fn MessageChat(project: Option<String>) -> Element {
     // 失败兜底：保留旧数据（projects 不动）+ toast 报错；全部=None 不过滤状态（语义与
     // 排查报告拍板④一致）；root_user_id 显式传当前用户 —— 后端现在会把它收敛到 ctx.uid()
     // （缺省即自己、传别人的值直接拒绝），显式传入只是与 list_projects 同口径的冗余声明。
-    let mut reload_projects_filtered = move |status_in: Option<i32>| {
+    let reload_projects_filtered = move |status_in: Option<i32>| {
         let my_id = filter_request_id() + 1;
         filter_request_id.set(my_id);
         filter_loading.set(true);
@@ -517,27 +755,8 @@ pub fn MessageChat(project: Option<String>) -> Element {
         load_reception_agent();
     });
 
-    // 修复 M3：新消息到来且用户在底部附近时，自动滚动到底部
-    // 不使用 use_memo 缓存 grouped_messages：DTO 未实现 PartialEq，且 N 较小，重算代价可接受
-    use_effect(move || {
-        let msg_count = messages().len();
-        let typing = is_typing();
-        let state = agent_state();
-        if !at_bottom() {
-            return;
-        }
-        // 用 msg_count + typing + state 作为依赖触发滚动；不读 messages 内容避免额外 clone
-        let _ = (msg_count, typing, state);
-        spawn(async move {
-            if let Some(window) = web_sys::window()
-                && let Some(doc) = window.document()
-                && let Some(el) = doc.query_selector("#chat-scroll-container").ok().flatten()
-                && let Ok(html_el) = el.dyn_into::<web_sys::HtmlElement>()
-            {
-                html_el.set_scroll_top(html_el.scroll_height());
-            }
-        });
-    });
+    // 滚动恢复已下沉到 ChatMessageList：依赖里不再有 agent_state，
+    // 避免 3s 轮询每次 set 都强制滚底、打断上翻阅读。
 
     // URL 单一事实源：路由 query 解析出的 project prop 回流进 selected_project 镜像。
     // 写入侧（选中会话 / 默认对话 / 新建项目）只做 navigator.replace（会话切换属
@@ -671,13 +890,21 @@ pub fn MessageChat(project: Option<String>) -> Element {
                         {
                             // 思考状态跨会话污染修复（任务 01a11b5b，方案 B）：状态与
                             // 归属成对写入，消费点据此过滤跨会话旧状态。
-                            agent_state.set(resp.runtime_state);
-                            agent_state_owner.set(Some(id));
+                            // ⚠️ Signal::set 不做相等去重：只在真变化时写，
+                            // 避免 3s 轮询把整页（含消息列表 props）一起唤醒。
+                            if *agent_state.peek() != resp.runtime_state {
+                                agent_state.set(resp.runtime_state);
+                            }
+                            if agent_state_owner.peek().as_deref() != Some(id.as_str()) {
+                                agent_state_owner.set(Some(id));
+                            }
                             target_agent_info.set(Some(resp));
                         }
                     }
                     None => {
-                        agent_state.set(0);
+                        if *agent_state.peek() != 0 {
+                            agent_state.set(0);
+                        }
                         target_agent_info.set(None);
                     }
                 }
@@ -691,24 +918,6 @@ pub fn MessageChat(project: Option<String>) -> Element {
             }
         });
     });
-
-    let slash_commands = [("/clear", "清空对话"), ("/help", "显示帮助")];
-
-    let handle_input = {
-        let mut input_text = input_text;
-        let mut show_slash_menu = show_slash_menu;
-        let mut selected_slash_index = selected_slash_index;
-        move |value: String| {
-            input_text.set(value.clone());
-            let trimmed = value.trim_start();
-            if trimmed.starts_with('/') && !trimmed.contains(' ') {
-                show_slash_menu.set(true);
-                selected_slash_index.set(0);
-            } else {
-                show_slash_menu.set(false);
-            }
-        }
-    };
 
     // ===== @ 提及 =====
     // 可 @ 的类型由 mention_kinds_for 统一界定（项目会话 Agent+任务+项目 / 默认对话
@@ -730,30 +939,6 @@ pub fn MessageChat(project: Option<String>) -> Element {
         // 只提示、不阻断——用户连发多条正是「边想边补充」的常见形态。
         // 回复目标：本次发送携带 reply_to_id（引用条已清空则不带）
         let reply_to_id = reply_target().map(|m| m.message_id);
-        if show_slash_menu() {
-            let filtered: Vec<&str> = slash_commands
-                .iter()
-                .filter(|(cmd, _)| cmd.starts_with(&input_text().trim_start().to_lowercase()))
-                .map(|(cmd, _)| *cmd)
-                .collect();
-            if !filtered.is_empty() {
-                let idx = selected_slash_index().min(filtered.len() as i32 - 1) as usize;
-                match filtered[idx] {
-                    "/clear" => {
-                        messages.set(Vec::new());
-                        input_text.set(String::new());
-                        show_slash_menu.set(false);
-                        toast.info("对话已清空");
-                    }
-                    "/help" => {
-                        show_slash_menu.set(false);
-                        toast.info("可用指令: /clear - 清空对话, /help - 显示帮助");
-                    }
-                    _ => {}
-                }
-                return;
-            }
-        }
         let project_id = selected_project();
 
         // to_agent_id 路由优先级：
@@ -886,7 +1071,7 @@ pub fn MessageChat(project: Option<String>) -> Element {
     };
 
     // 点击「默认对话」条目：清空选中项目
-    let handle_default_chat_click = move |_| {
+    let handle_default_chat_click = move |_: ()| {
         navigator.replace(Route::MessageChat { project: None });
         // 切换会话时同步清理回复 / 话题状态 / 产物预览弹窗
         reply_target.set(None);
@@ -955,7 +1140,7 @@ pub fn MessageChat(project: Option<String>) -> Element {
     };
 
     // 打开新建项目弹窗时加载可用 Agent 列表
-    let open_create_project = move |_| {
+    let open_create_project = move |_: ()| {
         // 先把默认 owner 设为当前前台 agent
         project_owner_agent_id.set(reception_agent().map(|a| a.agent_id));
         spawn(async move {
@@ -973,24 +1158,24 @@ pub fn MessageChat(project: Option<String>) -> Element {
         .find(|p| selected_project().as_deref() == Some(&p.id))
         .cloned();
 
-    // 问题一（第三批·候选一）：点击过滤器已改走 query_projects 拉最新数据，
-    // 此处仅保留内存筛选兜底（默认会话/挂载首帧沿用既有数据），selected_project 不动 →
-    // 选中项目被隐藏时保持选中、聊天区不闪变（AMan 拍板④语义维持）。
-    let active_filter = status_filter();
-    let project_items: Vec<ListProjectsResponseItem> = projects
-        .read()
-        .iter()
-        .filter(|p| FILTER_TABS[active_filter].1.is_none_or(|s| p.status == s))
-        .cloned()
-        .collect();
-
     // 输入框回复条预览：正在回复谁 + 内容摘要（读 reply_target 使组件订阅其变化）
     let reply_preview = reply_target().map(|rt| {
         let content: String = rt.content.chars().take(60).collect();
         (directory().sender_name(&rt), content)
     });
     // 取消回复（引用条 × 按钮）
-    let cancel_reply = move |_| reply_target.set(None);
+    // EventHandler 是 Copy：两个会话分支共用同一份，避免闭包被 move 消耗
+    let cancel_reply = EventHandler::new(move |_: MouseEvent| reply_target.set(None));
+    // 会话栏调度：侧栏组件只读自己的展示数据，业务逻辑仍留在页面壳
+    let mut handle_default_chat_click = handle_default_chat_click;
+    let mut open_create_project = open_create_project;
+    let on_default_chat = EventHandler::new(move |_: ()| handle_default_chat_click(()));
+    let on_open_create = EventHandler::new(move |_: ()| open_create_project(()));
+    let on_project_click = EventHandler::new(move |id: String| handle_project_click(id));
+    let on_filter = EventHandler::new(move |status: Option<i32>| {
+        let mut reload = reload_projects_filtered;
+        reload(status)
+    });
 
     // 停止思考成功后的乐观回写：runtime_state 是 3s 周期轮询的，不立刻归零的话
     // 按钮要等最多一拍才消失，用户会以为没点中而连点。顺带清掉「等待回复」标记 ——
@@ -1000,6 +1185,41 @@ pub fn MessageChat(project: Option<String>) -> Element {
         agent_state.set(0);
         is_typing.set(false);
     });
+
+    // 现场句柄：页面壳只创建、不 `.read()`。3s 轮询写入只重渲染
+    // ChatAgentStatusBubble / ChatMessageRow，不会重建消息列表 DOM。
+    let scene = ChatSceneSignals {
+        agent_state,
+        agent_state_owner,
+        target_agent_id,
+        target_agent_info,
+    };
+
+    // 产物 chip 点击（事件委托）：toast 不实现 PartialEq，不能当 prop 下传
+    let on_artifact_click = {
+        let preview = artifact_preview;
+        let preview_gen = artifact_preview_gen;
+        let err_toast = toast;
+        EventHandler::new(move |evt: MouseEvent| {
+            open_artifact_preview_from_click(evt, preview, preview_gen, err_toast)
+        })
+    };
+
+    // 打开话题：先清旧链，避免首帧闪出上一个话题
+    let on_open_thread = {
+        let mut artifact_preview = artifact_preview;
+        let mut artifact_preview_gen = artifact_preview_gen;
+        let mut thread_messages = thread_messages;
+        let mut thread_loading = thread_loading;
+        let mut thread_root = thread_root;
+        EventHandler::new(move |root_id: String| {
+            artifact_preview.set(None);
+            artifact_preview_gen += 1;
+            thread_messages.set(Vec::new());
+            thread_loading.set(true);
+            thread_root.set(Some(root_id));
+        })
+    };
 
     // 话题视图：服务端拉回的整条链 → 共享 ThreadChain 需要的形态。
     // 用 memo 缓存，避免聊天页因 typing / SSE 重渲染时反复克隆整条话题链。
@@ -1078,189 +1298,45 @@ pub fn MessageChat(project: Option<String>) -> Element {
                 }
             }
 
-            div { class: "flex-1 overflow-y-auto p-4 bg-base-100", id: "chat-scroll-container",
-                // 修复 M3：scroll 事件不冒泡，onscroll 必须挂在真正滚动的容器本体上
-                onscroll: move |_e| {
-                    // 浮层用 fixed + 点击瞬间的视口锚点（见 AvatarBubble）：滚动后锚点失效，先收起
-                    collapse_avatar_bubble();
-                    if let Some(html_el) = web_sys::window()
-                        .and_then(|w| w.document())
-                        .and_then(|d| d.query_selector("#chat-scroll-container").ok().flatten())
-                        .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
-                    {
-                        let scroll_top = html_el.scroll_top();
-                        let max_scroll = html_el.scroll_height() - html_el.client_height();
-                        let is_bottom = scroll_top as f64 >= (max_scroll - 50) as f64;
-                        // 仅在状态翻转时写回：Signal::set 不做相等去重，每个滚动事件都写会触发整页重渲染
-                        if at_bottom() != is_bottom {
-                            at_bottom.set(is_bottom);
-                        }
-                        // 手动滚回底部时清除「有新消息」提示
-                        if is_bottom && has_new_messages() {
-                            has_new_messages.set(false);
-                        }
-                        // 滚到顶部时加载更早的历史消息
-                        if scroll_top == 0 {
-                            load_older();
-                        }
-                    }
-                },
-                if loading_messages() && messages().is_empty() {
-                    div { class: "flex items-center justify-center py-12",
-                        Loading { size: "md" }
-                        span { class: "ml-2 text-base-content/60", "加载消息中..." }
-                    }
-                } else if messages().is_empty() && !loading_messages() {
-                    div { class: "text-center py-12",
-                        div { class: "text-5xl mb-3", "💬" }
-                        div { class: "text-base-content/60", "暂无消息，开始对话吧" }
-                    }
-                } else {
-                    div {
-                        class: "flex flex-col gap-1 min-h-full",
-                        // 正文产物 chip 是注入 HTML（无 VNode），在这里做事件委托：
-                        // 命中 [data-mention-kind=artifact] → 按 id 取详情 → 就地弹窗。
-                        onclick: move |evt| open_artifact_preview_from_click(evt, artifact_preview, artifact_preview_gen, toast),
-                        for entry in group_messages_by_date(&messages()) {
-                            match entry {
-                                MessageListEntry::DateDivider(label) => rsx! {
-                                    // 修复 L_NEW2：之前 key 含 messages().len()，切换会话时 len 变化导致 key 不稳定
-                                    div { class: "hud-divider my-2", key: "divider-{label}", "{label}" }
-                                },
-                                MessageListEntry::Message(msg) => {
-        // 解析被引用消息（气泡引用块展示）：在当前消息列表里找；
-        // 找不到（未加载到引用的历史消息）则不展示引用块
-        let quoted = msg.reply_to_id.as_ref().and_then(|rid| {
-            messages.read().iter().find(|m| &m.message_id == rid).map(|m| QuotedPreview {
-                sender: directory().sender_name(m),
-                content: truncate_preview(&message_preview_text(m)),
-                root_id: m.root_id.clone().or_else(|| Some(m.message_id.clone())),
-            })
-        });
-        // hover 回复：把当前消息设为回复目标
-        let on_reply = {
-            let reply_msg = msg.clone();
-            Callback::new(move |_: ()| reply_target.set(Some(reply_msg.clone())))
-        };
-        // 打开话题浏览页（按消息链根 ID）；先清旧链，避免首帧闪出上一个话题
-        let on_open_thread = Callback::new(move |root_id: String| {
-            artifact_preview.set(None);
-            artifact_preview_gen += 1;
-            thread_messages.set(Vec::new());
-            thread_loading.set(true);
-            thread_root.set(Some(root_id));
-        });
-        // 状态警示环：仅当消息来自当前会话目标 Agent 时显示（复用既有 3s 轮询）
-        let agent_status = target_agent_info()
-            .as_ref()
-            .filter(|a| a.id == msg.from_id)
-            .map(|a| a.status);
-        rsx! {
-            RichMessageItem {
-                key: "{msg.message_id}",
-                msg: msg.clone(),
-                quoted,
-                on_reply: Some(on_reply),
-                on_open_thread: Some(on_open_thread),
-                agent_status,
-            }
-        }
-                                },
-                            }
-                        }
-                        // 置底 Agent 状态气泡：文案随 runtime_state 实时切换，
-                        // 新消息经 SSE 到达后堆叠在其上方；Agent 回到 Idle 后消失
-                        if let Some(status) = agent_status_line(
-                                is_typing(),
-                                agent_state(),
-                                // 思考状态跨会话污染修复（任务 01a11b5b，方案 B）：
-                                // 仅当状态归属 == 当前会话目标时才渲染状态气泡
-                                agent_state_owner_matches(
-                                    agent_state_owner().as_deref(),
-                                    target_agent_id().as_deref(),
-                                ),
-                            ) {
-                            div { class: "chat chat-start",
-                                div { class: "chat-header pr-1 text-sm opacity-70", "{status_sender_name}" }
-                                div { class: "chat-image",
-                                    {
-                                        // 置底气泡头像即当前会话目标 Agent，id/status 直接取自轮询缓存
-                                        let ti = target_agent_info();
-                                        rsx! {
-                                            AvatarBubble {
-                                                name: status_sender_name.clone(),
-                                                tone: AvatarTone::Agent,
-                                                agent_id: ti.as_ref().map(|a| a.id.clone()),
-                                                status: ti.as_ref().map(|a| a.status),
-                                                align: BubbleAlign::Start,
-                                            }
-                                        }
-                                    }
-                                }
-                                div { class: "chat-bubble chat-bubble-neutral",
-                                    div { class: "flex items-center gap-2",
-                                        if agent_state() == 1 {
-                                            span { "🌙" }
-                                        } else {
-                                            div { class: "typing-indicator flex gap-1",
-                                                div { class: "typing-dot" }
-                                                div { class: "typing-dot" }
-                                                div { class: "typing-dot" }
-                                            }
-                                        }
-                                        span { class: "text-sm", "{status}" }
-                                        // Busy 时给一个就地出口：停住这个正在转的脑子，不必跑去 Agent 详情页。
-                                        // 仅 Busy(2) 显示 —— Resting(1) 时气泡也出现（「正在休息…」），
-                                        // 但取消思考对休息态无意义，按钮不能跟着冒出来。
-                                        if agent_state() == 2 {
-                                            if let Some(aid) = target_agent_id() {
-                                                CancelThinkingButton {
-                                                    agent_id: aid.clone(),
-                                                    on_cancelled: on_thinking_cancelled,
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        // 新消息提示：用户上翻阅读时悬浮底部，点击回最新消息，不打断当前阅读位置
-                        if has_new_messages() && !at_bottom() {
-                            div { class: "sticky bottom-2 z-10 flex justify-center pointer-events-none",
-                                button {
-                                    class: "btn hud-btn btn-sm btn-primary rounded-full shadow-lg pointer-events-auto",
-                                    onclick: move |_| {
-                                        has_new_messages.set(false);
-                                        at_bottom.set(true);
-                                    },
-                                    "↓ 有新消息"
-                                }
-                            }
-                        }
-                    }
-                }
+            ChatMessageList {
+                messages,
+                loading_messages,
+                is_typing,
+                at_bottom,
+                has_new_messages,
+                reply_target,
+                scene,
+                on_load_older: EventHandler::new(move |_: ()| load_older()),
+                on_open_thread,
+                on_artifact_click,
+                on_thinking_cancelled,
+                status_sender_name: status_sender_name.clone(),
+                empty_emoji: "💬".to_string(),
+                empty_title: String::new(),
+                empty_text: "暂无消息，开始对话吧".to_string(),
             }
 
-            {chat_input_area(
-                is_mobile(),
+            ChatInputArea {
                 input_text,
-                show_slash_menu,
-                selected_slash_index,
-                slash_commands,
-                handle_input,
-                handle_send,
-                uploading,
                 pending_attachments,
-                attachments.on_files,
-                toast,
                 drag_hover,
+                uploading,
+                on_files: attachments.on_files,
+                on_send: handle_send,
                 messages,
                 mention,
-                mention_tab_list.clone(),
-                agent_state,
-                reply_preview.clone(),
-                cancel_reply,
-            )}
+                tabs: mention_tab_list.clone(),
+                input_id: "chat-input-textarea",
+                file_input_id: "chat-file-input",
+                compact: false,
+                agent_state: Some(agent_state),
+                reply_preview: reply_preview.clone(),
+                on_cancel_reply: Some(cancel_reply),
+                on_remove_mention: None,
+                focus_selector: None,
+                on_focus: None,
+                on_blur: None,
+            }
         }
     } else {
         // 默认对话框（无 project_id，后端走 resolve_agent 兜底路由前台 Agent）
@@ -1302,330 +1378,74 @@ pub fn MessageChat(project: Option<String>) -> Element {
                 }
             }
 
-            div { class: "flex-1 overflow-y-auto p-4 bg-base-100", id: "chat-scroll-container",
-                // 修复 M3：scroll 事件不冒泡，onscroll 必须挂在真正滚动的容器本体上
-                onscroll: move |_e| {
-                    // 浮层用 fixed + 点击瞬间的视口锚点（见 AvatarBubble）：滚动后锚点失效，先收起
-                    collapse_avatar_bubble();
-                    if let Some(html_el) = web_sys::window()
-                        .and_then(|w| w.document())
-                        .and_then(|d| d.query_selector("#chat-scroll-container").ok().flatten())
-                        .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
-                    {
-                        let scroll_top = html_el.scroll_top();
-                        let max_scroll = html_el.scroll_height() - html_el.client_height();
-                        let is_bottom = scroll_top as f64 >= (max_scroll - 50) as f64;
-                        // 仅在状态翻转时写回：Signal::set 不做相等去重，每个滚动事件都写会触发整页重渲染
-                        if at_bottom() != is_bottom {
-                            at_bottom.set(is_bottom);
-                        }
-                        // 手动滚回底部时清除「有新消息」提示
-                        if is_bottom && has_new_messages() {
-                            has_new_messages.set(false);
-                        }
-                    }
-                },
-                if messages().is_empty() {
-                    if has_reception {
-                        div { class: "text-center py-12",
-                            div { class: "text-5xl mb-3", "💬" }
-                            div { class: "text-base-content/60", "与前台 Agent 直接沟通，复杂需求可新建项目组织" }
-                        }
-                    } else {
-                        div { class: "text-center py-12",
-                            div { class: "text-5xl mb-3", "🤖" }
-                            div { class: "text-base-content/70 font-medium mb-2", "暂无可用的前台 Agent" }
-                            div { class: "text-base-content/50 text-sm", "请前往 Agent 管理页面创建 Agent 并设置为 Onboarded 状态" }
-                        }
-                    }
+            ChatMessageList {
+                messages,
+                loading_messages,
+                is_typing,
+                at_bottom,
+                has_new_messages,
+                reply_target,
+                scene,
+                on_load_older: EventHandler::new(move |_: ()| load_older()),
+                on_open_thread,
+                on_artifact_click,
+                on_thinking_cancelled,
+                status_sender_name,
+                empty_emoji: (if has_reception { "💬" } else { "🤖" }).to_string(),
+                empty_title: if has_reception {
+                    String::new()
                 } else {
-                    div {
-                        class: "flex flex-col gap-1 min-h-full",
-                        // 正文产物 chip 是注入 HTML（无 VNode），在这里做事件委托：
-                        // 命中 [data-mention-kind=artifact] → 按 id 取详情 → 就地弹窗。
-                        onclick: move |evt| open_artifact_preview_from_click(evt, artifact_preview, artifact_preview_gen, toast),
-                        for entry in group_messages_by_date(&messages()) {
-                            match entry {
-                                MessageListEntry::DateDivider(label) => rsx! {
-                                    // 修复 L_NEW2：之前 key 含 messages().len()，切换会话时 len 变化导致 key 不稳定
-                                    div { class: "hud-divider my-2", key: "divider-{label}", "{label}" }
-                                },
-                                MessageListEntry::Message(msg) => {
-        // 解析被引用消息（气泡引用块展示）：在当前消息列表里找；
-        // 找不到（未加载到引用的历史消息）则不展示引用块
-        let quoted = msg.reply_to_id.as_ref().and_then(|rid| {
-            messages.read().iter().find(|m| &m.message_id == rid).map(|m| QuotedPreview {
-                sender: directory().sender_name(m),
-                content: truncate_preview(&message_preview_text(m)),
-                root_id: m.root_id.clone().or_else(|| Some(m.message_id.clone())),
-            })
-        });
-        // hover 回复：把当前消息设为回复目标
-        let on_reply = {
-            let reply_msg = msg.clone();
-            Callback::new(move |_: ()| reply_target.set(Some(reply_msg.clone())))
-        };
-        // 打开话题浏览页（按消息链根 ID）；先清旧链，避免首帧闪出上一个话题
-        let on_open_thread = Callback::new(move |root_id: String| {
-            artifact_preview.set(None);
-            artifact_preview_gen += 1;
-            thread_messages.set(Vec::new());
-            thread_loading.set(true);
-            thread_root.set(Some(root_id));
-        });
-        // 状态警示环：仅当消息来自当前会话目标 Agent 时显示（复用既有 3s 轮询）
-        let agent_status = target_agent_info()
-            .as_ref()
-            .filter(|a| a.id == msg.from_id)
-            .map(|a| a.status);
-        rsx! {
-            RichMessageItem {
-                key: "{msg.message_id}",
-                msg: msg.clone(),
-                quoted,
-                on_reply: Some(on_reply),
-                on_open_thread: Some(on_open_thread),
-                agent_status,
-            }
-        }
-                                },
-                            }
-                        }
-                        // 置底 Agent 状态气泡：文案随 runtime_state 实时切换，
-                        // 新消息经 SSE 到达后堆叠在其上方；Agent 回到 Idle 后消失
-                        if let Some(status) = agent_status_line(
-                                is_typing(),
-                                agent_state(),
-                                // 思考状态跨会话污染修复（任务 01a11b5b，方案 B）：
-                                // 仅当状态归属 == 当前会话目标时才渲染状态气泡
-                                agent_state_owner_matches(
-                                    agent_state_owner().as_deref(),
-                                    target_agent_id().as_deref(),
-                                ),
-                            ) {
-                            div { class: "chat chat-start",
-                                div { class: "chat-header pr-1 text-sm opacity-70", "{status_sender_name}" }
-                                div { class: "chat-image",
-                                    {
-                                        // 置底气泡头像即当前会话目标 Agent，id/status 直接取自轮询缓存
-                                        let ti = target_agent_info();
-                                        rsx! {
-                                            AvatarBubble {
-                                                name: status_sender_name.clone(),
-                                                tone: AvatarTone::Agent,
-                                                agent_id: ti.as_ref().map(|a| a.id.clone()),
-                                                status: ti.as_ref().map(|a| a.status),
-                                                align: BubbleAlign::Start,
-                                            }
-                                        }
-                                    }
-                                }
-                                div { class: "chat-bubble chat-bubble-neutral",
-                                    div { class: "flex items-center gap-2",
-                                        if agent_state() == 1 {
-                                            span { "🌙" }
-                                        } else {
-                                            div { class: "typing-indicator flex gap-1",
-                                                div { class: "typing-dot" }
-                                                div { class: "typing-dot" }
-                                                div { class: "typing-dot" }
-                                            }
-                                        }
-                                        span { class: "text-sm", "{status}" }
-                                        // Busy 时给一个就地出口：停住这个正在转的脑子，不必跑去 Agent 详情页。
-                                        // 仅 Busy(2) 显示 —— Resting(1) 时气泡也出现（「正在休息…」），
-                                        // 但取消思考对休息态无意义，按钮不能跟着冒出来。
-                                        if agent_state() == 2 {
-                                            if let Some(aid) = target_agent_id() {
-                                                CancelThinkingButton {
-                                                    agent_id: aid.clone(),
-                                                    on_cancelled: on_thinking_cancelled,
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        // 新消息提示：用户上翻阅读时悬浮底部，点击回最新消息，不打断当前阅读位置
-                        if has_new_messages() && !at_bottom() {
-                            div { class: "sticky bottom-2 z-10 flex justify-center pointer-events-none",
-                                button {
-                                    class: "btn hud-btn btn-sm btn-primary rounded-full shadow-lg pointer-events-auto",
-                                    onclick: move |_| {
-                                        has_new_messages.set(false);
-                                        at_bottom.set(true);
-                                    },
-                                    "↓ 有新消息"
-                                }
-                            }
-                        }
-                    }
-                }
+                    "暂无可用的前台 Agent".to_string()
+                },
+                empty_text: if has_reception {
+                    "与前台 Agent 直接沟通，复杂需求可新建项目组织".to_string()
+                } else {
+                    "请前往 Agent 管理页面创建 Agent 并设置为 Onboarded 状态".to_string()
+                },
             }
 
-            {chat_input_area(
-                is_mobile(),
+            ChatInputArea {
                 input_text,
-                show_slash_menu,
-                selected_slash_index,
-                slash_commands,
-                handle_input,
-                handle_send,
-                uploading,
                 pending_attachments,
-                attachments.on_files,
-                toast,
                 drag_hover,
+                uploading,
+                on_files: attachments.on_files,
+                on_send: handle_send,
                 messages,
                 mention,
-                mention_tab_list.clone(),
-                agent_state,
-                reply_preview.clone(),
-                cancel_reply,
-            )}
+                tabs: mention_tab_list.clone(),
+                input_id: "chat-input-textarea",
+                file_input_id: "chat-file-input",
+                compact: false,
+                agent_state: Some(agent_state),
+                reply_preview: reply_preview.clone(),
+                on_cancel_reply: Some(cancel_reply),
+                on_remove_mention: None,
+                focus_selector: None,
+                on_focus: None,
+                on_blur: None,
+            }
         }
     };
-
-    // 修复 HIGH #2：之前 sidebar_visible_on_mobile = selected_project().is_none() || sidebar_open()
-    // 导致默认对话 (selected_project=None) 下遮罩恒显示，点击遮罩后 sidebar_open=false 但表达式仍 true，
-    // 移动端默认对话功能完全不可用。改为仅依赖 sidebar_open。
-    let sidebar_visible_on_mobile = sidebar_open();
 
     rsx! {
         // 统一导航栏布局：Navbar(4rem) + 剩余高度的聊天主体（flex-1 min-h-0 避免内容撑出视口）
         div { class: "h-screen flex flex-col bg-base-100",
             Navbar {}
             div { class: "flex-1 min-h-0 flex flex-col lg:flex-row relative",
-            if is_mobile() && sidebar_visible_on_mobile {
-                div {
-                    class: "fixed inset-0 bg-black/50 z-40 lg:hidden",
-                    onclick: move |_| sidebar_open.set(false),
-                }
-            }
-            div {
-                class: if is_mobile() {
-                    if sidebar_visible_on_mobile {
-                        // top-16：避开顶部 Navbar（4rem），抽屉不再覆盖导航栏
-                        "fixed top-16 bottom-0 left-0 z-50 w-72 bg-base-200 flex flex-col border-r border-base-300 transition-transform"
-                    } else {
-                        "fixed top-16 bottom-0 left-0 z-50 w-72 bg-base-200 flex flex-col border-r border-base-300 transition-transform -translate-x-full"
-                    }
-                } else {
-                    "w-full lg:w-72 bg-base-200 flex flex-col border-r border-base-300"
-                },
-                div { class: "p-3 border-b border-base-300 flex items-center justify-between",
-                    h2 { class: "font-semibold", "项目列表" }
-                    button {
-                        class: "btn hud-btn btn-primary btn-sm",
-                        r#type: "button",
-                        onclick: open_create_project,
-                        "+ 新建项目"
-                    }
-                }
-                // 问题一：状态子过滤器标签组（单选互斥 + 显式「全部」，flex-wrap 自适应抽屉宽度）
-                div { class: "flex flex-wrap gap-1 px-3 py-2 border-b border-base-300",
-                    for (idx, (label, _)) in FILTER_TABS.iter().enumerate() {
-                        {
-                            let chip_class = if status_filter() == idx {
-                                "btn hud-btn btn-xs bg-primary/10 border border-primary text-primary"
-                            } else {
-                                "btn hud-btn btn-xs bg-base-100 border border-base-300 text-base-content/70"
-                            };
-                            rsx! {
-                                button {
-                                    key: "{idx}",
-                                    class: "{chip_class}",
-                                    r#type: "button",
-                                    onclick: move |_| {
-                                        status_filter.set(idx);
-                                        reload_projects_filtered(FILTER_TABS[idx].1);
-                                    },
-                                    "{label}"
-                                }
-                            }
-                        }
-                    }
-                }
-                // 问题一（第三批·候选一）：过滤器拉取中的局部加载提示（细条，不复用全局 loading）
-                {
-                    let loading = filter_loading();
-                    rsx! {
-                        if loading {
-                            div { class: "flex items-center gap-2 px-3 py-1 text-xs text-base-content/60 border-b border-base-300",
-                                span { class: "loading loading-dots loading-xs" }
-                                "刷新中…"
-                            }
-                        }
-                    }
-                }
-                div { class: "flex-1 overflow-y-auto",
-                    {
-                        let is_active = selected_project().is_none();
-                        let item_class = if is_active {
-                            "px-3 py-2 cursor-pointer bg-primary/10 border-l-4 border-primary transition-colors"
-                        } else {
-                            "px-3 py-2 cursor-pointer hover:bg-base-300 transition-colors"
-                        };
-                        rsx! {
-                            div {
-                                class: "{item_class}",
-                                onclick: handle_default_chat_click,
-                                div { class: "flex items-center justify-between gap-2",
-                                    div { class: "font-medium", "💬 默认对话" }
-                                    {
-                                        let count = unread_badges()
-                                            .get(local_store::UNREAD_DEFAULT_KEY)
-                                            .copied()
-                                            .unwrap_or(0);
-                                        { unread_badge(count) }
-                                    }
-                                }
-                                div { class: "text-xs text-base-content/60", "与前台 Agent 直接沟通" }
-                            }
-                        }
-                    }
-                        // 问题一：过滤后空态（默认「未完成」过滤下该状态可能无项目）
-                        if !loading_projects() && project_items.is_empty() {
-                            div { class: "text-center text-sm text-base-content/50 py-8",
-                                "该状态下暂无项目"
-                            }
-                        } else if loading_projects() {
-                        div { class: "flex items-center justify-center py-8",
-                            Loading { size: "sm" }
-                            span { class: "ml-2 text-sm text-base-content/60", "加载中..." }
-                        }
-                    } else {
-                        for project in project_items.iter() {
-                            {
-                                let id = project.id.clone();
-                                let name = project.name.clone();
-                                let status = project.status;
-                                let is_active = selected_project() == Some(id.clone());
-                                let item_class = if is_active {
-                                    "px-3 py-2 cursor-pointer bg-primary/10 border-l-4 border-primary transition-colors"
-                                } else {
-                                    "px-3 py-2 cursor-pointer hover:bg-base-300 transition-colors"
-                                };
-                                rsx! {
-                                    div {
-                                        class: "{item_class}",
-                                        onclick: move |_| handle_project_click(id.clone()),
-                                        div { class: "flex items-center justify-between gap-2",
-                                            div { class: "font-medium", "{name}" }
-                                            {
-                                                let count =
-                                                    unread_badges().get(&id).copied().unwrap_or(0);
-                                                { unread_badge(count) }
-                                            }
-                                        }
-                                        div { class: "text-xs text-base-content/60", "{status_text(status)}" }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+            ChatProjectSidebar {
+                is_mobile: is_mobile(),
+                sidebar_open,
+                projects,
+                selected_project,
+                status_filter,
+                loading_projects,
+                filter_loading,
+                unread_badges,
+                on_open_create,
+                on_default_chat,
+                on_project_click,
+                on_filter,
             }
 
             div { class: "relative flex-1 flex flex-col min-w-0",
@@ -1807,10 +1627,165 @@ pub fn MessageChat(project: Option<String>) -> Element {
     }
 }
 
-/// 输入框 DOM id：@ 提及需要读写光标位置，需要一个稳定标识
+/// 左侧会话栏：项目列表 / 状态过滤 / 未读角标。
 ///
-/// 两个会话分支共用同一个 id，任一时刻 DOM 里只有一个，不会取错。
-const CHAT_INPUT_ID: &str = "chat-input-textarea";
+/// ⚠️ 列表数据、过滤态、角标只读在本组件内订阅，页面壳只负责调度回调。
+/// 与消息区、现场面板同款隔离：谁读谁重渲染。
+#[component]
+fn ChatProjectSidebar(
+    is_mobile: bool,
+    sidebar_open: Signal<bool>,
+    projects: Signal<Vec<ListProjectsResponseItem>>,
+    selected_project: Signal<Option<String>>,
+    status_filter: Signal<usize>,
+    loading_projects: Signal<bool>,
+    filter_loading: Signal<bool>,
+    unread_badges: Signal<local_store::UnreadBadges>,
+    on_open_create: EventHandler<()>,
+    on_default_chat: EventHandler<()>,
+    on_project_click: EventHandler<String>,
+    on_filter: EventHandler<Option<i32>>,
+) -> Element {
+    let mut sidebar_open = sidebar_open;
+    let mut status_filter = status_filter;
+    let visible = *sidebar_open.read();
+    let active_filter = *status_filter.read();
+    // 默认「未完成」过滤下项目可能为空：内存筛选兜底保持选中项可见，
+    // 选中项目被隐藏时不闪变（与后端过滤拉取并存）。
+    let project_items: Vec<ListProjectsResponseItem> = projects
+        .read()
+        .iter()
+        .filter(|p| FILTER_TABS[active_filter].1.is_none_or(|s| p.status == s))
+        .cloned()
+        .collect();
+    let selected = selected_project.read();
+    let loading = *loading_projects.read();
+    let filtering = *filter_loading.read();
+    let badges = unread_badges.read();
+
+    rsx! {
+        // 遮罩仅依赖 sidebar_open：默认对话（selected=None）下不再恒显示
+        if is_mobile && visible {
+            div {
+                class: "fixed inset-0 bg-black/50 z-40 lg:hidden",
+                onclick: move |_| sidebar_open.set(false),
+            }
+        }
+        div {
+            class: if is_mobile {
+                if visible {
+                    // top-16：避开 Navbar（4rem），抽屉不盖导航栏
+                    "fixed top-16 bottom-0 left-0 z-50 w-72 bg-base-200 flex flex-col border-r border-base-300 transition-transform"
+                } else {
+                    "fixed top-16 bottom-0 left-0 z-50 w-72 bg-base-200 flex flex-col border-r border-base-300 transition-transform -translate-x-full"
+                }
+            } else {
+                "w-full lg:w-72 bg-base-200 flex flex-col border-r border-base-300"
+            },
+            div { class: "p-3 border-b border-base-300 flex items-center justify-between",
+                h2 { class: "font-semibold", "项目列表" }
+                button {
+                    class: "btn hud-btn btn-primary btn-sm",
+                    r#type: "button",
+                    onclick: move |_| on_open_create.call(()),
+                    "+ 新建项目"
+                }
+            }
+            // 状态子过滤器：单选互斥 + 显式「全部」，flex-wrap 自适应抽屉宽度
+            div { class: "flex flex-wrap gap-1 px-3 py-2 border-b border-base-300",
+                for (idx, (label, _)) in FILTER_TABS.iter().enumerate() {
+                    {
+                        let chip_class = if active_filter == idx {
+                            "btn hud-btn btn-xs bg-primary/10 border border-primary text-primary"
+                        } else {
+                            "btn hud-btn btn-xs bg-base-100 border border-base-300 text-base-content/70"
+                        };
+                        rsx! {
+                            button {
+                                key: "{idx}",
+                                class: "{chip_class}",
+                                r#type: "button",
+                                onclick: move |_| {
+                                    status_filter.set(idx);
+                                    on_filter.call(FILTER_TABS[idx].1);
+                                },
+                                "{label}"
+                            }
+                        }
+                    }
+                }
+            }
+            // 过滤器拉取中的局部加载提示（细条，不复用全局 loading）
+            if filtering {
+                div { class: "flex items-center gap-2 px-3 py-1 text-xs text-base-content/60 border-b border-base-300",
+                    span { class: "loading loading-dots loading-xs" }
+                    "刷新中…"
+                }
+            }
+            div { class: "flex-1 overflow-y-auto",
+                {
+                    let is_active = selected.is_none();
+                    let item_class = if is_active {
+                        "px-3 py-2 cursor-pointer bg-primary/10 border-l-4 border-primary transition-colors"
+                    } else {
+                        "px-3 py-2 cursor-pointer hover:bg-base-300 transition-colors"
+                    };
+                    let count = badges
+                        .get(local_store::UNREAD_DEFAULT_KEY)
+                        .copied()
+                        .unwrap_or(0);
+                    rsx! {
+                        div {
+                            class: "{item_class}",
+                            onclick: move |_| on_default_chat.call(()),
+                            div { class: "flex items-center justify-between gap-2",
+                                div { class: "font-medium", "💬 默认对话" }
+                                { unread_badge(count) }
+                            }
+                            div { class: "text-xs text-base-content/60", "与前台 Agent 直接沟通" }
+                        }
+                    }
+                }
+                if !loading && project_items.is_empty() {
+                    div { class: "text-center text-sm text-base-content/50 py-8",
+                        "该状态下暂无项目"
+                    }
+                } else if loading {
+                    div { class: "flex items-center justify-center py-8",
+                        Loading { size: "sm" }
+                        span { class: "ml-2 text-sm text-base-content/60", "加载中..." }
+                    }
+                } else {
+                    for project in project_items.iter() {
+                        {
+                            let id = project.id.clone();
+                            let name = project.name.clone();
+                            let status = project.status;
+                            let is_active = selected.as_deref() == Some(id.as_str());
+                            let item_class = if is_active {
+                                "px-3 py-2 cursor-pointer bg-primary/10 border-l-4 border-primary transition-colors"
+                            } else {
+                                "px-3 py-2 cursor-pointer hover:bg-base-300 transition-colors"
+                            };
+                            let count = badges.get(&id).copied().unwrap_or(0);
+                            rsx! {
+                                div {
+                                    class: "{item_class}",
+                                    onclick: move |_| on_project_click.call(id.clone()),
+                                    div { class: "flex items-center justify-between gap-2",
+                                        div { class: "font-medium", "{name}" }
+                                        { unread_badge(count) }
+                                    }
+                                    div { class: "text-xs text-base-content/60", "{status_text(status)}" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 /// 置底状态气泡文案：与 Agent 运行时状态匹配；None 表示不显示气泡。
 ///
@@ -1844,338 +1819,6 @@ fn agent_state_owner_matches(state_owner: Option<&str>, current_target: Option<&
     match (state_owner, current_target) {
         (Some(o), Some(t)) => o == t,
         _ => true,
-    }
-}
-
-/// 渲染聊天输入区域（Project 对话框和默认对话框共用）
-///
-/// 提取为函数避免在两个分支中重复 100+ 行代码。
-/// Dioxus 的 Signal<T> 是 Copy 的，可以直接作为参数传递。
-#[allow(clippy::too_many_arguments)]
-fn chat_input_area(
-    _is_mobile: bool,
-    mut input_text: Signal<String>,
-    mut show_slash_menu: Signal<bool>,
-    mut selected_slash_index: Signal<i32>,
-    slash_commands: [(&'static str, &'static str); 2],
-    mut handle_input: impl FnMut(String) + 'static,
-    handle_send: Callback,
-    uploading: Signal<bool>,
-    mut pending_attachments: Signal<Vec<PendingAttachment>>,
-    handle_file_select: Callback<Vec<dioxus::html::FileData>>,
-    toast: crate::store::toast::ToastState,
-    mut drag_hover: Signal<bool>,
-    mut messages: Signal<Vec<MessageListItem>>,
-    mention: MentionState,
-    tabs: Vec<MentionTab>,
-    agent_state: Signal<i32>,
-    reply_preview: Option<(String, String)>,
-    cancel_reply: impl FnMut(dioxus::events::MouseEvent) + 'static,
-) -> Element {
-    // 鼠标点选候选：先由组件对齐高亮，这里直接 confirm 即可
-    let mut input_text_pick = input_text;
-    let on_pick_mention = Callback::new(move |_item: MentionCandidate| {
-        if let Some((text, caret)) = mention.confirm(&input_text_pick()) {
-            input_text_pick.set(text);
-            restore_caret(CHAT_INPUT_ID, caret);
-        }
-    });
-    // 摘掉「已提及」胶囊：同步把正文里的提及语法串删掉
-    let mut input_text_remove = input_text;
-    let on_remove_mention = Callback::new(move |key: String| {
-        let text = mention.remove_picked(&input_text_remove(), &key);
-        input_text_remove.set(text);
-    });
-
-    rsx! {
-        div { class: "p-3 border-t border-base-300 bg-base-100 relative",
-            if show_slash_menu() {
-                {
-                    let filtered: Vec<(&str, &str)> = slash_commands
-                        .iter()
-                        .filter(|(cmd, _)| cmd.starts_with(&input_text().trim_start().to_lowercase()))
-                        .copied()
-                        .collect();
-                    if !filtered.is_empty() {
-                        let selected = selected_slash_index().min(filtered.len() as i32 - 1).max(0) as usize;
-                        let input_text = input_text;
-                        let messages = messages;
-                        let show_slash_menu = show_slash_menu;
-                        let selected_slash_index = selected_slash_index;
-                        rsx! {
-                            div { class: "absolute bottom-full left-3 right-3 mb-1 orz-popover overflow-hidden",
-                                for (i, (cmd, desc)) in filtered.iter().enumerate() {
-                                    {
-                                        let cmd = cmd.to_string();
-                                        let cmd_clone = cmd.clone();
-                                        let desc = *desc;
-                                        let is_selected = i == selected;
-                                        let mut input_text = input_text;
-                                        let mut messages = messages;
-                                        let mut show_slash_menu = show_slash_menu;
-                                        let mut selected_slash_index = selected_slash_index;
-                                        rsx! {
-                                            div {
-                                                class: if is_selected { "px-3 py-2 cursor-pointer bg-primary/10 flex gap-3 items-center" } else { "px-3 py-2 cursor-pointer hover:bg-base-200 flex gap-3 items-center" },
-                                                onclick: move |_| {
-                                                    match cmd_clone.as_str() {
-                                                        "/clear" => {
-                                                            messages.set(Vec::new());
-                                                            input_text.set(String::new());
-                                                            show_slash_menu.set(false);
-                                                            toast.info("对话已清空");
-                                                        }
-                                                        "/help" => {
-                                                            show_slash_menu.set(false);
-                                                            toast.info("可用指令: /clear - 清空对话, /help - 显示帮助");
-                                                        }
-                                                        _ => {}
-                                                    }
-                                                },
-                                                onmouseenter: move |_| {
-                                                    selected_slash_index.set(i as i32);
-                                                },
-                                                span { class: "font-mono font-semibold text-primary", "{cmd}" }
-                                                span { class: "text-sm text-base-content/60", "{desc}" }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        rsx! {}
-                    }
-                }
-            }
-            // @ 提及候选菜单（浮在输入区上方，与 slash 菜单同层）
-            if mention.is_open() {
-                MentionPicker {
-                    state: mention,
-                    tabs: tabs.clone(),
-                    on_pick: on_pick_mention,
-                }
-            }
-            MentionPickedBar {
-                picked: mention.picked(),
-                on_remove: on_remove_mention,
-            }
-            // 回复引用条：显示正在回复的消息，可取消
-            if let Some((sender, content)) = reply_preview {
-                div { class: "flex items-center gap-2 mb-2 rounded-lg border border-base-300 bg-base-200/70 px-2 py-1 text-xs",
-                    span { class: "text-base-content/60 shrink-0", "回复" }
-                    span { class: "font-medium shrink-0", "{sender}" }
-                    span { class: "text-base-content/60 truncate flex-1", "{content}" }
-                    button {
-                        class: "btn hud-btn btn-ghost btn-xs btn-circle shrink-0",
-                        title: "取消回复",
-                        onclick: cancel_reply,
-                        "×"
-                    }
-                }
-            }
-            if !pending_attachments().is_empty() {
-                div { class: "flex flex-wrap gap-2 mb-2",
-                    for att in pending_attachments().iter() {
-                        div {
-                            class: "badge orz-tag badge-lg gap-2",
-                            key: "{att.id}",
-                            span { "📎" }
-                            span { "{att.name}" }
-                            button {
-                                class: "btn hud-btn btn-ghost btn-xs btn-circle",
-                                onclick: {
-                                    let id = att.id.clone();
-                                    move |_| {
-                                        let mut current = pending_attachments.write();
-                                        current.retain(|a| a.id != id);
-                                    }
-                                },
-                                "×"
-                            }
-                        }
-                    }
-                }
-            }
-            div { class: "flex items-end gap-2",
-                input {
-                    r#type: "file",
-                    multiple: "true",
-                    class: "hidden",
-                    id: "chat-file-input",
-                    onchange: move |e| {
-                        handle_file_select.call(e.files());
-                    },
-                }
-                button {
-                    class: "btn hud-btn btn-ghost btn-square",
-                    r#type: "button",
-                    disabled: uploading(),
-                    onclick: move |_| {
-                        if let Some(window) = web_sys::window()
-                            && let Some(doc) = window.document()
-                                && let Some(el) = doc.get_element_by_id("chat-file-input") {
-                                    let _ = el.dyn_into::<web_sys::HtmlElement>().map(|h| h.click());
-                                }
-                    },
-                    if uploading() {
-                        Loading { size: "sm" }
-                    } else { "📎" }
-                }
-                textarea {
-                    class: if drag_hover() {
-                        "textarea textarea-bordered w-full resize-none border-primary ring-2 ring-primary/40"
-                    } else {
-                        "textarea textarea-bordered w-full resize-none"
-                    },
-                    rows: "2",
-                    id: CHAT_INPUT_ID,
-                    value: "{input_text}",
-                    // 忙碌时只提示、不阻断：placeholder 说明「会排队处理」，输入照常可用。
-                    placeholder: if agent_state() != 0 {
-                        "对方正在思考中，你的消息会排队处理…"
-                    } else {
-                        "输入消息...（Alt+回车发送，@ 提及 Agent / 任务 / 项目）"
-                    },
-                    onpaste: {
-                        let upload = handle_file_select;
-                        move |e: dioxus::events::ClipboardEvent| {
-                            let files = clipboard_files_from_paste(&e);
-                            if files.is_empty() {
-                                // 剪贴板里没有文件 → 不拦截，纯文本粘贴照常工作
-                                return;
-                            }
-                            // 有文件：拦下默认粘贴（否则图片文件名/占位符也会混进文本），
-                            // 走统一的字节→Blob→FormData→上传链路。
-                            // 读取失败 / 空文件的引导提示在 upload 内部统一处理。
-                            e.prevent_default();
-                            upload.call(files);
-                        }
-                    },
-                    ondrop: {
-                        let upload = handle_file_select;
-                        move |e: dioxus::events::DragEvent| {
-                            // 阻止浏览器把拖进来的文件当文档打开（否则会离开当前页）
-                            e.prevent_default();
-                            drag_hover.set(false);
-                            let files = e.files();
-                            if !files.is_empty() {
-                                upload.call(files);
-                            }
-                        }
-                    },
-                    ondragover: move |e: dioxus::events::DragEvent| {
-                        // HTML5 铁律：不 preventDefault，drop 事件根本不会触发
-                        e.prevent_default();
-                        // dragover 每几十毫秒触发一次：只在状态翻转时 set，避免高频重渲染
-                        if !drag_hover() {
-                            drag_hover.set(true);
-                        }
-                    },
-                    ondragleave: move |_| {
-                        if drag_hover() {
-                            drag_hover.set(false);
-                        }
-                    },
-                    oninput: move |e| {
-                        let value = e.value();
-                        // 光标位置决定 @ 查询的边界；读不到就退回文本末尾（表现为不弹菜单）
-                        let caret = read_caret(CHAT_INPUT_ID).unwrap_or(value.len());
-                        mention.sync(&value, caret);
-                        handle_input(value);
-                    },
-                    onkeydown: move |e| {
-                        // @ 菜单优先于 slash 菜单：两者不会同时打开（/ 在行首，@ 在词首）
-                        if mention.is_open() {
-                            if e.key() == Key::ArrowDown {
-                                e.prevent_default();
-                                mention.move_selection(1);
-                                return;
-                            }
-                            if e.key() == Key::ArrowUp {
-                                e.prevent_default();
-                                mention.move_selection(-1);
-                                return;
-                            }
-                            if e.key() == Key::Enter && e.modifiers().is_empty() {
-                                e.prevent_default();
-                                if let Some((text, caret)) = mention.confirm(&input_text()) {
-                                    input_text.set(text);
-                                    restore_caret(CHAT_INPUT_ID, caret);
-                                } else {
-                                    // 无候选时按 Enter 只收起菜单，不误发消息
-                                    mention.close();
-                                }
-                                return;
-                            }
-                            if e.key() == Key::Escape {
-                                e.prevent_default();
-                                mention.close();
-                                return;
-                            }
-                        }
-                        if show_slash_menu() {
-                            let filtered: Vec<(&str, &str)> = slash_commands
-                                .iter()
-                                .filter(|(cmd, _)| cmd.starts_with(&input_text().trim_start().to_lowercase()))
-                                .copied()
-                                .collect();
-                            if !filtered.is_empty() {
-                                if e.key() == Key::ArrowDown {
-                                    e.prevent_default();
-                                    let next = (selected_slash_index() + 1).min(filtered.len() as i32 - 1);
-                                    selected_slash_index.set(next);
-                                    return;
-                                }
-                                if e.key() == Key::ArrowUp {
-                                    e.prevent_default();
-                                    let prev = (selected_slash_index() - 1).max(0);
-                                    selected_slash_index.set(prev);
-                                    return;
-                                }
-                                if e.key() == Key::Enter && e.modifiers().is_empty() {
-                                    e.prevent_default();
-                                    let idx = selected_slash_index().min(filtered.len() as i32 - 1).max(0) as usize;
-                                    match filtered[idx].0 {
-                                        "/clear" => {
-                                            messages.set(Vec::new());
-                                            input_text.set(String::new());
-                                            show_slash_menu.set(false);
-                                            toast.info("对话已清空");
-                                        }
-                                        "/help" => {
-                                            show_slash_menu.set(false);
-                                            toast.info("可用指令: /clear - 清空对话, /help - 显示帮助");
-                                        }
-                                        _ => {}
-                                    }
-                                    return;
-                                }
-                                if e.key() == Key::Escape {
-                                    e.prevent_default();
-                                    show_slash_menu.set(false);
-                                    return;
-                                }
-                            }
-                        }
-                        if e.key() == Key::Enter && e.modifiers().alt() {
-                            e.prevent_default();
-                            handle_send(());
-                        }
-                    },
-                }
-                // 输入区固定只放发送键位：忙碌时也照常发送（消息入队，
-                // 忙碌提示由置底状态气泡与 placeholder 承担）。
-                // 「停止思考」只在气泡里出现一次，避免同一动作在同一屏出现两个入口。
-                button {
-                    class: "btn hud-btn btn-primary",
-                    onclick: move |_| handle_send(()),
-                    disabled: input_text().trim().is_empty()
-                        && pending_attachments().is_empty(),
-                    "发送"
-                }
-            }
-        }
     }
 }
 
@@ -2223,7 +1866,8 @@ fn unread_badge(count: u32) -> Element {
 
 #[cfg(test)]
 mod attachment_request_tests {
-    use super::{PendingAttachment, compose_outbound_content};
+    use super::compose_outbound_content;
+    use crate::hooks::use_attachments::PendingAttachment;
 
     fn one_image() -> Vec<PendingAttachment> {
         vec![PendingAttachment {
@@ -2340,12 +1984,12 @@ mod chat_state_fix_tests {
                 .count(),
             1
         );
-        // 双气泡渲染点均已接归属过滤（旧三参调用零残留）
+        // 归属过滤收敛到独立状态气泡组件（原双分支内联已合并为单点）
         assert_eq!(
-            src.matches("agent_state_owner_matches(\n                                    agent_state_owner().as_deref(),\n                                    target_agent_id().as_deref(),\n                                ),")
+            src.matches("agent_state_owner_matches(owner.as_deref(), target.as_deref())")
                 .count(),
-            2,
-            "方案 B：双分支气泡渲染点均应接归属过滤"
+            1,
+            "方案 B：归属过滤应在 ChatAgentStatusBubble 单点接入"
         );
         assert_eq!(
             src.matches("agent_status_line(is_typing(), agent_state())")
@@ -2382,5 +2026,70 @@ mod chat_state_fix_tests {
             0,
             "发送键不应再因忙碌禁用"
         );
+    }
+
+    #[test]
+    fn chat_message_list_does_not_read_scene_signals() {
+        let src = code_region();
+        let start = src
+            .find("fn ChatMessageList(")
+            .expect("ChatMessageList must exist");
+        let end = start
+            + src[start..]
+                .find("\n}\n")
+                .expect("ChatMessageList function end must exist");
+        let body = &src[start..end];
+        // ⚠️ 与工作台 dock 的同类守卫对齐：现场 signal 只能由
+        // ChatAgentStatusBubble / ChatMessageRow 读，消息列表容器不订阅。
+        for field in [
+            "agent_state",
+            "agent_state_owner",
+            "target_agent_id",
+            "target_agent_info",
+            "stats_poll_tick",
+            "refresh_tick",
+        ] {
+            assert!(
+                !body.contains(field),
+                "ChatMessageList must not read {field}; keep it in the scene sub-components"
+            );
+        }
+    }
+
+    #[test]
+    fn chat_shell_only_dispatches_panels() {
+        let src = code_region();
+        let start = src
+            .find("pub fn MessageChat(")
+            .expect("MessageChat must exist");
+        let end = start
+            + src[start..]
+                .find("\n}\n")
+                .expect("MessageChat function end must exist");
+        let shell = &src[start..end];
+        // 页面壳只调度组件，不内联重渲染面积大的面板
+        for panel in [
+            "ChatMessageList {",
+            "ChatInputArea {",
+            "ChatProjectSidebar {",
+        ] {
+            assert!(shell.contains(panel), "MessageChat must dispatch {panel}");
+        }
+        for inline in [
+            "chat_input_area(",
+            "sidebar_visible_on_mobile",
+            "for project in project_items.iter()",
+            "id: \"chat-scroll-container\"",
+            // 输入区必须整体走共享组件：以下任一出现在页面壳里，
+            // 就意味着三处聊天入口又开始各自维护输入交互
+            "onpaste: move |e: dioxus::events::ClipboardEvent|",
+            "show_slash_menu",
+            "clipboard_files_from_paste",
+        ] {
+            assert!(
+                !shell.contains(inline),
+                "MessageChat must not inline {inline}; move it back into its panel component"
+            );
+        }
     }
 }

@@ -18,11 +18,15 @@
 //!   任务 assignee；默认对话展示组织内全部 Agent（前台接待置顶）；均带单 Agent 详情子页
 //! - `CancelThinkingButton`: 「停止思考」按钮（含二次确认），对话内取消目标 Agent
 //!   当前思考轮次；置底状态气泡与输入区发送键位两个落点共用
+//! - `ChatInputArea`: 聊天输入区（对话页 / 工作台横幅 / 专注模式共用）——
+//!   文本 / slash / @ 提及 / 附件 / 回复引用 / 忙碌提示 / 快捷键全在这一处，
+//!   场景差异只通过 props 传入
 
 pub mod agent_trace_panel;
 pub mod cancel_thinking_button;
 pub mod cerebellum_trace_table;
 pub mod chat_side_panel;
+pub mod input_area;
 pub mod memory_trace_detail;
 pub mod message_bubble;
 pub mod project_agents_tab;
@@ -37,6 +41,7 @@ pub mod typing_indicator;
 pub use agent_trace_panel::AgentTracePanel;
 pub use cancel_thinking_button::CancelThinkingButton;
 pub use chat_side_panel::ChatSidePanel;
+pub use input_area::ChatInputArea;
 pub use message_bubble::{MessageBubble, ReplyPreview};
 pub use project_agents_tab::ProjectAgentsTab;
 pub use rich_message::{QuotedPreview, RichMessageItem, message_preview_text, truncate_preview};
