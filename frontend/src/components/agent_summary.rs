@@ -77,24 +77,27 @@ pub fn agent_detail_link(agent_id: &str) -> Element {
 /// 签名下方的横向快捷功能组，对齐飞书个人名片：
 /// 头像 → 姓名 → 个性签名 → **消息 / 语音 / 视频 图标组** → 个人信息字段。
 ///
-/// Agent 场景下目前只有「专注模式」；后续电话 / 视频等交互入口只在这里加一个
-/// `Link` 即可，简介卡与信息页上部同时生效。文案收进原生 `title` hover。
+/// 每个入口是「上图标 + 下文字」的方块卡片（飞书同款组合），不是裸图标圆钮。
+/// Agent 场景下专注模式 = 工作台消息视图，文案就叫「消息」；后续电话 / 视频
+/// 只在这里加同结构的 `Link` 即可，简介卡与信息页上部同时生效。
 pub fn agent_quick_actions(agent_id: &str) -> Element {
     let aid = agent_id.to_string();
     rsx! {
         div { class: "flex items-center gap-2",
             // 专注模式 = 工作台 AgentDetail 视图；只需要 Agent ID，无需额外状态
             Link {
-                class: "btn hud-btn btn-ghost btn-sm min-w-14",
-                title: "进入专注模式",
+                class: "btn hud-btn btn-ghost btn-sm flex-col h-14 w-16 gap-0.5",
+                title: "进入专注模式（消息）",
                 to: crate::pages::Route::Workspace {
                     view: Some(format!("agent:{aid}")),
                 },
+                // 图标与文案同为「消息」语义（对话气泡），不再用聚焦框图标
                 svg {
                     width: 18, height: 18, view_box: "0 0 24 24",
                     fill: "none", stroke: "currentColor", stroke_width: 1.9,
-                    path { d: "M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" }
+                    path { d: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" }
                 }
+                span { class: "text-[11px] leading-none", "消息" }
             }
         }
     }
@@ -128,7 +131,20 @@ mod tests {
             quick_body.contains("flex items-center gap-2"),
             "快捷组必须横向排列"
         );
-        assert!(quick_body.contains("title: \"进入专注模式\""));
+        assert!(
+            quick_body.contains("flex-col h-14 w-16"),
+            "每个快捷入口必须是上图标下文字的方块卡片"
+        );
+        assert!(quick_body.contains("\"消息\""), "专注模式文案应为「消息」");
+        assert!(quick_body.contains("title: \"进入专注模式（消息）\""));
+        assert!(
+            quick_body.contains("M21 15a2 2 0 0 1-2 2H7l-4 4V5"),
+            "快捷入口图标须与「消息」文案同为对话气泡语义"
+        );
+        assert!(
+            !quick_body.contains("M8 3H5a2 2 0 0 0-2 2v3"),
+            "快捷入口不得再用聚焦框图标"
+        );
         for label in ["进入专注模式", "在详情页打开"] {
             assert!(
                 !src.contains(&format!("\"{label} →\"")),
