@@ -24,11 +24,12 @@
 //! dropdown 包装层，导致头像变椭圆 + 浮层被裁（详见组件内结构约束注释）。
 
 use dioxus::prelude::*;
-use dioxus_router::Link;
 use wasm_bindgen::JsCast;
 
 use crate::api::hr::get_agent;
-use crate::components::agent_summary::{agent_badge_row, agent_identity_row};
+use crate::components::agent_summary::{
+    agent_badge_row, agent_detail_link, agent_identity_row, agent_quick_actions,
+};
 use crate::components::state::Loading;
 use crate::utils::{avatar_initials, avatar_status_ring};
 use common::api::{GetAgentRequest, GetAgentResponse};
@@ -408,32 +409,24 @@ fn agent_bubble_card_content(agent: &GetAgentResponse) -> Element {
     let capabilities = agent.capabilities.clone().unwrap_or_default();
     rsx! {
         div { class: "space-y-2",
-            // 头像环传空串：状态已由下方生命周期徽章表达，同一张卡内不再说第二遍
-            { agent_identity_row(agent, "") }
+            // 右上角只放管理入口（详情页）；交互快捷组在签名下方，对齐飞书个人名片
+            div { class: "flex items-start gap-2",
+                div { class: "flex-1 min-w-0",
+                    // 头像环传空串：状态已由下方生命周期徽章表达，同一张卡内不再说第二遍
+                    { agent_identity_row(agent, "") }
+                }
+                { agent_detail_link(&aid) }
+            }
             { agent_badge_row(agent) }
             if let Some(d) = desc {
                 p { class: "text-xs text-base-content/70 line-clamp-3", "{d}" }
             }
+            { agent_quick_actions(&aid) }
             if !capabilities.is_empty() {
                 div { class: "flex flex-wrap gap-1",
                     for c in capabilities.iter().take(6) {
                         span { key: "{c}", class: "{crate::utils::tag_chip()}", "{c}" }
                     }
-                }
-            }
-            div { class: "flex flex-col gap-1",
-                // 专注模式 = 工作台 AgentDetail 视图；只需要 Agent ID，无需额外状态
-                Link {
-                    class: "btn hud-btn btn-primary btn-xs w-full",
-                    to: crate::pages::Route::Workspace {
-                        view: Some(format!("agent:{aid}")),
-                    },
-                    "进入专注模式 →"
-                }
-                Link {
-                    class: "btn hud-btn btn-ghost btn-xs w-full",
-                    to: crate::pages::Route::HrAgentDetail { id: aid },
-                    "在详情页打开 →"
                 }
             }
         }

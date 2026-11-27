@@ -45,7 +45,9 @@ use dioxus_router::Link;
 
 use crate::api::hr::get_agent;
 use crate::api::project::{get_project, get_task, list_project_tasks, query_tasks};
-use crate::components::agent_summary::{agent_badge_row, agent_identity_row};
+use crate::components::agent_summary::{
+    agent_badge_row, agent_detail_link, agent_identity_row, agent_quick_actions,
+};
 use crate::components::artifact_preview_modal::{ArtifactPreviewModal, ArtifactPreviewTarget};
 use crate::components::avatar_bubble::AvatarTone;
 use crate::components::chat::ProjectAgentsTab;
@@ -1470,9 +1472,23 @@ pub(crate) fn AgentInfoTab(
     rsx! {
         div { class: "space-y-4",
             // 身份行 / 徽章行与头像信息气泡（AvatarBubble）共用同一实现，
-            // 避免两处展示逐字复制后静默漂移（见 components/agent_summary.rs）
-            { agent_identity_row(&a, avatar_status_ring(a.status)) }
+            // 避免两处展示逐字复制后静默漂移（见 components/agent_summary.rs）。
+            // 层次对齐飞书个人名片：身份 → 签名 → 横向快捷组 → 个人信息。
+            // 右上角只有「详情页」管理入口，专注模式等交互收在签名下方。
+            div { class: "flex items-start gap-2",
+                div { class: "flex-1 min-w-0",
+                    { agent_identity_row(&a, avatar_status_ring(a.status)) }
+                }
+                { agent_detail_link(&aid) }
+            }
             { agent_badge_row(&a) }
+            if let Some(d) = desc {
+                div {
+                    label { class: "form-label", "简介" }
+                    MarkdownRenderer { content: d, compact: true }
+                }
+            }
+            { agent_quick_actions(&aid) }
             // 运行统计：首次加载完成后渲染（无数据时面板内给出提示）
             if stats_loaded() {
                 AgentStatsPanelCompact {
@@ -1486,12 +1502,6 @@ pub(crate) fn AgentInfoTab(
                     window_label: Some(format!("最近 {RUNTIME_WINDOW_MINUTES} 分钟")),
                 }
             }
-            if let Some(d) = desc {
-                div {
-                    label { class: "form-label", "简介" }
-                    MarkdownRenderer { content: d, compact: true }
-                }
-            }
             if !capabilities.is_empty() {
                 div {
                     label { class: "form-label", "能力" }
@@ -1501,11 +1511,6 @@ pub(crate) fn AgentInfoTab(
                         }
                     }
                 }
-            }
-            Link {
-                class: "btn hud-btn btn-ghost btn-xs",
-                to: crate::pages::Route::HrAgentDetail { id: aid },
-                "在详情页打开 →"
             }
         }
     }
