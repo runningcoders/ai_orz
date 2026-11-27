@@ -405,13 +405,9 @@ pub fn Workspace(view: Option<String>) -> Element {
                 }
                 chat_messages.set(visible);
                 chat_has_more.set(full_page);
-                // 展开态或 Agent 专注下切换会话：等一帧让列表重排后回到最新
-                if *chat_focused.peek()
-                    || matches!(&*effective_view.peek(), WorkspaceView::AgentDetail(_))
-                {
-                    gloo_timers::future::TimeoutFuture::new(16).await;
-                    dock::scroll_to_latest();
-                }
+                // 滚底由 ChatMessageList 自己的 use_effect 在 DOM 提交后完成。
+                // ⚠️ 不要在这里 spawn + 固定延时调 scroll_to_latest：消息列表已是
+                // 独立组件，专注态几十上百条富消息 16ms 渲染不完，拿到中间高度。
             });
         });
     }

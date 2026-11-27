@@ -259,6 +259,26 @@ fn ChatMessageList(
     thread_root: Signal<Option<String>>,
     left_detail: Signal<Option<FocusLeftDetail>>,
 ) -> Element {
+    // 滚动跟随下沉到消息列表本体：use_effect 在 DOM 提交后执行，
+    // 不靠页面壳的 16ms 定时（专注态几十上百条富消息渲染不完，
+    // scroll_height() 拿到的是中间值 → 视觉上停在顶部/中途）。
+    // ⚠️ 只跟随「用户本就在底部」：上拉加载历史会在头部前置追加，
+    // 若无条件滚底，刚拉到的历史会被立刻冲掉。
+    let mut at_bottom = use_signal(|| true);
+    use_effect(move || {
+        // 依赖「末条 id」而非消息数：切会话时两边都是满页（数量相同）也能滚底；
+        // 上拉历史只前置追加、末条不变，此处不触发，位置自然保留。
+        let tail_id = chat_messages().last().map(|m| m.message_id.clone());
+        let typing = *chat_is_typing.read();
+        if !at_bottom() {
+            return;
+        }
+        let _ = (tail_id, typing);
+        spawn(async move {
+            scroll_to_latest();
+        });
+    });
+
     let msgs = chat_messages.read();
     let is_typing = *chat_is_typing.read();
     let directory = use_directory();
@@ -307,9 +327,26 @@ fn ChatMessageList(
             } else {
                 "opacity: 0.7; mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 100%); -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 100%);"
             },
-            onscroll: move |e| {
+            onscroll: move |_| {
                 collapse_avatar_bubble();
-                if e.scroll_top() == 0.0 {
+                let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+                    return;
+                };
+                let Some(el) = doc
+                    .get_element_by_id(WORKSPACE_CHAT_SCROLL_ID)
+                    .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
+                else {
+                    return;
+                };
+                let top = el.scroll_top();
+                // 留 40px 容差：消息卡片展开/收起会让 max 抖动，
+                // 不加容差会导致「明明在底部」被判成离开底部。
+                let max_scroll = el.scroll_height() - el.client_height();
+                let bottom = top >= max_scroll - 40;
+                if at_bottom() != bottom {
+                    at_bottom.set(bottom);
+                }
+                if top == 0 {
                     on_load_older.call(());
                 }
             },
@@ -1158,5 +1195,41 @@ mod problem7_placeholder_tests {
                 "bottom_dock must not inline input UI ({inline}); use the shared ChatInputArea"
             );
         }
+    }
+
+    /// 滚底守卫：跟随逻辑必须在 ChatMessageList 内部用 use_effect（DOM 提交后执行），
+    /// 且必须保留 at_bottom 门槛。页面壳（mod.rs）不得再用固定 16ms 延时滚底——
+    /// 抽成独立组件后这条路径拿不到提交完成的 DOM，专注态会停在顶部/中途。
+    #[test]
+    fn scroll_follow_lives_in_message_list_with_bottom_guard() {
+        let src = include_str!("dock.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap_or("");
+        let list_start = src
+            .find("fn ChatMessageList(")
+            .expect("ChatMessageList must exist");
+        let list_end = src[list_start..]
+            .find("/// 话题浮层")
+            .expect("ChatMessageList end marker must exist")
+            + list_start;
+        let list = &src[list_start..list_end];
+        assert!(
+            list.contains("use_effect"),
+            "ChatMessageList must own the scroll-follow effect"
+        );
+        assert!(
+            list.contains("if !at_bottom()"),
+            "scroll follow must respect at_bottom, else loading older history gets yanked down"
+        );
+        assert!(
+            list.contains("scroll_to_latest()"),
+            "scroll follow must actually scroll"
+        );
+        // 依赖末条 id 而非消息数：切会话满页同数量时也能滚底
+        assert!(
+            list.contains(".last().map(|m| m.message_id.clone())"),
+            "scroll-follow effect must depend on tail message id"
+        );
     }
 }
