@@ -21,6 +21,7 @@ pub mod nonce;
 pub mod password;
 pub mod paths;
 pub mod policy;
+pub mod priority_queue;
 pub mod process;
 pub mod skill_package;
 pub mod wechat_ilink;
