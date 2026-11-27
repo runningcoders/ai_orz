@@ -224,32 +224,40 @@ async fn dispatch_ready_successors(
         if task.po.assignee_type != AssigneeType::Agent {
             continue;
         }
-        // 全部前置必须真完成。索引查不到的依赖（脏数据 / 跨项目引用）判为未就绪：
-        // 宁可不发，也不要在输入不齐时启动下游
-        let all_ready = deps.iter().all(|d| {
-            index
-                .get(d.as_str())
-                .is_some_and(|t| t.po.status == TaskStatus::Completed)
-        });
-        if !all_ready {
+        // 全部前置必须真完成（统一口径见 project domain 的 `DependencyReadiness`）：
+        // 索引查不到的依赖按未就绪处理，宁可不发，也不要在输入不齐时启动下游。
+        let readiness =
+            crate::service::domain::project::DependencyReadiness::classify(&deps, |id| {
+                index.get(id).map(|t| t.po.status)
+            });
+        if !readiness.all_ready() {
+            // stale 是死锁信号（前置被撤销 / 归档，永远不会完成），单独留痕，
+            // 不能混进「还没轮到」被静默忽略
+            if !readiness.stale.is_empty() {
+                log_warn!(
+                    &ctx,
+                    "task_dispatch",
+                    task_id = %task.po.id,
+                    stale = ?readiness.stale,
+                    "后继任务的前置已失效，无法自动派发，需人工处理"
+                );
+            }
             continue;
         }
 
         let message_domain = crate::service::domain::message::domain();
+        // 去重口径收紧到**本任务**：只看这条后继任务是否已有未投递的指派。
+        // 旧口径按 Agent 去重，会因同一 Agent 上另一条无关任务指派未处理而
+        // 误判本任务「已派发」，导致它永久停在 Pending（补发路径没有重试）。
         if message_domain
-            .has_unfinished_message_for_agent(
-                ctx.clone(),
-                &task.po.assignee_id,
-                MessageType::TaskAssignment,
-            )
+            .has_unfinished_message_for_task(ctx.clone(), &task.po.id, MessageType::TaskAssignment)
             .await?
         {
             log_debug!(
                 &ctx,
                 "task_dispatch",
                 task_id = %task.po.id,
-                agent_id = %task.po.assignee_id,
-                "该 Agent 已有未投递的任务指派，跳过补发"
+                "该任务已有未投递的指派，跳过补发"
             );
             continue;
         }

@@ -23,7 +23,7 @@
 //! `MessageCreatedEvent::order_key` 注释里早就写明的设计意图。
 
 use async_trait::async_trait;
-use common::enums::{CallerType, MessageRole, MessageStatus, MessageType, TaskStatus};
+use common::enums::{CallerType, MessageRole, MessageStatus, MessageType};
 use common::error::{Error, ErrorCode, Result};
 use serde_json::Value;
 use std::collections::HashSet;
@@ -1524,8 +1524,10 @@ impl MessageConsumer {
     /// - `stale`：Cancelled / Archived，永远不会 Completed —— 单独分箱是为了在日志里
     ///   显式暴露，而不是混进「还没轮到」里被当成正常排队忽略
     ///
-    /// 查不到的依赖 id（已删除 / 脏数据 / 查询失败）一律按 `pending` 处理：
-    /// 宁可多等一轮，也不要因为一次查询异常就把 DAG 误判为就绪
+    /// 判定逻辑统一下沉到 project domain 的 [`DependencyReadiness`]（创建派发、
+    /// 门闩、后继补发共用同一口径）；查不到的依赖按 `pending` 处理。
+    ///
+    /// [`DependencyReadiness`]: crate::service::domain::project::DependencyReadiness
     async fn classify_dependencies(
         &self,
         ctx: &RequestContext,
@@ -1536,37 +1538,25 @@ impl MessageConsumer {
             return (Vec::new(), Vec::new());
         }
 
-        let mut pending = Vec::new();
-        let mut stale = Vec::new();
-        for dep_id in deps {
-            match self
-                .project_domain
-                .task_manage()
-                .get(ctx.clone(), &dep_id)
-                .await
-            {
-                Ok(Some(dep)) => match dep.po.status {
-                    TaskStatus::Completed => {}
-                    TaskStatus::Cancelled | TaskStatus::Archived => stale.push(dep_id),
-                    // 前置还在待验收 ⇒ 依赖未就绪（只有真正 Completed 才算解锁）。
-                    TaskStatus::Pending | TaskStatus::InProgress | TaskStatus::PendingReview => {
-                        pending.push(dep_id)
-                    }
-                },
-                Ok(None) => pending.push(dep_id),
-                Err(e) => {
-                    log_warn!(
-                        &ctx,
-                        "classify_dependencies",
-                        "前置任务 {} 状态查询失败，按未完成处理（保守）：{}",
-                        dep_id,
-                        e
-                    );
-                    pending.push(dep_id);
-                }
+        match self
+            .project_domain
+            .task_manage()
+            .classify_dependencies(ctx.clone(), &deps)
+            .await
+        {
+            Ok(readiness) => (readiness.pending, readiness.stale),
+            Err(e) => {
+                // 查询失败保守处理：全部按未完成，宁可多等一轮，也不误判就绪
+                log_warn!(
+                    &ctx,
+                    "classify_dependencies",
+                    task_id = %task.po.id,
+                    error = ?e,
+                    "依赖就绪度查询失败，全部按未完成处理（保守）"
+                );
+                (deps, Vec::new())
             }
         }
-        (pending, stale)
     }
 
     /// 向用户推送 Agent 执行失败通知（如模型调用错误）。

@@ -16,7 +16,7 @@ use crate::service::dao::message::{
 use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::organization::OrganizationDao;
 use common::enums::VectorRebuildMode;
-use common::enums::{EventTopic, MessageRole, MessageStatus, MessageType};
+use common::enums::{EventTopic, MessageStatus, MessageType};
 use common::error::Result;
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
@@ -187,18 +187,18 @@ pub trait MessageDal: Send + Sync {
         external_key: &str,
     ) -> Result<Option<String>>;
 
-    /// 检查指定 Agent 是否已有「未完成」的指定类型消息（`Pending` 或 `Processing`）
+    /// 检查指定任务是否已有「未完成」的指定类型消息（`Pending` 或 `Processing`）
     ///
     /// ⚠️ 必须用 `unfinished` 而非 `pending`（见 [`common::enums::MessageStatus::is_unfinished`]）：
     /// 消息一旦被消费侧领走就写成 `Processing`，若这里只认 `Pending`，正在处理的那条
-    /// 会「隐形」—— 同一个执行 Agent 会被重复派发同一个任务。
+    /// 会「隐形」—— 同一个任务会被重复派发。
     ///
-    /// 用于 TaskEventConsumer 发送通知前去重，避免对同一 Agent 重复投递
-    /// TaskDispatchNotification 等系统通知。
-    async fn has_unfinished_message_for_agent(
+    /// 用于 `dispatch_ready_successors` 补发前对**该任务**去重（不是按 Agent）：
+    /// 同一 Agent 可能同时挂着多条不同任务的指派，按 Agent 去重会误判并饿死任务。
+    async fn has_unfinished_message_for_task(
         &self,
         ctx: RequestContext,
-        agent_id: &str,
+        task_id: &str,
         message_type: MessageType,
     ) -> Result<bool>;
 
@@ -502,18 +502,17 @@ impl MessageDal for MessageDalImpl {
             .await
     }
 
-    async fn has_unfinished_message_for_agent(
+    async fn has_unfinished_message_for_task(
         &self,
         ctx: RequestContext,
-        agent_id: &str,
+        task_id: &str,
         message_type: MessageType,
     ) -> Result<bool> {
         let count = self
             .count(
                 ctx,
                 MessageQuery {
-                    to_id: Some(agent_id.to_string()),
-                    to_role: Some(MessageRole::Agent),
+                    task_id: Some(task_id.to_string()),
                     message_type: Some(message_type),
                     // 宽口径：已派发（`Processing`）也算「这条还在处理」，不能重复投递
                     status_in: Some(vec![MessageStatus::Pending, MessageStatus::Processing]),

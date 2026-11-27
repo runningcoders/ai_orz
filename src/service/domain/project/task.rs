@@ -185,6 +185,40 @@ impl super::TaskManage for ProjectDomainImpl {
         self.task_dal.list_by_project(ctx, project_id, None).await
     }
 
+    /// 分类一组前置依赖是否就绪（一次批量查询，再按统一口径分箱）
+    async fn classify_dependencies(
+        &self,
+        ctx: RequestContext,
+        dependencies: &[String],
+    ) -> Result<super::DependencyReadiness> {
+        // 无依赖直接就绪，不打库
+        if dependencies.is_empty() {
+            return Ok(super::DependencyReadiness::default());
+        }
+
+        let page = self
+            .task_dal
+            .query(
+                ctx,
+                crate::service::dao::task::TaskQuery {
+                    ids: Some(dependencies.to_vec()),
+                    ..Default::default()
+                },
+            )
+            .await?;
+
+        // id → 状态索引：查不到的依赖在 classify 里按 pending 处理（保守）
+        let status: std::collections::HashMap<&str, TaskStatus> = page
+            .items
+            .iter()
+            .map(|t| (t.po.id.as_str(), t.po.status))
+            .collect();
+
+        Ok(super::DependencyReadiness::classify(dependencies, |id| {
+            status.get(id).copied()
+        }))
+    }
+
     /// 获取分配给 Agent 的所有任务
     async fn list_by_agent(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<Task>> {
         let ctx = ctx.to_builder().agent_id(agent_id).build();

@@ -274,6 +274,53 @@ pub trait ProjectManage: Send + Sync {
     async fn record_followup(&self, ctx: RequestContext, project_id: &str) -> Result<()>;
 }
 
+/// 前置依赖就绪度：DAG 依赖判定的**唯一口径**
+///
+/// 创建派发、唤醒门闩、后继补发三处都必须走同一判定，否则三套规则迟早漂移：
+/// - `pending`：还没跑到 `Completed`（`Pending / InProgress / PendingReview`，
+///   以及查不到的脏数据 / 跨项目引用），应等待
+/// - `stale`：`Cancelled / Archived`，永远不会 `Completed`，是需要人工介入的
+///   死锁信号，不能混进"还没轮到"被静默忽略
+///
+/// 只有 [`all_ready`](Self::all_ready) 为真才能派发 / 唤醒。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DependencyReadiness {
+    /// 尚未完成的前置任务 id
+    pub pending: Vec<String>,
+    /// 已失效（撤销 / 归档）、永远不会完成的前置任务 id
+    pub stale: Vec<String>,
+}
+
+impl DependencyReadiness {
+    /// 纯判定：把依赖 id 按状态解析函数分箱为 pending / stale
+    ///
+    /// 抽成纯函数，让持有内存索引的调用方（DAG 后继补发）无需逐条回表也能复用
+    /// 同一口径。解析不到 / 未知状态一律进 `pending`：宁可多等一轮，
+    /// 也不要因为一次查询异常把 DAG 误判为就绪。
+    pub fn classify<F>(dependencies: &[String], status_of: F) -> Self
+    where
+        F: Fn(&str) -> Option<TaskStatus>,
+    {
+        let mut pending = Vec::new();
+        let mut stale = Vec::new();
+        for dep_id in dependencies {
+            match status_of(dep_id) {
+                Some(TaskStatus::Completed) => {}
+                Some(TaskStatus::Cancelled) | Some(TaskStatus::Archived) => {
+                    stale.push(dep_id.clone())
+                }
+                _ => pending.push(dep_id.clone()),
+            }
+        }
+        Self { pending, stale }
+    }
+
+    /// 全部依赖就绪（既无 pending，也无 stale）
+    pub fn all_ready(&self) -> bool {
+        self.pending.is_empty() && self.stale.is_empty()
+    }
+}
+
 /// Task 管理 trait
 ///
 /// 定义任务相关的业务接口
@@ -324,6 +371,16 @@ pub trait TaskManage: Send + Sync {
         id: &str,
         options: crate::service::dal::task::TaskFetchOptions,
     ) -> Result<Option<Task>>;
+
+    /// 分类一组前置依赖是否就绪（DAG 判定的统一入口）
+    ///
+    /// 创建派发、唤醒门闩、后继补发都应调用这里，而不是各自实现"全部 Completed
+    /// 才算就绪"的规则。判据见 [`DependencyReadiness`]。
+    async fn classify_dependencies(
+        &self,
+        ctx: RequestContext,
+        dependencies: &[String],
+    ) -> Result<DependencyReadiness>;
 
     /// 获取项目下的所有任务
     async fn list_by_project(&self, ctx: RequestContext, project_id: &str) -> Result<Vec<Task>>;
