@@ -1,4 +1,5 @@
 pub mod a2a_polling;
+pub mod cron_dispatch_queue;
 pub mod cron_trigger;
 pub mod inbound_filter;
 pub mod message_channel;
@@ -10,8 +11,11 @@ use std::sync::Arc;
 pub async fn init() -> Result<()> {
     sys_info!("registering business producers to AOP event center...");
 
-    // `register_producer` 随 `Producer::register` 的删除已退化为**同步**纯 push
-    aop::registry().register_producer(Arc::new(cron_trigger::CronTriggerProducer::new()))?;
+    // 同一实例双身份：既是 `cron.trigger` 的生产者，也是 `schedule.changed` 的消费者。
+    // 派发队列是这个类型的私有字段，consumer 入队与 producer 出队共享同一份状态。
+    let cron = Arc::new(cron_trigger::CronTriggerProducer::new());
+    aop::registry().register_producer(cron.clone())?;
+    aop::registry().register_consumer(cron)?;
 
     aop::registry().register_producer(Arc::new(a2a_polling::A2aPollingProducer::new()))?;
 

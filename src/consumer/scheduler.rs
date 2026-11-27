@@ -233,7 +233,8 @@ impl Consumer for CronTriggerConsumer {
     /// 一次瞬时 DB 抖动就能让一个日级触发器**丢掉一整天**。
     ///
     /// 返回 `Retry` 的语义是「交给下一次机会」：本消费者是 Sync，投递结论没有重投
-    /// 驱动者 —— 真正的重试驱动是「没 mark → 下个 tick 又被 `claim_due_triggers` 捞到」。
+    /// 驱动者 —— 失败不 mark，但派发项已出队且租约持有 5 分钟，实际靠 60s DB 兜底
+    /// 刷新 / 租约过期后重捞重试，不是「下个 tick 立即重来」。
     fn decide_retry(&self, _err: &str, _attempt: u32) -> RetryDecision {
         RetryDecision::Retry
     }

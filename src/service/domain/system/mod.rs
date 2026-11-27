@@ -1,4 +1,5 @@
 use crate::models::cron_trigger::CronTriggerPo;
+use crate::models::events::ScheduleChangedEvent;
 use crate::pkg::RequestContext;
 use crate::pkg::aop;
 use crate::service::dal::backup as backup_dal;
@@ -177,11 +178,14 @@ pub trait CronManager: Send + Sync {
     async fn delete_trigger(&self, ctx: RequestContext, id: &str) -> Result<()>;
     async fn pause_trigger(&self, ctx: RequestContext, id: &str) -> Result<()>;
     async fn resume_trigger(&self, ctx: RequestContext, id: &str) -> Result<()>;
+    /// `fired_at` = 规则触发时刻，`finished_at` = 业务完成时刻；
+    /// Interval 按完成时刻推进，时刻型按触发时刻推进。
     async fn mark_trigger_executed(
         &self,
         ctx: RequestContext,
         id: &str,
-        executed_at: i64,
+        fired_at: i64,
+        finished_at: i64,
     ) -> Result<()>;
 
     /// 原子领取到期触发器（短租约，防多实例重复触发）
@@ -193,6 +197,17 @@ pub trait CronManager: Send + Sync {
         lease_until: i64,
         limit: i32,
     ) -> Result<Vec<CronTriggerPo>>;
+
+    /// 按 id 原子领取单条到期触发器（秒级派发：逐个出队后精确领取，
+    /// 不会像批量领取那样按全表时间排序取到别的条目）。
+    async fn claim_trigger_by_id(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        now: i64,
+        lease_owner: &str,
+        lease_until: i64,
+    ) -> Result<Option<CronTriggerPo>>;
 
     /// 记录执行错误
     async fn record_trigger_failure(
@@ -281,7 +296,20 @@ pub trait ProcessManager: Send + Sync {
 impl CronManager for SystemDomainImpl {
     async fn create_trigger(&self, ctx: RequestContext, trigger: &CronTriggerPo) -> Result<()> {
         validate_trigger(trigger)?;
-        self.cron_trigger_dal.create(ctx, trigger).await
+        self.cron_trigger_dal.create(ctx.clone(), trigger).await?;
+        let now = common::constants::utils::current_timestamp_ms();
+        aop::publish(
+            &ctx,
+            ScheduleChangedEvent::upsert(
+                &trigger.id,
+                trigger.next_run_at,
+                trigger.is_enabled == 1,
+                trigger.updated_at,
+                now,
+            ),
+        )
+        .await;
+        Ok(())
     }
 
     async fn get_trigger(&self, ctx: RequestContext, id: &str) -> Result<Option<CronTriggerPo>> {
@@ -376,7 +404,20 @@ impl CronManager for SystemDomainImpl {
                 );
             }
         }
-        self.cron_trigger_dal.update(ctx, &updated).await
+        self.cron_trigger_dal.update(ctx.clone(), &updated).await?;
+        let now = common::constants::utils::current_timestamp_ms();
+        aop::publish(
+            &ctx,
+            ScheduleChangedEvent::upsert(
+                &updated.id,
+                updated.next_run_at,
+                updated.is_enabled == 1,
+                updated.updated_at,
+                now,
+            ),
+        )
+        .await;
+        Ok(())
     }
 
     async fn cancel_schedule(&self, ctx: RequestContext, trigger_id: &str) -> Result<bool> {
@@ -397,7 +438,11 @@ impl CronManager for SystemDomainImpl {
             // 幂等：已取消的直接返回，不报错（与 cancel_thinking 的 NotThinking 同理）
             return Ok(false);
         }
-        self.cron_trigger_dal.delete(ctx, trigger_id).await?;
+        self.cron_trigger_dal
+            .delete(ctx.clone(), trigger_id)
+            .await?;
+        let now = common::constants::utils::current_timestamp_ms();
+        aop::publish(&ctx, ScheduleChangedEvent::remove(trigger_id, now)).await;
         Ok(true)
     }
 
@@ -428,25 +473,47 @@ impl CronManager for SystemDomainImpl {
     }
 
     async fn delete_trigger(&self, ctx: RequestContext, id: &str) -> Result<()> {
-        self.cron_trigger_dal.delete(ctx, id).await
+        self.cron_trigger_dal.delete(ctx.clone(), id).await?;
+        let now = common::constants::utils::current_timestamp_ms();
+        aop::publish(&ctx, ScheduleChangedEvent::remove(id, now)).await;
+        Ok(())
     }
 
     async fn pause_trigger(&self, ctx: RequestContext, id: &str) -> Result<()> {
-        self.cron_trigger_dal.pause(ctx, id).await
+        self.cron_trigger_dal.pause(ctx.clone(), id).await?;
+        let now = common::constants::utils::current_timestamp_ms();
+        aop::publish(&ctx, ScheduleChangedEvent::remove(id, now)).await;
+        Ok(())
     }
 
     async fn resume_trigger(&self, ctx: RequestContext, id: &str) -> Result<()> {
-        self.cron_trigger_dal.resume(ctx, id).await
+        self.cron_trigger_dal.resume(ctx.clone(), id).await?;
+        if let Some(trigger) = self.cron_trigger_dal.get_by_id(ctx.clone(), id).await? {
+            let now = common::constants::utils::current_timestamp_ms();
+            aop::publish(
+                &ctx,
+                ScheduleChangedEvent::upsert(
+                    id,
+                    trigger.next_run_at,
+                    trigger.is_enabled == 1,
+                    trigger.updated_at,
+                    now,
+                ),
+            )
+            .await;
+        }
+        Ok(())
     }
 
     async fn mark_trigger_executed(
         &self,
         ctx: RequestContext,
         id: &str,
-        executed_at: i64,
+        fired_at: i64,
+        finished_at: i64,
     ) -> Result<()> {
         self.cron_trigger_dal
-            .mark_executed(ctx, id, executed_at)
+            .mark_executed(ctx, id, fired_at, finished_at)
             .await
     }
 
@@ -460,6 +527,19 @@ impl CronManager for SystemDomainImpl {
     ) -> Result<Vec<CronTriggerPo>> {
         self.cron_trigger_dal
             .claim_due(ctx, now, lease_owner, lease_until, limit)
+            .await
+    }
+
+    async fn claim_trigger_by_id(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        now: i64,
+        lease_owner: &str,
+        lease_until: i64,
+    ) -> Result<Option<CronTriggerPo>> {
+        self.cron_trigger_dal
+            .claim_by_id(ctx, id, now, lease_owner, lease_until)
             .await
     }
 

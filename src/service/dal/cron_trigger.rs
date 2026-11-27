@@ -87,8 +87,27 @@ pub trait CronTriggerDal: Send + Sync {
         limit: i32,
     ) -> Result<Vec<CronTriggerPo>>;
 
+    /// 按 id 原子领取单条（秒级派发的逐个领取路径）
+    async fn claim_by_id(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        now: i64,
+        lease_owner: &str,
+        lease_until: i64,
+    ) -> Result<Option<CronTriggerPo>>;
+
     /// 计算并更新下次执行时间（含清租约 + 累计次数）
-    async fn mark_executed(&self, ctx: RequestContext, id: &str, executed_at: i64) -> Result<()>;
+    ///
+    /// `fired_at` 是规则触发时刻（时刻型与 `last_run_at` 的基准），
+    /// `finished_at` 是业务完成时刻（间隔型的基准：跑完再等 N）。
+    async fn mark_executed(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        fired_at: i64,
+        finished_at: i64,
+    ) -> Result<()>;
 
     /// 记录执行错误（不清租约）
     async fn record_failure(&self, ctx: RequestContext, id: &str, error: &str) -> Result<()>;
@@ -185,54 +204,35 @@ impl CronTriggerDal for CronTriggerDalImpl {
             .await
     }
 
-    async fn mark_executed(&self, ctx: RequestContext, id: &str, executed_at: i64) -> Result<()> {
+    async fn claim_by_id(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        now: i64,
+        lease_owner: &str,
+        lease_until: i64,
+    ) -> Result<Option<CronTriggerPo>> {
+        self.cron_trigger_dao
+            .claim_by_id(ctx, id, now, lease_owner, lease_until)
+            .await
+    }
+
+    async fn mark_executed(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        fired_at: i64,
+        finished_at: i64,
+    ) -> Result<()> {
         let trigger = self
             .cron_trigger_dao
             .get_by_id(ctx.clone(), id)
             .await?
             .ok_or_else(|| err!(ResourceNotFound, "Trigger not found: {}", id))?;
 
-        // 计算下一次触发时间。Schedule 是形态标签：时间规则由三选一字段给出。
-        // 判定与日程展开共用 common::schedule::effective_type，避免两处口径漂移。
-        let effective_type = match trigger.trigger_type {
-            TriggerType::Schedule => {
-                effective_type(trigger.cron_expression.as_deref(), trigger.interval_seconds)
-            }
-            other => other,
-        };
-
-        let next_run_at = match effective_type {
-            TriggerType::Once => None, // 一次性：执行后禁用
-            TriggerType::Interval => {
-                let interval = trigger.interval_seconds.ok_or_else(|| {
-                    err!(
-                        InvalidRequest,
-                        "Interval trigger missing interval_seconds: {}",
-                        id
-                    )
-                })?;
-                // 与两个创建入口同一套受检乘加：interval<=0 或极端值直接报错，
-                // 不能 wrap 成过去时间（那会让调度器下一轮立刻再领一次，无限空转）。
-                Some(common::schedule::interval_next_run_at(
-                    executed_at,
-                    interval,
-                )?)
-            }
-            TriggerType::Cron => {
-                let expression = trigger.cron_expression.as_deref().ok_or_else(|| {
-                    err!(
-                        InvalidRequest,
-                        "Cron trigger missing cron_expression: {}",
-                        id
-                    )
-                })?;
-                let timezone = crate::config::timezone();
-                let from = chrono::DateTime::<chrono::Utc>::from_timestamp(executed_at / 1000, 0)
-                    .unwrap_or_else(chrono::Utc::now);
-                Some(common::schedule::next_run_at(expression, &timezone, from)?)
-            }
-            TriggerType::Schedule => unreachable!("Schedule 已被归一为具体时间规则"),
-        };
+        // 计算下一次触发时间。时刻型按规则点推进，间隔型按业务完成时刻推进。
+        let timezone = crate::config::timezone();
+        let next_run_at = next_run_at_after(&trigger, &timezone, fired_at, finished_at)?;
 
         // 终态：一次性 / 本次执行后次数用尽 / 下次已越过生效窗口终点。
         //
@@ -248,16 +248,16 @@ impl CronTriggerDal for CronTriggerDalImpl {
         if completed {
             // 终态收尾走专用原子语句：通用 update 不再触碰运行时列，
             // 否则并发「读-改-写」会把租约与累计次数覆盖掉。
-            self.cron_trigger_dao
-                .complete_run(ctx, id, executed_at)
-                .await
+            self.cron_trigger_dao.complete_run(ctx, id, fired_at).await
         } else {
             self.cron_trigger_dao
                 .update_next_run_at(
                     ctx,
                     id,
                     next_run_at.expect("completed=false 时 next_run_at 必有值"),
-                    executed_at,
+                    // `last_run_at` 记触发时刻，保持「上次触发」语义；
+                    // 只有 Interval 的 `next_run_at` 以完成时刻为基准。
+                    fired_at,
                 )
                 .await
         }
@@ -290,6 +290,59 @@ impl CronTriggerDal for CronTriggerDalImpl {
     }
 }
 
+/// 本次执行后的下次触发时刻。
+///
+/// - 时刻型（Once / Cron）由规则决定：基准是 `fired_at`，不受业务耗时影响；
+/// - 间隔型语义是「跑完再等 N」：基准是 `finished_at`，执行耗时不再吃掉空档；
+/// - `Schedule` 只是形态标签，时间规则由三选一字段给出，判定复用 `effective_type`。
+fn next_run_at_after(
+    trigger: &CronTriggerPo,
+    timezone: &str,
+    fired_at: i64,
+    finished_at: i64,
+) -> Result<Option<i64>> {
+    let rule = match trigger.trigger_type {
+        TriggerType::Schedule => {
+            effective_type(trigger.cron_expression.as_deref(), trigger.interval_seconds)
+        }
+        other => other,
+    };
+
+    match rule {
+        TriggerType::Once => Ok(None), // 一次性：执行后禁用
+        TriggerType::Interval => {
+            let interval = trigger.interval_seconds.ok_or_else(|| {
+                err!(
+                    InvalidRequest,
+                    "Interval trigger missing interval_seconds: {}",
+                    trigger.id
+                )
+            })?;
+            // 与两个创建入口同一套受检乘加：interval<=0 或极端值直接报错，
+            // 不能 wrap 成过去时间（那会让调度器下一轮立刻再领一次，无限空转）。
+            Ok(Some(common::schedule::interval_next_run_at(
+                finished_at,
+                interval,
+            )?))
+        }
+        TriggerType::Cron => {
+            let expression = trigger.cron_expression.as_deref().ok_or_else(|| {
+                err!(
+                    InvalidRequest,
+                    "Cron trigger missing cron_expression: {}",
+                    trigger.id
+                )
+            })?;
+            let from = chrono::DateTime::<chrono::Utc>::from_timestamp(fired_at / 1000, 0)
+                .unwrap_or_else(chrono::Utc::now);
+            Ok(Some(common::schedule::next_run_at(
+                expression, timezone, from,
+            )?))
+        }
+        TriggerType::Schedule => unreachable!("Schedule 已被归一为具体时间规则"),
+    }
+}
+
 /// Schedule 形态的时间规则三选一：cron > interval > run_at（Once 语义）。
 ///
 /// 若三者皆无，回落 Once 让记录禁用而不是无限重触发（防御僵尸记录）。
@@ -305,6 +358,52 @@ mod tests {
         assert_eq!(
             effective_type(Some("0 4 * * *"), Some(60)),
             TriggerType::Cron
+        );
+    }
+
+    #[test]
+    fn interval_next_run_starts_from_finished_at() {
+        let mut trigger = CronTriggerPo::new(
+            "t".into(),
+            "interval".into(),
+            TriggerType::Interval,
+            0,
+            None,
+        );
+        trigger.interval_seconds = Some(300);
+
+        let fired_at = 1_000;
+        let finished_at = 121_000; // 业务耗时 2 分钟
+        assert_eq!(
+            next_run_at_after(&trigger, "UTC", fired_at, finished_at).unwrap(),
+            Some(421_000)
+        );
+        // 完成时刻不变、触发时刻改变 → 下次时间不受影响
+        assert_eq!(
+            next_run_at_after(&trigger, "UTC", 999_000, finished_at).unwrap(),
+            Some(421_000)
+        );
+    }
+
+    #[test]
+    fn cron_next_run_ignores_finished_at() {
+        let mut trigger = CronTriggerPo::new("t".into(), "cron".into(), TriggerType::Cron, 0, None);
+        trigger.cron_expression = Some("*/5 * * * *".into());
+
+        let fired_at = 1_700_000_000_000;
+        let fired_basis = next_run_at_after(&trigger, "UTC", fired_at, fired_at).unwrap();
+        let finished_basis =
+            next_run_at_after(&trigger, "UTC", fired_at, fired_at + 600_000).unwrap();
+        assert!(fired_basis.is_some());
+        assert_eq!(fired_basis, finished_basis);
+    }
+
+    #[test]
+    fn once_has_no_next_run() {
+        let trigger = CronTriggerPo::new("t".into(), "once".into(), TriggerType::Once, 0, None);
+        assert_eq!(
+            next_run_at_after(&trigger, "UTC", 1_000, 121_000).unwrap(),
+            None
         );
     }
 }
