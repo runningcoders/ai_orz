@@ -173,14 +173,14 @@ impl MessageDomain for MessageDomainImpl {
         self
     }
 
-    async fn has_unfinished_message_for_agent(
+    async fn has_unfinished_message_for_task(
         &self,
         ctx: RequestContext,
-        agent_id: &str,
+        task_id: &str,
         message_type: common::enums::message::MessageType,
     ) -> Result<bool> {
         self.message_dal
-            .has_unfinished_message_for_agent(ctx, agent_id, message_type)
+            .has_unfinished_message_for_task(ctx, task_id, message_type)
             .await
     }
 
@@ -521,20 +521,21 @@ pub trait MessageDomain: Send + Sync {
     /// 入站适配能力（外部渠道事件 → AdaptedMessage）
     fn inbound(&self) -> &dyn MessageInboundAdapt;
 
-    /// 检查指定 Agent 是否已有「未完成」的指定类型消息
+    /// 检查指定**任务**是否已有「未完成」的指定类型消息
     ///
     /// 「未完成」= `Pending` 或 `Processing`（见 [`MessageStatus::is_unfinished`]）。
     ///
     /// ⚠️⚠️ **必须是宽口径**：消息被派发给消费者的那一刻就会写成 `Processing`，
     /// 若只看 `Pending`，正在处理的那条会「隐形」 ⇒ `dispatch_ready_successors`
-    /// 会把同一个任务重复派发给同一个执行 Agent（重复干活，且更难被发现）。
+    /// 会把同一个任务重复派发（重复干活，且更难被发现）。
     ///
-    /// 用于 TaskEventConsumer 发送通知前去重，避免对同一 Agent 重复投递
-    /// TaskDispatchNotification 等系统通知。
-    async fn has_unfinished_message_for_agent(
+    /// ⚠️ 去重粒度是**任务**而非 Agent：同一 Agent 可能同时挂着多条不同任务的
+    /// 指派，按 Agent 去重会把「别的任务还没处理」误当成「本任务已派发」，
+    /// 让本任务永久停在 Pending（后继补发路径没有重试）。
+    async fn has_unfinished_message_for_task(
         &self,
         ctx: RequestContext,
-        agent_id: &str,
+        task_id: &str,
         message_type: common::enums::message::MessageType,
     ) -> Result<bool>;
 

@@ -207,10 +207,10 @@ mod tests {
             unimplemented!("本测试不需要")
         }
 
-        async fn has_unfinished_message_for_agent(
+        async fn has_unfinished_message_for_task(
             &self,
             _ctx: RequestContext,
-            _a: &str,
+            _t_id: &str,
             _t: common::enums::MessageType,
         ) -> Result<bool> {
             unimplemented!("本测试不需要")

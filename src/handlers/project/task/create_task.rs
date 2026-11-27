@@ -14,7 +14,7 @@ use common::error::{Result, bail_err};
 #[register_handler_tool(
     id = "create_task",
     name = "Create Task",
-    description = "Create a task with a required title and assignee_id, plus optional description, priority, tags, project_id, due date, and dependency task IDs; assignee_type defaults to Agent and root_user_id to the current user. dependencies holds the prerequisite task IDs forming the DAG: whenever this task depends on other tasks, their IDs MUST be listed, or the task will be treated as startable immediately and executed out of order. Returns the full task detail. When assigned to an agent, a task-assignment notification is sent to that agent automatically.",
+    description = "Create a task with a required title and assignee_id, plus optional description, priority, tags, project_id, due date, and dependency task IDs; assignee_type defaults to Agent and root_user_id to the current user. dependencies holds the prerequisite task IDs forming the DAG: whenever this task depends on other tasks, their IDs MUST be listed, or the task will be treated as startable immediately and executed out of order. Returns the full task detail. When assigned to an agent, a task-assignment notification is sent automatically only after all prerequisite tasks are completed; otherwise it is dispatched as soon as the last prerequisite finishes.",
     params = "common::api::CreateTaskRequest",
     tags = "project_management"
 )]
@@ -67,31 +67,84 @@ pub async fn create_task(
         )
         .await?;
 
-    // 【动作先行、消息后发】任务行已落库，这里只发布「派发」动作事件；
-    // TaskAssignment 的消息类型、收件人、链锚点由 TaskDispatchConsumer 单点收口。
-    // ⚠️ 该消费者是 Sync 内联执行：publish 返回时消息已落库，事件不进内存队列，
-    // 因此不存在「任务已存在但重启后事件丢失」的静默死任务窗口。
+    // 【依赖就绪才派发】DAG 判定统一收敛在 project domain。前置未完成时**不落**
+    // 派单消息：省掉"发了又被唤醒门闩拦下"的空转，真正唤醒由 `TaskEventConsumer`
+    // 在最后一个前置变 `Completed` 时补发（见 `dispatch_ready_successors`）。
+    // 前置全部已就绪（含创建时就已完成）则立即派发。
     //
-    // 身份三分解（不再做「用户身份中继」）：
-    // - 派发者 = `initiator_agent_id`（本轮被唤醒的 Agent）；用户从管理面直接
-    //   建任务时它为空，消费者退回以 `root_user_id`（用户本人）为派发者；
-    // - 接收者 = `assignee_id`；
-    // - 所属用户 = `root_user_id`，落消息行独立列，供工具凭据与用户画像使用。
+    // ⚠️ 仅在项目内才走这道门：补发依赖 `TaskStatusChanged` 事件里的 project_id，
+    // 游离任务没有项目、无法可靠补发，只能维持"直接派发"（交给唤醒门闩判定）。
+    // 查询失败时同样 fail-open 直接派发 —— 漏派会造一个没人再来唤醒的静默死任务。
     if assignee_type == AssigneeType::Agent {
-        aop::publish(
-            &ctx,
-            TaskDispatchedEvent::new(
-                task.id(),
-                &task.po.title,
-                task_description.as_deref().unwrap_or_default(),
-                params.project_id.as_deref(),
-                &assignee_id,
-                &task.po.root_user_id,
-                &task.po.initiator_agent_id,
-                &task.po.trigger_message_id,
-            ),
-        )
-        .await;
+        let should_dispatch = if params.project_id.is_none() {
+            true
+        } else {
+            match domain()
+                .task_manage()
+                .classify_dependencies(ctx.clone(), &task.po.get_dependencies())
+                .await
+            {
+                Ok(readiness) if readiness.all_ready() => true,
+                Ok(readiness) => {
+                    if !readiness.stale.is_empty() {
+                        // 前置被撤销 / 归档 ⇒ 永远等不到完成，需人工介入
+                        log_warn!(
+                            &ctx,
+                            "create_task",
+                            task_id = %task.id(),
+                            stale = ?readiness.stale,
+                            "前置依赖已失效（撤销/归档），任务不会自动派发，需人工处理"
+                        );
+                    } else {
+                        log_info!(
+                            &ctx,
+                            "create_task",
+                            task_id = %task.id(),
+                            pending = ?readiness.pending,
+                            "前置依赖未就绪，暂不派发，待前置全部完成后自动补发"
+                        );
+                    }
+                    false
+                }
+                Err(e) => {
+                    log_warn!(
+                        &ctx,
+                        "create_task",
+                        task_id = %task.id(),
+                        error = ?e,
+                        "依赖就绪度查询失败，降级为直接派发，由唤醒门闩二次判定"
+                    );
+                    true
+                }
+            }
+        };
+
+        if should_dispatch {
+            // 【动作先行、消息后发】任务行已落库，这里只发布「派发」动作事件；
+            // TaskAssignment 的消息类型、收件人、链锚点由 TaskDispatchConsumer 单点收口。
+            // ⚠️ 该消费者是 Sync 内联执行：publish 返回时消息已落库，事件不进内存队列，
+            // 因此不存在「任务已存在但重启后事件丢失」的静默死任务窗口。
+            //
+            // 身份三分解（不再做「用户身份中继」）：
+            // - 派发者 = `initiator_agent_id`（本轮被唤醒的 Agent）；用户从管理面直接
+            //   建任务时它为空，消费者退回以 `root_user_id`（用户本人）为派发者；
+            // - 接收者 = `assignee_id`；
+            // - 所属用户 = `root_user_id`，落消息行独立列，供工具凭据与用户画像使用。
+            aop::publish(
+                &ctx,
+                TaskDispatchedEvent::new(
+                    task.id(),
+                    &task.po.title,
+                    task_description.as_deref().unwrap_or_default(),
+                    params.project_id.as_deref(),
+                    &assignee_id,
+                    &task.po.root_user_id,
+                    &task.po.initiator_agent_id,
+                    &task.po.trigger_message_id,
+                ),
+            )
+            .await;
+        }
     }
 
     Ok(response::to_detail(&task))
