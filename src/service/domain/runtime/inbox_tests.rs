@@ -28,6 +28,7 @@ fn anchor(
         message_type,
         created_at: 1000,
         id: "msg-anchor".to_string(),
+        content: "帮我看一下登录页为什么打不开".to_string(),
         organization_id: Some("org-1".to_string()),
     }
 }
@@ -414,4 +415,30 @@ fn resume_append_flag_is_one_shot() {
     state.mark_resume_append();
     assert!(state.take_resume_append(), "置位后可取走");
     assert!(!state.take_resume_append(), "取走后立即失效");
+}
+
+/// 已判定 ID 去重累积：下批据此排除，重复登记不产生重复项
+#[test]
+fn judged_ids_accumulate_deduped() {
+    let mut state = InboxState::new(anchor(
+        MessageRole::User,
+        None,
+        None,
+        None,
+        MessageType::Text,
+    ));
+    assert!(state.judged_ids().is_empty());
+
+    state.note_judged(&["m1".to_string(), "m2".to_string(), "m1".to_string()]);
+    state.note_judged(&["m2".to_string(), "m3".to_string()]);
+
+    let judged = state.judged_ids();
+    assert_eq!(judged.len(), 3, "重复 ID 只记一次");
+    assert!(judged.contains("m1"));
+    assert!(judged.contains("m2"));
+    assert!(judged.contains("m3"));
+
+    // 已判定 ID 与是否被吸收无关：不吸收的候选同样要排除，避免下批重扫
+    state.advance(&[]);
+    assert_eq!(state.judged_ids().len(), 3, "空批不得清掉已判定记录");
 }

@@ -113,7 +113,7 @@ async fn run_poll(deps: &AwakenDeps, kind: PollKind, bus: &mut ThinkBus) -> Resu
     let available = deps.options.effective_max_rounds().saturating_sub(
         read_bus::<BudgetState>(bus, ContextKey::Budget).map_or(0, |b| b.total_rounds),
     );
-    let (anchor, cursor, injections, rewinds) = {
+    let (anchor, cursor, judged_ids, injections, rewinds) = {
         let state = deps
             .inbox
             .lock()
@@ -121,8 +121,24 @@ async fn run_poll(deps: &AwakenDeps, kind: PollKind, bus: &mut ThinkBus) -> Resu
         (
             state.anchor().clone(),
             state.cursor().clone(),
+            state.judged_ids().clone(),
             state.injections(),
             state.rewinds(),
+        )
+    };
+
+    // 判定上下文：身份 + 场景 + 任务/项目摘要 + 最近动作，从 Phase 1 消息快照抽取。
+    // brain 可能尚未装配（Agent.brain=None）⇒ 片段不截断，行为与容量未配一致。
+    let judge_ctx = {
+        let seed = deps.intent_seed.lock().ok();
+        let messages: &[crate::models::cortex_types::ChatMessage] = seed
+            .as_deref()
+            .and_then(|opt| opt.as_deref())
+            .unwrap_or(&[]);
+        crate::service::domain::runtime::inbox_relevance::build_judge_context(
+            &deps.agent,
+            common::enums::ThinkingScene::Awaken,
+            messages,
         )
     };
 
@@ -131,7 +147,27 @@ async fn run_poll(deps: &AwakenDeps, kind: PollKind, bus: &mut ThinkBus) -> Resu
         crate::service::domain::runtime::think_loop::context_overflow_threshold(&deps.agent),
         crate::pkg::text_budget::share::INBOX_BATCH_BP,
     );
-    let batch = collect(&deps.ctx, &anchor, &cursor, inbox_budget).await?;
+    let outcome = collect(
+        &deps.ctx,
+        &anchor,
+        &cursor,
+        &judged_ids,
+        &judge_ctx,
+        deps.agent.brain.as_ref(),
+        inbox_budget,
+    )
+    .await?;
+
+    // 先登记本批已判定 ID：即便无可注入消息，下批扫描也要越过这批头部。
+    {
+        let mut state = deps
+            .inbox
+            .lock()
+            .map_err(|_| common::error::err!(Internal, "inbox state lock poisoned"))?;
+        state.note_judged(&outcome.judged);
+    }
+
+    let batch = outcome.injected;
     if batch.is_empty() {
         return Ok(match kind {
             PollKind::Front => NodeOutcome::new(NodeSignal::Done),
@@ -151,6 +187,7 @@ async fn run_poll(deps: &AwakenDeps, kind: PollKind, bus: &mut ThinkBus) -> Resu
             .lock()
             .map_err(|_| common::error::err!(Internal, "inbox state lock poisoned"))?;
         state.advance(&batch);
+        state.note_injection();
         if can_rewind {
             state.note_rewind();
             state.set_revision(batch);
@@ -197,6 +234,7 @@ async fn run_poll(deps: &AwakenDeps, kind: PollKind, bus: &mut ThinkBus) -> Resu
             .lock()
             .map_err(|_| common::error::err!(Internal, "inbox state lock poisoned"))?;
         state.advance(&batch);
+        state.note_injection();
         state.note_rewind();
         state.set_revision(batch);
         drop(state);

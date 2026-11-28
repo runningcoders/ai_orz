@@ -18,6 +18,7 @@ use crate::service::dao::message::MessageQuery;
 use common::constants::message::DEFAULT_CONVERSATION_PROJECT_ID;
 use common::enums::{MessageRole, MessageStatus, MessageType};
 use common::error::Result;
+use std::collections::BTreeSet;
 
 /// 单次唤醒允许的最大注入批次
 pub const MAX_INJECTIONS_PER_WAKE: usize = 3;
@@ -25,8 +26,8 @@ pub const MAX_INJECTIONS_PER_WAKE: usize = 3;
 pub const MAX_INTENT_REWINDS: usize = 2;
 /// 单批吸收的最大消息条数
 pub const MAX_INJECTED_MESSAGES: usize = 5;
-/// 吸收窗口：只吸收锚点后该时间窗内到达的消息（毫秒）
-pub const INBOX_WINDOW_MS: i64 = 5 * 60 * 1000;
+// 语义判据（同上下文候选的相关性判断）与扫描上限见 `super::inbox_relevance`：
+// 不设 SQL 时间上界，判定结果双向缓存。
 
 /// 唤醒锚点消息的结构快照
 ///
@@ -51,6 +52,8 @@ pub struct InboxAnchor {
     pub created_at: i64,
     /// 锚点消息 ID（同毫秒并列时的游标 tie-break）
     pub id: String,
+    /// 锚点正文（超窗消息的相关性判断依据）
+    pub content: String,
     /// 组织 ID（租户隔离）
     pub organization_id: Option<String>,
 }
@@ -68,6 +71,7 @@ impl InboxAnchor {
             message_type: message.po.message_type,
             created_at: message.po.created_at,
             id: message.po.id.clone(),
+            content: message.po.content.clone(),
             organization_id: message.po.organization_id.clone(),
         }
     }
@@ -120,6 +124,10 @@ pub struct InboxState {
     injections: usize,
     rewinds: usize,
     injected_ids: Vec<String>,
+    /// 本唤醒内已参与语义判定的消息 ID（相关与不相关都记）。
+    /// 下一批 SQL 拉取时排除它们，否则未吸收的候选会一直占满扫描配额、
+    /// 新消息永远进不来。缓存只挡重复小脑调用，挡不住重复占位。
+    judged_ids: BTreeSet<String>,
     pending_turn: Vec<InjectedMessage>,
     revision: Option<Vec<InjectedMessage>>,
     /// 续跑追加标记：`poll_exit` 的 rethink 必须基于既有对话尾部追加，
@@ -143,6 +151,7 @@ impl InboxState {
             injections: 0,
             rewinds: 0,
             injected_ids: Vec::new(),
+            judged_ids: BTreeSet::new(),
             pending_turn: Vec::new(),
             revision: None,
             resume_append: false,
@@ -172,6 +181,16 @@ impl InboxState {
     /// 已吸收消息 ID（唤醒成功后批量置 `Processed`）
     pub fn injected_ids(&self) -> &[String] {
         &self.injected_ids
+    }
+
+    /// 本唤醒内已判定的消息 ID（下一批拉取时排除）
+    pub fn judged_ids(&self) -> &BTreeSet<String> {
+        &self.judged_ids
+    }
+
+    /// 记录一批已判定的候选 ID
+    pub fn note_judged(&mut self, ids: &[String]) {
+        self.judged_ids.extend(ids.iter().cloned());
     }
 
     /// 推进游标并记录吸收清单
@@ -312,18 +331,35 @@ pub fn take_batch(
     batch
 }
 
+/// 一次拉取的结果：可注入的消息 + 本批已判定的候选 ID
+#[derive(Debug)]
+pub struct CollectOutcome {
+    /// 通过语义判据、可注入本轮的消息
+    pub injected: Vec<InjectedMessage>,
+    /// 本批参与判定的全部候选 ID（含被拒的），调用方据此排除下一批
+    pub judged: Vec<String>,
+}
+
 /// 从 DB 拉取锚点之后、仍为 `Pending` 的同源输入
 ///
-/// 只读：不推进游标、不改状态。
+/// 只读：不推进游标、不改状态。`judged_ids` 由调用方从 `InboxState` 传入，
+/// 排除本唤醒内已判定的候选，保证扫描窗口向后推进而不是每批重扫头部。
 pub async fn collect(
     ctx: &RequestContext,
     anchor: &InboxAnchor,
     cursor: &InboxCursor,
+    judged_ids: &BTreeSet<String>,
+    judge_ctx: &super::inbox_relevance::InboxJudgeContext,
+    // 思考现场携带的 Brain（优先 Agent.brain），小脑判定走统一入口
+    brain: Option<&crate::models::brain::Brain>,
     budget_tokens: Option<usize>,
-) -> Result<Vec<InjectedMessage>> {
+) -> Result<CollectOutcome> {
     // v1 白名单仅 Text：其他协议类型各自配对，不能并进同一轮
     if anchor.message_type != MessageType::Text {
-        return Ok(Vec::new());
+        return Ok(CollectOutcome {
+            injected: Vec::new(),
+            judged: Vec::new(),
+        });
     }
 
     let project_id = anchor
@@ -347,21 +383,39 @@ pub async fn collect(
         organization_id: anchor.organization_id.clone(),
         // 游标同毫秒并列用 ID 兜底，因此下界回退 1ms 后内存再精筛
         created_after: Some(cursor.created_at.saturating_sub(1)),
-        created_before: Some(
-            anchor
-                .created_at
-                .saturating_add(INBOX_WINDOW_MS)
-                .saturating_add(1),
-        ),
-        limit: Some(MAX_INJECTED_MESSAGES * 2),
+        // 不设 SQL 时间上界：同上下文的补充消息隔多久都该参与语义判断。
+        // 用条数上限分批兜住扫描量，按时间正序保证先到的先判、游标稳步推进。
+        created_before: None,
+        limit: Some(super::inbox_relevance::INBOX_SCAN_LIMIT),
         order_by: Some("created_at ASC, id ASC".to_string()),
+        // 排除本唤醒内已判定的候选：不吸收的消息不会被游标越过，
+        // 不排除就会每批都从同一批头部重扫，后面的新消息永远进不来。
+        exclude_ids: judged_ids.iter().cloned().collect(),
         ..Default::default()
     };
 
     let rows = crate::service::dal::message::dal()
         .query(ctx.clone(), query)
         .await?;
-    Ok(take_batch(anchor, cursor, rows, budget_tokens))
+
+    // 本批全部候选都记为「已判定」，无论最终放行还是拒绝：
+    // 缓存只挡重复的小脑调用，SQL 排除才挡重复占位。
+    let judged: Vec<String> = rows.iter().map(|row| row.po.id.clone()).collect();
+
+    // 同上下文候选一次性交给小脑多选判断，相关的放行。
+    // 判定结果按 (anchor_id, message_id) 双向缓存，多轮 poll 不重复调用。
+    let related_ids =
+        super::inbox_relevance::rank_related_with_default_dao(ctx, anchor, &rows, judge_ctx, brain)
+            .await;
+    let related: Vec<Message> = rows
+        .into_iter()
+        .filter(|row| related_ids.contains(&row.po.id))
+        .collect();
+
+    Ok(CollectOutcome {
+        injected: take_batch(anchor, cursor, related, budget_tokens),
+        judged,
+    })
 }
 #[cfg(test)]
 #[path = "inbox_tests.rs"]

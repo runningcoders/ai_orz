@@ -151,14 +151,24 @@ async fn run_poll_round(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
         return Ok(continue_to_think());
     };
 
-    let (anchor, cursor, injections, rounds_started) = {
+    let (anchor, cursor, judged_ids, judge_ctx, injections, rounds_started) = {
         let state = inbox
             .lock()
             .map_err(|_| err!(Internal, "inbox state lock poisoned"))?;
-        let started = lock(&deps.state)?.rounds_started;
+        let round_state = lock(&deps.state)?;
+        let started = round_state.rounds_started;
+        // 现场上下文在锁内组装：身份 + 场景 + 任务/项目/输入理解摘要 + 最近动作，
+        // 让小脑能判断候选与「正在处理的那件事」的间接关联。
+        let judge_ctx = crate::service::domain::runtime::inbox_relevance::build_judge_context(
+            &deps.agent,
+            deps.scene,
+            &round_state.messages,
+        );
         (
             state.anchor().clone(),
             state.cursor().clone(),
+            state.judged_ids().clone(),
+            judge_ctx,
             state.injections(),
             started,
         )
@@ -174,8 +184,30 @@ async fn run_poll_round(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
         crate::service::domain::runtime::think_loop::context_overflow_threshold(&deps.agent),
         crate::pkg::text_budget::share::INBOX_BATCH_BP,
     );
-    let batch = collect_inbox(&deps.ctx, &anchor, &cursor, inbox_budget).await?;
-    if batch.is_empty() {
+    // 优先用 Agent 携带的 Brain（日后绑定自己的小脑时链路自动跟随）；
+    // Agent 尚未装配时退回本轮已唤醒的 Brain，二者通常同源。
+    let brain = deps.agent.brain.as_ref().unwrap_or(&deps.brain);
+    let outcome = collect_inbox(
+        &deps.ctx,
+        &anchor,
+        &cursor,
+        &judged_ids,
+        &judge_ctx,
+        Some(brain),
+        inbox_budget,
+    )
+    .await?;
+
+    // 先回写本批已判定 ID：即便本批没有可注入消息，也要让下批扫描窗口后移。
+    // 被拒的候选不会被游标越过，不回写就会每批重扫同一批头部、新消息永远进不来。
+    {
+        let mut state = inbox
+            .lock()
+            .map_err(|_| err!(Internal, "inbox state lock poisoned"))?;
+        state.note_judged(&outcome.judged);
+    }
+
+    if outcome.injected.is_empty() {
         return Ok(continue_to_think());
     }
 
@@ -183,7 +215,8 @@ async fn run_poll_round(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
         let mut state = lock(&deps.state)?;
         // 同一批只尾插一条用户消息：连续多条 user turn 在部分模型协议下
         // 会被合并/拒绝，且设计约定就是「带序号的一条」
-        let merged = batch
+        let merged = outcome
+            .injected
             .iter()
             .enumerate()
             .map(|(index, item)| item.numbered_text(index))
@@ -195,7 +228,7 @@ async fn run_poll_round(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
     let mut state = inbox
         .lock()
         .map_err(|_| err!(Internal, "inbox state lock poisoned"))?;
-    state.advance(&batch);
+    state.advance(&outcome.injected);
     state.note_injection();
 
     Ok(continue_to_think())

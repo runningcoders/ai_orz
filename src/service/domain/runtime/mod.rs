@@ -479,6 +479,7 @@ pub(crate) mod chain_reply;
 // 本模块只保留压缩流程本身（拆分点、分流策略），不再自持算法。
 pub(crate) mod compaction;
 mod inbox;
+mod inbox_relevance;
 mod intent_analyze;
 mod intent_gate;
 mod thinking_strength;
