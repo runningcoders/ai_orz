@@ -618,6 +618,8 @@ async fn nudge_does_not_touch_already_due_event() {
         .await
         .unwrap();
     let first = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+    assert_eq!(first["event_id"], "e1", "首次出队应是 e1");
+    assert_eq!(first["attempt"].as_u64(), Some(1), "首次消费 attempt=1");
     queue.nack(ctx.clone(), "e1").await.unwrap();
     // 退避为 0，e1 本就立即取得到；此时同 key 新消息入队不应改变 attempt
     queue

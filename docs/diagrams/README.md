@@ -17,7 +17,7 @@
 | 文件 | 层级 | 讲什么 | 视图 | 对应知识库模块 |
 |---|---|---|---|---|
 | [ai-orz-architecture.html](./ai-orz-architecture.html) | 容器级总图 | 三级 workspace、四层单向调用、存储与外部系统、认知架构分层 | 主请求路径 / 异步与 Agent 运行时 / 持久化 | 00-总览与架构 |
-| [ai-orz-think-path.html](./ai-orz-think-path.html) | 组件级 | 两阶段唤醒 → 小脑决策契约（entry_gate / entry_pool / chain_reply, close_default）→ 思考中注入新输入 → 三层预算循环（跨周期 RoundCollected 收集）→ 七相位图引擎 → 两段式落盘（增量 + 收尾，TraceFinishGuard 五条退出路径兜底 close 行）→ 前端时间线 → 专注浮层实时（RunObserver 骨架事件经 FocusLiveConsumer 出 SSE）；轨迹查询走 `.jsonl.idx` 旁车索引（索引过滤 + seek 命中行），返回契约为 PagedResult（items + total，total 取自索引命中数），作用域新增 `without_project` 无项目口径（带 ctx.project_id 时拒绝）；含思考强度判相对偏移、先验与兜底分离 | 一轮思考 / 两阶段唤醒 / 轨迹链路 / 认知分层 | 02-Agent运行时 |
+| [ai-orz-think-path.html](./ai-orz-think-path.html) | 组件级 | 两阶段唤醒 → 小脑决策契约（entry_gate / entry_pool / chain_reply, close_default）→ 思考中注入新输入（结构判据先筛同上下文 + 小脑一次 Choice 多选，无时间窗、双向缓存、降级放行）→ 三层预算循环（跨周期 RoundCollected 收集）→ 七相位图引擎 → 两段式落盘（增量 + 收尾，TraceFinishGuard 五条退出路径兜底 close 行）→ 前端时间线 → 专注浮层实时（RunObserver 骨架事件经 FocusLiveConsumer 出 SSE）；轨迹查询走 `.jsonl.idx` 旁车索引（索引过滤 + seek 命中行），返回契约为 PagedResult（items + total，total 取自索引命中数），作用域新增 `without_project` 无项目口径（带 ctx.project_id 时拒绝）；含思考强度判相对偏移、先验与兜底分离 | 一轮思考 / 两阶段唤醒 / 轨迹链路 / 认知分层 | 02-Agent运行时 |
 | [ai-orz-tools.html](./ai-orz-tools.html) | 组件级 | CoreTool 三协议路由（Builtin / HTTP / MCP）+ 工具级凭据契约与身份注入 + 策略拦截与六态授权 + 技能包装配 | 三层调用 / 策略与授权 / 注册与装配 | 06-工具与技能 |
 | [ai-orz-tool-context.html](./ai-orz-tool-context.html) | 组件级 | 工具调用中的上下文（身份）数据流转：声明（`CredentialKind` 的 `UserInfo` / `AgentInfo` 两个非凭据变体 + `field` 白名单 + `binding` 四注入点）→ 解析（`is_identity` 二元分派 + 未命中按来源分叉）→ 注入（`check` 注入 + `base_env` 九键末位硬 insert）→ 使用（git 子进程 4 个 `GIT_*` / commit-msg hook） | 四层主链路 / 失败语义分叉 / 注入与优先级 / 落点实证 | 06-工具与技能 |
 | [ai-orz-aop.html](./ai-orz-aop.html) | 组件级 | pkg/aop 六 Trait + Registry 单例 + 14 类业务消费者（20 处注册 / 10 Sync + 10 Async）+ 3 类 tick 生产者 + context_carrier 贯穿 | 一次事件流转 / 启动顺序 / 生产者与兜底 | 10-异步基建(AOP) |
@@ -30,7 +30,7 @@
 | [ai-orz-search.html](./ai-orz-search.html) | 组件级 | FTS5 全文 + 向量检索 + 图谱遍历三路召回 + 属性精确过滤 + `ids` 直取与 `include_retired` / `include_history` 受控出口 | 工具入口 / 三路召回 / 存储面 | 08-搜索 |
 | [ai-orz-stats.html](./ai-orz-stats.html) | 组件级 | 业务事件 → AOP 同步消费 → 四类指标落库（含按时序桶的耗时统计）→ 采集器落 pkg/stats/runtime（全局单例，handler 直读）→ 监控 API 与看板 | 采集 / 聚合 / 读取与看板 | 09-统计与监控 |
 | [ai-orz-schedule.html](./ai-orz-schedule.html) | 组件级 | `cron_triggers` 四组顶层参数（When 时间规则三选一 / Who 三字段分工 / What action 列优先回落 payload / How behavior 三值静态决定消费语义） → `common/schedule/` 纯计算（`cron` > `interval` > `run_at` 优先级 · occurrence 展开 · `MAX_SCAN_STEPS=100_000`） → `CronDispatchQueue` 事件驱动派发（`schedule.changed` 即时入队 · 1s tick · 60s 兜底扫 DB · 版本两道防线）→ Scheduler Consumer 租约领取后三分派（SyncMaintenance / AsyncNotify / AsyncAgentWakeup）→ 时刻型按 `fired_at` / Interval 按 `finished_at` 推进 → `TriggerExecEvent` 按「一次 attempt」落 DuckDB `trigger_exec_events`（success / skipped / failed 都记，与 `cron_triggers.total_runs` 配额游标是两张账） → 管理端列表（状态过滤与分页下沉数据端、筛选变更自动重查）与详情页（编辑区按需展开） | 配置写入 / 触发与留痕 / 管理端回读 | 05-任务与项目 |
-| [ai-orz-frontend.html](./ai-orz-frontend.html) | 组件级 | Dioxus WASM 入口 / 路由（45 条）/ 页面模块（72 个 .rs）/ HUD / API 客户端 + 产物预览（HtmlPreview 唯一渲染出口）+ 工作台现场化（workspace/ 十模块，固定席位场 + 5s 场景投影轮询）+ 缓存管理页 + build.rs 产物 | 应用骨架 / 页面与组件 / 数据与产物 | 11-前端应用 |
+| [ai-orz-frontend.html](./ai-orz-frontend.html) | 组件级 | Dioxus WASM 入口 / 路由（45 条）/ 页面模块（72 个 .rs）/ 聊天输入区单一实现（ChatInputArea，页面壳只建信号不读）/ HUD / API 客户端 + 产物预览（HtmlPreview 唯一渲染出口）+ 工作台现场化（workspace/ 十模块，固定席位场 + 5s 场景投影轮询）+ 缓存管理页 + build.rs 产物 | 应用骨架 / 页面与组件 / 数据与产物 | 11-前端应用 |
 | [ai-orz-infra.html](./ai-orz-infra.html) | 组件级 | 配置 → 连接池与迁移 → 路径与 JSONL（pkg/jsonl：writer + sidecar）→ 向量重建三档 → 后台任务 → 打包发布 | 启动与配置 / 运行期资源 / 构建与发布 | 12-基础设施与部署 |
 | [ai-orz-data-model.html](./ai-orz-data-model.html) | ER 图（表级） | 三族九表：身份 / 工作 / 知识图谱，字段取自现网 SQLite schema | 身份与组织 / 任务与消息 / 知识图谱三件套 | 13-数据模型 |
 | [ai-orz-testing.html](./ai-orz-testing.html) | 组件级 | fmt / clippy / test / docs_lint / inline-test-lint 五道门禁 + 护栏用例 | 门禁组合 / 测试分层 / 文档与索引 | 14-测试 |
@@ -759,3 +759,33 @@
 2. 图内文字用中文，代码锚点用仓库相对路径（不放行号）。
 3. 改动后跑 `./scripts/check.sh docs-lint`（只扫 Markdown，不会校验 HTML，但会拦住绝对路径与旧式行号引用）。
 4. 生成回执（`*.delivery.json`）不提交，只保留最终 HTML。
+
+### 2026-11-28 增量同步（2 张重渲染，revision → `6dbf2dca`）
+
+本轮 PR 追加 5 笔代码 + 1 笔文档，剔除提交前 39 条 + 本批 17 条 = **终态 52 条**为判图基数（命令：`git diff --name-only origin/main...HEAD | wc -l` 得 39，`git status --porcelain` 得 17）。逐图取 `archify-source-evidence-data` 的 `nodes{}` 路径集与之求交：
+
+| 图 | 图内路径数 | touched | 判定 |
+|---|---:|---:|---|
+| ai-orz-schedule.html | 19 | 6 | 不刷：6 条命中全部来自**已在 PR 前序笔次交付**并已重渲染过的日程事件驱动改造（本轮零改动），本轮无新变化 |
+| ai-orz-frontend.html | 19 | 3 | **真需刷**：命中 `chat.rs`（+630/−921，抽出 5 个子组件）、`agent_detail.rs`（+34/−114，发送入口整个移除）、`workspace/mod.rs`（+16/−7）。三者都是该图主语组件本人，本批重写了其行为/删除了其能力入口 ⇒ 必刷（此为 2026-11-28 首轮误判「机械适配」的纠正） |
+| ai-orz-aop.html | 14 | 2 | 不刷：命中的 `cron_dispatch_queue.rs` / `cron_trigger.rs` 同样来自前序笔次已刷；本轮的队列退避改动落在 `src/pkg/aop/queue/` 与 `src/pkg/priority_queue.rs`，**不在该图 sources 里**（该图讲消费者拓扑，不画重试退避内部机制） |
+| ai-orz-think-path.html | 22 | 2 | **真需刷**：`inbox.rs` 与 `poll_node.rs` 是本批核心改动——废除 5 分钟时间窗、接入小脑语义多选判据、新增 `judged_ids` 下推。该图原卡片仍写「5 分钟窗口」，属「覆盖了但说错了」 |
+| ai-orz-task-project.html | 23 | 2 | 不刷：`workspace/mod.rs` 与 `scheduler.rs` 的命中的抽象层与本图（任务项目状态机/DAG）不符，属承载域错配 |
+| ai-orz-architecture.html | 17 | 1 | 不刷：`src/producer/mod.rs` 只命中容器级总览组件的 sources，本批未改该文件的 producer 注册形态，抽象层未变 |
+| ai-orz-messaging.html | 21 | 2 | 不刷：`chat.rs` 是前端页面壳，与后端消息链路（渠道归一化→路由→DAL/DAO→SSE）抽象层不符；`dao/message/mod.rs` 本批新增 `exclude_ids` 字段与 SQL 拼接，属消息查询过滤器扩展，不改变 messaging 图所画的渠道与投递主链路 |
+| 其余 11 张 | — | 0 | 不刷：a2a / data-model / infra / memory / ontology / org-federation / search / stats / testing / tool-context / tools，本批零命中 |
+
+**2 张重渲染摘要**
+
+| 图 | 结构 | 字节 | sha256 前 16 | 几何度量 |
+|---|---|---:|---|---|
+| ai-orz-think-path.html | 17 组件 / 17 连线 / 13 卡片 | 877,963 | `336f9638961af844` | `maxBends=2`、`properCrossings=0`、`ambiguousCorridors=0`、`routesOverSuggestedBends=0`、`minSegmentPx=60` |
+| ai-orz-frontend.html | 17 组件 / 17 连线 / **7 卡片**（+1） | 868,433 | `f997a8abe1088028` | `maxBends=3`、`resolvedCrossovers=1`、`routesOverSuggestedBends=2`、`minSegmentPx≥`基线 |
+
+**frontend 第 7 张卡**「聊天输入区统一（2026-11-28 新增）」的内容：三处聊天输入收敛为单一 `ChatInputArea`、页面壳只建信号不读（抽出 `ChatSceneSignals` / `ChatAgentStatusBubble` / `ChatMessageRow` / `ChatMessageList` / `ChatProjectSidebar`）、订阅边界下沉到「谁读谁重渲染」、Agent 详情页下线独立输入框、工作台 `last_chat_ctx` 三元组变化才重载。新增该卡未触发 `composition/desktop-readability`。
+
+**frontend 残留几何**：1 处交叉（`pages-hr` × `pages-docs`）与 2 处超建议弯道（`pages-hr` 3 弯/stretch 1.179、`workbench_api` 3 弯/stretch 1.128）**全部为既有路径**，与基线持平，本轮未引入新交叉。
+
+**门禁**：两张图各自 `validate`（9 checks）→ `finalize --browser-check`（validate / deliver / check / browser-check 四道全 pass，diagnostics=0）→ `check`，全部 exit 0。`*.delivery.json` 与 `*.finalize*.json` 收据未入仓（`ls docs/diagrams/*.json` = 0）。
+
+**已知局限**：本轮**未做人眼视觉复核**（`visualReview=not-requested`），几何指标全绿≠视觉可读；think-path 的 22 条证据路径、frontend 的 19 条均 MISSING=0。
