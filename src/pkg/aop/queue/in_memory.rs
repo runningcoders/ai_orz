@@ -19,7 +19,6 @@ struct EventRef {
     created_at: i64,
     /// 本事件被消费的**累计次数**：入队即 1，每次 `nack` 自增（`ack` 后随事件消亡，无需持久化）
     attempt: u32,
-    /// 最早可出队时刻（epoch 毫秒；`0` = 立即可取）。仅 `nack` 重投时设置（per-event 指数退避）。
     /// 本事件是否走了「同 key 门闩」
     ///
     /// 由入队方法决定：`enqueue`（未下沉前 = 订阅声明了 `ordered`）为 true，
@@ -32,7 +31,13 @@ struct EventRef {
     /// 串行保证被悄悄绕过），ungated 事件的 nack 则会给该 key 打上「门闩占用」
     /// 却再无 gated 事件能解开它（该 key 永久饥饿）。
     gated: bool,
+    /// 最早可出队时刻（epoch 毫秒；`0` = 立即可取）。仅 `nack` 重投时设置（per-event 指数退避）。
+    /// 同 key 新消息催促会把它归零（见 `clear_backoff_for_order_key`）。
     not_before: i64,
+    /// 最近一次「开始消费」的时刻（epoch 毫秒；`dequeue_next` 写入）。
+    /// 与 `nudged_at` 比较可判断催促是否发生在这次消费之后 —— 只有「新鲜」的催促
+    /// 才在 `nack` 时兑现一次免退避，避免快速失败场景变成无间隔紧循环。
+    consumed_at: i64,
 }
 
 impl RankedEntry for EventRef {
@@ -58,6 +63,11 @@ struct AopState {
     in_progress: HashMap<String, (EventRef, String)>,
     /// order_key → 当前是否有事件占用门闩
     has_active_message: HashMap<String, bool>,
+    /// order_key → 最近一次「同 key 新消息催促」的时刻（epoch 毫秒）。
+    /// 只在 gated 入队时写入；gated 事件的 `nack` / `ack` 消费并清除。
+    /// 这是催促时效性的另一半：入队时清 global 堆够不到仍在 `in_progress` 的事件，
+    /// 时间戳接力到它的 `nack`，兑现一次性免退避。
+    nudged_at: HashMap<String, i64>,
 }
 
 #[derive(Debug)]
@@ -107,7 +117,12 @@ impl InMemoryEventQueue {
     /// （首条上堆、其余在 key 队列里等前一条 ack）；`gated = false` 时无视
     /// `order_key` 直进堆，按 `(priority, created_at)` 排序 —— 供**未声明
     /// `ordered`** 的订阅走（门闩是订阅者的 opt-in，见设计稿 §4.1）。
-    async fn do_enqueue(&self, event: serde_json::Value, gated: bool) -> Result<()> {
+    async fn do_enqueue(
+        &self,
+        ctx: RequestContext,
+        event: serde_json::Value,
+        gated: bool,
+    ) -> Result<()> {
         let mut state = self.lock_guard();
 
         let event_id = event
@@ -142,10 +157,31 @@ impl InMemoryEventQueue {
             attempt: 1,
             not_before: 0,
             gated: gate,
+            consumed_at: 0,
         };
 
         if state.events.contains_key(&event_id) {
             return Ok(());
+        }
+
+        // 同 key 又来一条消息 = 用户在催促：记下时刻，并立刻解冻已在退避的队首。
+        // 若队首仍在 `in_progress`（不在 global 堆里），清退避够不到它 —— 时间戳留给
+        // `nack` 兑现一次性免退避（见 `nack`），补上催促的时效性缺口。
+        // 只清 `not_before` / 记时刻，不动门闩与 attempt —— 串行仍由 ack 释放，重试计数不丢。
+        // ungated 事件不触发：门闩是订阅者 opt-in，不能被旁路事件影响。
+        if gate {
+            let nudge_at = now_ms();
+            state.nudged_at.insert(order_key.clone(), nudge_at);
+            let cleared = Self::clear_backoff_for_order_key(&mut state, &order_key, nudge_at);
+            if cleared > 0 {
+                crate::log_info!(
+                    ctx,
+                    "aop_queue",
+                    "nudge clears retry backoff: order_key={}, cleared={}",
+                    order_key,
+                    cleared
+                );
+            }
         }
 
         state.events.insert(event_id.clone(), event);
@@ -176,6 +212,32 @@ impl InMemoryEventQueue {
         }
 
         Ok(())
+    }
+
+    /// 催促的「立即可见」一半：把该 key 下所有尚在退避的 gated 条目归零。
+    ///
+    /// 正常情况下一个 key 只会有一个退避条目（nack 后的门闩持有者），其余在同 key
+    /// 的 `gates` 队列里等 ack、没有退避。这里仍按集合处理，避免对未来多条目场景
+    /// 漏清。调用前须持锁。
+    ///
+    /// ⚠️ 只覆盖「已在 global 堆退避」的事件；仍在 `in_progress` 的事件由
+    /// `nudged_at` 时间戳接力，在随后的 `nack` 里兑现一次性免退避。
+    fn clear_backoff_for_order_key(state: &mut AopState, order_key: &str, now: i64) -> usize {
+        let mut cleared = 0;
+        for event_id in state.global.keys() {
+            // `not_before` 不参与 rank ⇒ 原地改载荷，seq 与堆项都不动，
+            // 同 rank 不同 key 的 FIFO 顺序不受影响。
+            state.global.update_entry(&event_id, |event_ref| {
+                if event_ref.gated
+                    && event_ref.order_key.as_str() == order_key
+                    && event_ref.not_before > now
+                {
+                    event_ref.not_before = 0;
+                    cleared += 1;
+                }
+            });
+        }
+        cleared
     }
 
     /// 收集各 order_key 的待处理数量统计。调用前须持锁。
@@ -232,8 +294,13 @@ impl InMemoryEventQueue {
 ///
 /// ⚠️ **代价（已知且接受）**：gated 事件 `nack` 后**继续占着 order_key 门闩**
 /// （见 [`EventQueue::nack`]），所以退避窗口就是同一 Agent 后继消息的最长等待。
-/// 它只在「该 Agent 持续忙满整个窗口」时才兑现 —— 那种情况下后继消息本来也
-/// 处理不了，故不算回归；Agent 一旦空闲，下一次退避到期即消费成功、门闩放行。
+/// 但同 key 又来一条消息时视为用户在「催促」，入队会把这份退避立即清零
+/// （见 [`Self::clear_backoff_for_order_key`]）—— 不需要手动干预，也不放行门闩。
+///
+/// ⚠️ **催促的时效性**：入队时清退避只覆盖「已在 global 堆退避」的事件。若旧事件
+/// 当时仍在 `in_progress`，入队会记下催促时刻（`nudged_at`），它随后失败 `nack`
+/// 时若确认催促晚于本次消费开始，就免这一次退避。一次催促只兑现一次，之后没有
+/// 新催促就照常指数退避 —— 既补上时效性缺口，又不让快速失败变成无间隔紧循环。
 const RETRY_BACKOFF_BASE_MS: i64 = 15_000;
 const RETRY_BACKOFF_MAX_MS: i64 = 300_000;
 
@@ -251,12 +318,12 @@ fn now_ms() -> i64 {
 
 #[async_trait]
 impl EventQueue for InMemoryEventQueue {
-    async fn enqueue(&self, _ctx: RequestContext, event: serde_json::Value) -> Result<()> {
-        self.do_enqueue(event, /* gated */ true).await
+    async fn enqueue(&self, ctx: RequestContext, event: serde_json::Value) -> Result<()> {
+        self.do_enqueue(ctx, event, /* gated */ true).await
     }
 
-    async fn enqueue_ungated(&self, _ctx: RequestContext, event: serde_json::Value) -> Result<()> {
-        self.do_enqueue(event, /* gated */ false).await
+    async fn enqueue_ungated(&self, ctx: RequestContext, event: serde_json::Value) -> Result<()> {
+        self.do_enqueue(ctx, event, /* gated */ false).await
     }
 
     async fn enqueue_batch(
@@ -277,7 +344,7 @@ impl EventQueue for InMemoryEventQueue {
         // 基础队列的 pop_where 会把「退避中（not_before 未到）」的条目临时摘出、
         // 遍历结束后原样放回 —— 它们不阻塞堆里已到期的后继事件。
         loop {
-            let Some((event_id, event_ref)) = state
+            let Some((event_id, mut event_ref)) = state
                 .global
                 .pop_where(&|event_ref| event_ref.not_before <= now)
             else {
@@ -299,6 +366,8 @@ impl EventQueue for InMemoryEventQueue {
                     serde_json::Value::from(event_ref.attempt),
                 );
             }
+            // 记录本次消费开始时刻：nack 时据此判断催促是否「新鲜」
+            event_ref.consumed_at = now;
             let order_key = event_ref.order_key.clone();
             state.in_progress.insert(event_id, (event_ref, order_key));
 
@@ -328,6 +397,8 @@ impl EventQueue for InMemoryEventQueue {
             return Ok(());
         }
         let order_key = event_ref.order_key.clone();
+        // 门闩状态已变化（放行后继或释放），此前记下的催促不再指向在飞的旧事件
+        state.nudged_at.remove(&order_key);
 
         let next_ref = {
             let Some(queue) = state.gates.get_mut(&order_key) else {
@@ -361,10 +432,28 @@ impl EventQueue for InMemoryEventQueue {
 
         // 重投：累计消费次数自增 → 下次出队时封套里的 `attempt` 即新值
         event_ref.attempt = event_ref.attempt.saturating_add(1);
+
+        // 催促兑现：仅当「同 key 新消息」发生在这次消费开始之后，才免这一次退避。
+        // 入队时已在退避的事件已由 `clear_backoff_for_order_key` 兑现，随后重新消费
+        // 时 `consumed_at` 晚于催促时刻，这里自然不会再免 —— 一次催促只兑现一次。
+        // 无论是否命中都清标记：没有新催促就恢复指数退避，避免快速失败变紧循环。
+        let nudged = event_ref.gated
+            && state
+                .nudged_at
+                .get(&order_key)
+                .is_some_and(|&at| at > event_ref.consumed_at);
+        if event_ref.gated {
+            state.nudged_at.remove(&order_key);
+        }
+
         // per-event 指数退避：第 n 次重试前先静默 `retry_backoff_ms(attempt)`，
         // 期间 `dequeue_next` 跳过它（不阻塞同堆其他事件）。
-        event_ref.not_before = now_ms()
-            + retry_backoff_ms(self.backoff_base_ms, self.backoff_max_ms, event_ref.attempt);
+        let now = now_ms();
+        event_ref.not_before = if nudged {
+            now
+        } else {
+            now + retry_backoff_ms(self.backoff_base_ms, self.backoff_max_ms, event_ref.attempt)
+        };
 
         // gated 事件重投后仍然占着门闩 —— 这里是显式重申（幂等），不是状态迁移：
         // 真正的释放只在 `ack` 里发生。
