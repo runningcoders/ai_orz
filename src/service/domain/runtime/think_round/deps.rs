@@ -54,10 +54,8 @@ pub(crate) struct RoundDeps {
     pub usage: Arc<Mutex<WakeUsage>>,
     /// 进入本周期前的已用量（本次循环的计量起点）
     pub base: WakeUsage,
-    /// 唤醒级收件箱（`Some` 时轮级图插入 `poll_round`）
-    pub inbox: Option<Arc<Mutex<crate::service::domain::runtime::inbox::InboxState>>>,
-    /// 唤醒级业务产出收集器（dispatch 写入，随 `AwakeningResult` 移交）
-    pub collected: Arc<Mutex<crate::service::domain::runtime::RoundCollected>>,
+    /// 图级运行总线实例（`Some` 时轮级图插入 `poll_round`）
+    pub runtime: Option<Arc<crate::service::domain::runtime::graph_runtime::GraphRuntime>>,
     /// 与 `run_think_loop` 共享的轨迹信封（含「是否已收尾」位，供 RAII guard 去重）
     pub trace_sink: crate::service::domain::runtime::think_trace::TraceSink,
 }

@@ -52,6 +52,9 @@ pub struct MessageQuery {
     pub to_role: Option<MessageRole>,
     /// 按消息类型查询
     pub message_type: Option<MessageType>,
+    /// 按多个消息类型 IN 查询（inbox 需要 Text + Mixed 一起扫描：
+    /// 带协议附件的消息落库为 Mixed，但正文里仍是同一话题的补充输入）
+    pub message_type_in: Option<Vec<MessageType>>,
     /// 要求 `file_type IS NULL`（无附件的纯文本消息）
     pub file_type_is_null: bool,
     /// 线程兼容过滤：只返回 `thread_id IS NULL` 或等于该值的消息

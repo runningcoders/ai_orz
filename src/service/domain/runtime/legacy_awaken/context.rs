@@ -15,7 +15,7 @@
 //! 这也是「两者轴的交替使用」的一个矛盾点：统一取数的价值在于消除散落查询，
 //! 而不是把所有东西都塞进总线。
 
-use crate::models::cortex_types::{ChatMessage, ToolDescriptor};
+use crate::models::cortex_types::ToolDescriptor;
 use crate::models::memory::MemoryTrace;
 use crate::models::skill::SkillPo;
 use crate::pkg::agent_runtime_state::AgentThinkRuntime;
@@ -24,6 +24,7 @@ use crate::pkg::request_context::RequestContext;
 use crate::pkg::think_path::{
     ContextKey, ContextProvider, LoadDepth, LoadFailureMode, ProviderSet, Stimulus,
 };
+use crate::service::dal::brain::BrainDal;
 use crate::service::domain::runtime::RuntimeDomainImpl;
 use crate::service::domain::runtime::awakening::build_scene_tool_descriptors;
 use crate::service::domain::runtime::inbox::{InboxAnchor, InboxState};
@@ -33,21 +34,8 @@ use common::enums::ThinkingScene;
 use common::error::Result;
 use common::error::err;
 use serde_json::{Value, json};
-use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
-
-/// 跨装配轮次共享的压缩状态
-///
-/// 压缩的产物要喂给**下一轮** `Prepare`（且下一轮不再查历史记忆），
-/// 因此它不是节点局部状态，而是 run 级共享槽位。
-#[derive(Debug, Default, Clone)]
-pub struct CompactionSlot {
-    /// 上一轮工作压缩结果
-    pub summary: Option<String>,
-    /// 压缩落库的那条记忆 id（组装「更早的记忆」时要排除）
-    pub memory_id: Option<String>,
-}
 
 /// 检索产物（总线 ContextKey::Knowledge 分区的载荷）
 ///
@@ -63,15 +51,6 @@ pub struct RetrievalPack {
     pub method_skills: Vec<SkillPo>,
     /// discover 产出的上一轮思考摘要（首轮为 None）
     pub prior_thinking_summary: Option<String>,
-}
-
-/// run 级检索状态：跨节点累积，visited 去重的唯一真相
-#[derive(Debug, Default, Clone)]
-pub struct RetrievalState {
-    /// 已检索过的词（含 intent key_terms 与历次 discover 新词）
-    pub queried_terms: Vec<String>,
-    /// discover 已执行的循环次数（软预算，蓝图预算是硬护栏）
-    pub discovery_rounds: usize,
 }
 
 /// discover 节点的模型输出契约
@@ -103,30 +82,17 @@ pub(crate) struct AwakenDeps {
     pub policy: Arc<dyn Policy>,
     pub progress: ThinkLoopProgress,
     pub trace: Mutex<MemoryTrace>,
-    pub compaction: Mutex<CompactionSlot>,
-    /// run 级检索状态：visited 词集合 + discover 轮次软预算（见 [`RetrievalState`]）
-    pub retrieval: Mutex<RetrievalState>,
-    /// 本 run **真正发起检索**的次数（短路不计）
-    ///
-    /// 与 [`RetrievalState::queried_terms`] 分工：那个记「查过哪些词」（差集输入），
-    /// 这个记「查了几次库」。差集为空时 retrieve 在自增点之前就 return，所以它
-    /// 能直接回答「回环 / 二次进入有没有真的再查一遍」——**不能靠 pack 形态反推**：
-    /// 短路的 pack（全空）与「真查了但零命中」的 pack 长得一样，用形态断言会假绿。
-    pub retrieve_searches: AtomicUsize,
-    /// 唤醒级收件箱：三处挂点共享的游标、吸收清单与回退计数
-    pub inbox: Arc<Mutex<InboxState>>,
-    /// run 级业务产出收集器：dispatch 写入、跨周期累计、随 `AwakeningResult` 移交
-    ///
-    /// 与 `progress` / `usage` 同一范式（run 级、显式共享），区别是它承载
-    /// **业务数据**：丢失会让用户拿不到本轮生成的文件，因此不留在进程级表里。
-    pub collected: Arc<Mutex<crate::service::domain::runtime::RoundCollected>>,
-    /// Phase 1（意图识别）最后一次调用的初始消息快照
-    ///
-    /// Phase 2 以此作为请求前缀，追加意图结论与执行段即可命中 prompt cache。
-    /// 只在首次装配消费一次；压缩回环 / 无快照时退回重建。
-    pub intent_seed: Mutex<Option<Vec<ChatMessage>>>,
+    /// 图级运行总线实例：持有收件箱、检索状态、业务产出、压缩槽位、Phase1 快照等
+    /// 跨节点共享状态，节点通过它的方法访问。`CompactionSlot` / `intent_seed`
+    /// 也已从 deps 直连字段迁入，类型定义下沉到 `graph_runtime.rs`。
+    pub runtime: Arc<super::super::graph_runtime::GraphRuntime>,
     /// 影子模式：跑完整链路但**不落库、不发通知**，只够成「有机质春雨对比」。
     pub shadow: bool,
+    /// 意图变更二选一判据的可替换 DAL（与 `backend` 同一 hook 范式）
+    ///
+    /// 生产为 `None`（poll 节点走 `brain::dal()` 默认单例）；集成测试注入
+    /// scripted DAL，从而在**不打模型**的前提下驱动 reinterpret / supplement 两条边。
+    pub intent_shift_dal: Option<Arc<dyn BrainDal>>,
     pub started_at: Instant,
 }
 
@@ -163,6 +129,27 @@ impl AwakenDeps {
             self.ctx.project_id().map(|s| s.as_str()),
             self.ctx.task_id().map(|s| s.as_str()),
         )
+    }
+}
+
+/// 节点输入契约的公共基座
+///
+/// 所有图内节点至少需要「请求上下文 + 本次 Agent」。把它抽成超 trait，节点的
+/// 专属输入契约只声明自己额外需要的能力，实现方（如 `AwakenDeps`）只需实现一次。
+pub(crate) trait NodeBase: Send + Sync + std::fmt::Debug {
+    /// 请求上下文（日志、DAL 调用）
+    fn ctx(&self) -> &RequestContext;
+    /// 本次运行的 Agent（身份 / Brain / 工具 / 技能）
+    fn agent(&self) -> &Agent;
+}
+
+impl NodeBase for AwakenDeps {
+    fn ctx(&self) -> &RequestContext {
+        &self.ctx
+    }
+
+    fn agent(&self) -> &Agent {
+        &self.agent
     }
 }
 
@@ -307,27 +294,31 @@ impl ContextProvider for BusinessProvider {
             deps.message.po.id
         );
 
-        // 与意图识别阶段共用同一取数入口，保证两阶段 base 内容一致
-        let (thread, resource_lines, vision_parts) =
-            super::super::awakening::fetch_message_business_blocks(&ctx, &deps.message).await;
+        // 与意图识别阶段共用同一取数入口，保证两阶段 base 内容一致。
+        // 已吸收消息的附件引用一并解析：图片合并进锚点的视觉输入，不另起消息。
+        // MutexGuard 不跨 await：先克隆引用快照。
+        let extra_attachment_ids = deps.runtime.inbox_absorbed_attachment_ids();
+        let blocks = super::super::awakening::fetch_message_business_blocks(
+            &ctx,
+            &deps.message,
+            &extra_attachment_ids,
+        )
+        .await;
 
         crate::log_info!(
             &ctx,
             "legacy_awaken",
             "business context loaded, agent_id={}, thread={}, resource_lines={}, vision_parts={}",
             deps.agent.po.id,
-            thread.len(),
-            resource_lines.len(),
-            vision_parts.len()
+            blocks.thread.len(),
+            blocks.resource_lines.len(),
+            blocks.vision_parts.len()
         );
 
         // 更早记忆参考：仅在已压缩时使用（压缩成果里没有的延续性线索）
-        // ⚠️ `MutexGuard` 不能跨 await（future 会丢 Send）：先取快照再 drop
-        let compacted = deps
-            .compaction
-            .lock()
-            .map(|s| (s.summary.is_some(), s.memory_id.clone()))
-            .unwrap_or((false, None));
+        // 压缩槽位由图级运行时持有，这里只取一份快照（不持锁跨 await）。
+        let slot = deps.runtime.compaction_slot();
+        let compacted = (slot.summary.is_some(), slot.memory_id);
         let past_memories = if compacted.0 {
             deps.domain
                 .query_past_memories(ctx.clone(), &deps.agent.po.id, compacted.1.as_deref())
@@ -337,9 +328,10 @@ impl ContextProvider for BusinessProvider {
         };
 
         Ok(json!({
-            "message_thread": thread,
-            "resource_lines": resource_lines,
-            "vision_parts": vision_parts,
+            "message_thread": blocks.thread,
+            "resource_lines": blocks.resource_lines,
+            "vision_parts": blocks.vision_parts,
+            "injected_vision_parts": blocks.injected_vision_parts,
             "past_memories": past_memories,
         }))
     }
@@ -391,10 +383,18 @@ pub(crate) fn build_deps_with_backend(
         shadow,
     } = input;
     let trace_id = trace.id.clone();
-    let inbox = Arc::new(Mutex::new(InboxState::new(InboxAnchor::from_message(
-        &agent.po.id,
-        &message,
-    ))));
+    let mut inbox_state = InboxState::new(InboxAnchor::from_message(&agent.po.id, &message));
+    // 注入预算按模型上下文容量占比派生一次，存进 InboxState 作为整个唤醒的
+    // 总账；三个挂点只读剩余值、用实际用量扣减，避免各自重算导致 3×5% 超额。
+    // 容量未配 ⇒ None（无上限）。
+    inbox_state.set_remaining_inbox_tokens(crate::pkg::text_budget::tokens_of(
+        super::super::think_loop::context_overflow_threshold(&agent),
+        crate::pkg::text_budget::share::INBOX_BATCH_BP,
+    ));
+    let runtime = Arc::new(super::super::graph_runtime::GraphRuntime::new(
+        Arc::new(Mutex::new(inbox_state)),
+        crate::service::domain::runtime::RoundCollected::shared(),
+    ));
     let (think_runtime, policy) = super::super::awakening::init_think_runtime_and_policy(
         &agent,
         common::enums::ThinkingScene::Awaken,
@@ -412,13 +412,9 @@ pub(crate) fn build_deps_with_backend(
         policy,
         progress: ThinkLoopProgress::new(),
         trace: Mutex::new(trace),
-        compaction: Mutex::new(CompactionSlot::default()),
-        retrieval: Mutex::new(RetrievalState::default()),
-        retrieve_searches: AtomicUsize::new(0),
-        inbox,
-        collected: crate::service::domain::runtime::RoundCollected::shared(),
-        intent_seed: Mutex::new(None),
+        runtime,
         shadow,
+        intent_shift_dal: None,
         started_at: Instant::now(),
     })
 }

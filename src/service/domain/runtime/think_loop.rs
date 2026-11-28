@@ -330,16 +330,13 @@ impl RuntimeDomainImpl {
             thinking_intensity_offset,
             force_intensity,
             usage,
-            inbox,
-            collected,
+            runtime,
             silent,
         } = params;
 
         // 唤醒级用量：None = 本次循环独立计量（compact / intent / settle）
         let usage = usage.unwrap_or_else(super::types::WakeUsage::shared);
         let base = super::types::WakeUsage::snapshot(&usage);
-        // 唤醒级产出收集器：None = 本次循环自建（内部小循环），图结束即随 deps 回收
-        let collected = collected.unwrap_or_else(super::RoundCollected::shared);
 
         // brain 统一在此解析：四个场景取的都是 agent.brain，
         // 不必让每个调用点各自判空一遍「大脑未唤醒」。
@@ -673,8 +670,7 @@ impl RuntimeDomainImpl {
                     loop_start,
                     usage,
                     base,
-                    inbox,
-                    collected,
+                    runtime,
                     trace_sink: scope.clone(),
                     silent,
                 },

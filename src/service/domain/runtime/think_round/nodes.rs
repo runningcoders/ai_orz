@@ -19,7 +19,7 @@ use crate::pkg::think_path::{
     ActivationBudget, NodeId, NodeOutcome, NodeSignal, PhaseId, ThinkBus, ThinkNode,
 };
 use crate::service::domain::runtime::RuntimeToolExecution;
-use crate::service::domain::runtime::inbox::{MAX_INJECTIONS_PER_WAKE, collect as collect_inbox};
+use crate::service::domain::runtime::inbox::MAX_ABSORPTIONS_PER_WAKE;
 use crate::service::domain::runtime::think_loop::{
     ROUND_DIGEST_MAX_CONTENT, TOOL_NUDGE_AFTER_CONSECUTIVE_ROUNDS, is_recursive_settle_call,
     is_settle_queue_write, policy_exit, round_metrics,
@@ -131,7 +131,7 @@ pub(crate) fn build_nodes(deps: &Arc<RoundDeps>) -> Vec<Arc<dyn ThinkNode>> {
             Arc::clone(deps),
         )));
     }
-    if deps.inbox.is_some() {
+    if deps.runtime.is_some() {
         nodes.push(Arc::new(RoundNode::new(
             NODE_POLL,
             Role::Poll,
@@ -147,16 +147,14 @@ pub(crate) fn build_nodes(deps: &Arc<RoundDeps>) -> Vec<Arc<dyn ThinkNode>> {
 ///
 /// 只在轮边界注入；工具批量执行中途不插队（v1 约束）。
 async fn run_poll_round(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
-    let Some(inbox) = &deps.inbox else {
+    let Some(runtime) = &deps.runtime else {
         return Ok(continue_to_think());
     };
 
-    let (anchor, cursor, judged_ids, judge_ctx, injections, rounds_started) = {
-        let state = inbox
-            .lock()
-            .map_err(|_| err!(Internal, "inbox state lock poisoned"))?;
+    // 收件箱共享参数由运行总线统一取出；轮级状态仍在本图内读取。
+    let absorptions = runtime.inbox_absorptions()?;
+    let (judge_ctx, rounds_started) = {
         let round_state = lock(&deps.state)?;
-        let started = round_state.rounds_started;
         // 现场上下文在锁内组装：身份 + 场景 + 任务/项目/输入理解摘要 + 最近动作，
         // 让小脑能判断候选与「正在处理的那件事」的间接关联。
         let judge_ctx = crate::service::domain::runtime::inbox_relevance::build_judge_context(
@@ -164,72 +162,76 @@ async fn run_poll_round(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
             deps.scene,
             &round_state.messages,
         );
-        (
-            state.anchor().clone(),
-            state.cursor().clone(),
-            state.judged_ids().clone(),
-            judge_ctx,
-            state.injections(),
-            started,
-        )
+        (judge_ctx, round_state.rounds_started)
     };
 
-    // 注入批次封顶 & 剩余轮次检查：只剩最后一轮时不再注入，避免「听完没轮次回答」
-    if injections >= MAX_INJECTIONS_PER_WAKE || rounds_started >= deps.available_rounds {
+    // 吸收批次封顶（回 intent 与尾插共用） & 剩余轮次检查：
+    // 只剩最后一轮时不再注入，避免「听完没轮次回答」。
+    // 预算已归零时同样早退，避免白查库 + 白调小脑。
+    if absorptions >= MAX_ABSORPTIONS_PER_WAKE
+        || rounds_started >= deps.available_rounds
+        || runtime.inbox_remaining_tokens()? == Some(0)
+    {
         return Ok(continue_to_think());
     }
 
-    // 注入预算按模型上下文容量的占比派生（容量未配 ⇒ 不设预算）
-    let inbox_budget = crate::pkg::text_budget::tokens_of(
-        crate::service::domain::runtime::think_loop::context_overflow_threshold(&deps.agent),
-        crate::pkg::text_budget::share::INBOX_BATCH_BP,
-    );
+    // 剩余预算由运行总线持有，collect 返回本次实际用量后由总线扣回总账。
     // 优先用 Agent 携带的 Brain（日后绑定自己的小脑时链路自动跟随）；
     // Agent 尚未装配时退回本轮已唤醒的 Brain，二者通常同源。
     let brain = deps.agent.brain.as_ref().unwrap_or(&deps.brain);
-    let outcome = collect_inbox(
-        &deps.ctx,
-        &anchor,
-        &cursor,
-        &judged_ids,
-        &judge_ctx,
-        Some(brain),
-        inbox_budget,
-    )
-    .await?;
+    let outcome = runtime
+        .inbox_collect(&deps.ctx, &judge_ctx, Some(brain))
+        .await?;
 
-    // 先回写本批已判定 ID：即便本批没有可注入消息，也要让下批扫描窗口后移。
-    // 被拒的候选不会被游标越过，不回写就会每批重扫同一批头部、新消息永远进不来。
-    {
-        let mut state = inbox
-            .lock()
-            .map_err(|_| err!(Internal, "inbox state lock poisoned"))?;
-        state.note_judged(&outcome.judged);
-    }
+    // 先回写本批已判定 ID + 扣减实际用量：即便本批没有可注入消息，也要让下批
+    // 扫描窗口后移。被拒的候选不会被游标越过，不回写就会每批重扫同一批头部、
+    // 新消息永远进不来。`剩余 -= 实际用量` 让 poll_exit 接着用同一份预算。
+    runtime.inbox_record_judged(&outcome.judged, outcome.used_tokens)?;
 
     if outcome.injected.is_empty() {
         return Ok(continue_to_think());
     }
 
+    // 本批带图补充消息：把附件引用解析成视觉 part 后与文本一起尾插。
+    // ⚠️ 轮级图不经过 PrepareNode，若只记进 absorbed_attachment_ids 而尾插纯文本，
+    // 图片永远不会进模型请求（但消息已 advance ⇒ 被置 Processed ⇒ 不可恢复）。
+    let att_ids: Vec<String> = outcome
+        .injected
+        .iter()
+        .flat_map(|item| item.attachment_ids.iter().cloned())
+        .collect();
+    let (images, resource_lines) =
+        crate::service::domain::runtime::awakening::resolve_injected_images(&deps.ctx, &att_ids)
+            .await;
+
     {
         let mut state = lock(&deps.state)?;
         // 同一批只尾插一条用户消息：连续多条 user turn 在部分模型协议下
         // 会被合并/拒绝，且设计约定就是「带序号的一条」
-        let merged = outcome
+        let mut merged = outcome
             .injected
             .iter()
             .enumerate()
             .map(|(index, item)| item.numbered_text(index))
             .collect::<Vec<_>>()
             .join("\n\n");
-        state.messages.push(ChatMessage::user(merged));
+        // 非图片附件（PDF / 文本等）不会进视觉 part，必须把资源行并入文本，
+        // 否则轮级注入会让它们静默消失，模型只看到图看不到文件说明。
+        if !resource_lines.is_empty() {
+            merged.push_str("\n\n");
+            merged.push_str(&resource_lines.join("\n"));
+        }
+        // 与 PrepareNode 侧同口径：有图则同一条 UserMultimodal，不另起第二条。
+        // 这里只放本批附件图；锚点图由 PrepareNode 在 seed 里装配，不在此重复。
+        let message = if images.is_empty() {
+            ChatMessage::user(merged)
+        } else {
+            ChatMessage::user_multimodal(merged, images)
+        };
+        state.messages.push(message);
     }
 
-    let mut state = inbox
-        .lock()
-        .map_err(|_| err!(Internal, "inbox state lock poisoned"))?;
-    state.advance(&outcome.injected);
-    state.note_injection();
+    runtime.inbox_advance_round(&outcome.injected)?;
 
     Ok(continue_to_think())
 }
@@ -791,19 +793,18 @@ async fn run_dispatch(deps: &Arc<RoundDeps>) -> Result<NodeOutcome> {
                         // 查漏补缺（见 runtime::collected）。非产出型
                         // 工具返回空，零开销。
                         //
-                        // 写入 run 级收集器（`deps.collected`）而不是进程级表：
-                        // 它在进入图之前创建、随唤醒结果移交给消费侧，所有权一路显式。
+                        // 写入图级运行总线的收集器，而不是进程级表：它在进入图
+                        // 之前创建、随唤醒结果移交给消费侧，所有权一路显式。
+                        // 内部小循环（compact / intent / settle）无 runtime：其产出
+                        // 本就不作为交付物，跳过写入与原先「自建后丢弃」等价。
                         let produced = crate::service::domain::runtime::collected::collect_produced(
                             &tool.po.id,
                             &result.result,
                         );
-                        if !produced.is_empty() {
-                            match d.collected.lock() {
-                                Ok(mut collected) => collected.record_resources(produced),
-                                // 锁中毒时收集器仍可读：产出是业务数据，宁可带着
-                                // 可能不完整的清单继续，也不静默丢弃
-                                Err(poisoned) => poisoned.into_inner().record_resources(produced),
-                            }
+                        if !produced.is_empty()
+                            && let Some(runtime) = &d.runtime
+                        {
+                            runtime.record_resources(produced);
                         }
                     }
                     Err(e) => {

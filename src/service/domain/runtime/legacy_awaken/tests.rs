@@ -9,7 +9,7 @@ use super::discover_node::MAX_DISCOVERY_ROUNDS;
 use super::nodes::{EXIT_MAX_ROUNDS, map_think_result, sample_results};
 use super::poll_node::{NODE_POLL_EXIT, NODE_POLL_FRONT};
 use crate::pkg::think_path::ThinkPathBlueprint;
-use crate::service::domain::runtime::inbox::{MAX_INJECTIONS_PER_WAKE, MAX_INTENT_REWINDS};
+use crate::service::domain::runtime::inbox::MAX_ABSORPTIONS_PER_WAKE;
 use crate::service::domain::runtime::types::{ThinkLoopResult, WakeUsage};
 
 /// discover 轨迹行：同一 token 预算下 CJK 与拉丁留下**不同字符数**
@@ -124,21 +124,24 @@ fn loop_nodes_budget_is_explicitly_loosened() {
     // 改了蓝图而这里没改，测试照样绿，运行时却在别处静默停车。
     assert_eq!(
         budget_of("prepare"),
-        Some(MAX_LOOP_ROUNDS + MAX_INJECTIONS_PER_WAKE)
+        Some(MAX_LOOP_ROUNDS + MAX_ABSORPTIONS_PER_WAKE)
     );
     assert_eq!(
         budget_of("deliberate"),
-        Some(MAX_LOOP_ROUNDS + MAX_INJECTIONS_PER_WAKE)
+        Some(MAX_LOOP_ROUNDS + MAX_ABSORPTIONS_PER_WAKE)
     );
     assert_eq!(
         budget_of("compact"),
-        Some(MAX_LOOP_ROUNDS.saturating_sub(1) + MAX_INJECTIONS_PER_WAKE)
+        Some(MAX_LOOP_ROUNDS.saturating_sub(1) + MAX_ABSORPTIONS_PER_WAKE)
     );
-    assert_eq!(budget_of("intent"), Some(1 + MAX_INTENT_REWINDS));
-    assert_eq!(budget_of(NODE_POLL_FRONT), Some(1 + MAX_INTENT_REWINDS));
+    assert_eq!(budget_of("intent"), Some(1 + MAX_ABSORPTIONS_PER_WAKE));
+    assert_eq!(
+        budget_of(NODE_POLL_FRONT),
+        Some(1 + MAX_ABSORPTIONS_PER_WAKE)
+    );
     assert_eq!(
         budget_of(NODE_POLL_EXIT),
-        Some(1 + MAX_INTENT_REWINDS + MAX_INJECTIONS_PER_WAKE)
+        Some(1 + MAX_ABSORPTIONS_PER_WAKE)
     );
     assert_eq!(budget_of("consolidate"), Some(1));
 }
@@ -374,18 +377,18 @@ fn thinking_graph_blueprint_wires_full_loop() {
     };
     // 回环配对预算：N 轮再识别 = N 次新词回检索 + 1 次初始检索；discover 再多
     // 1 次激活留给软预算优雅退出（硬预算 = 软预算 + 1，见 blueprint.rs）
-    // 意图回退后 retrieve 会重跑，预算再叠加 MAX_INTENT_REWINDS
+    // 回 intent 后 retrieve 会重跑，预算再叠加 MAX_ABSORPTIONS_PER_WAKE
     assert_eq!(
         budget("retrieve"),
-        Some(MAX_DISCOVERY_ROUNDS + 1 + MAX_INTENT_REWINDS)
+        Some(MAX_DISCOVERY_ROUNDS + 1 + MAX_ABSORPTIONS_PER_WAKE)
     );
     assert_eq!(
         budget("discover"),
-        Some(MAX_DISCOVERY_ROUNDS + 1 + MAX_INTENT_REWINDS)
+        Some(MAX_DISCOVERY_ROUNDS + 1 + MAX_ABSORPTIONS_PER_WAKE)
     );
     assert_eq!(
         budget("prepare"),
-        Some(MAX_LOOP_ROUNDS + MAX_INJECTIONS_PER_WAKE)
+        Some(MAX_LOOP_ROUNDS + MAX_ABSORPTIONS_PER_WAKE)
     );
 }
 

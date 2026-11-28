@@ -13,9 +13,9 @@
 //! [`crate::models::produced_resource`]（不落在任一域，避免域间调用）。
 //!
 //! ```text
-//! dispatch 节点 ──collect_produced──▶ AwakenDeps.collected ──▶ AwakeningResult.collected
-//!                                                                    │
-//!                                      consumer：append_missing_resource_refs ◀──┘
+//! dispatch 节点 ──collect_produced──▶ GraphRuntime.record_resources ──▶ AwakeningResult.collected
+//!                                                                          │
+//!                                       consumer：append_missing_resource_refs ◀──┘
 //! ```
 //!
 //! 与 `delivery.rs::send_to_agent` 里基于 `attachment_ids` 声明清单的兜底是同一思路

@@ -14,12 +14,11 @@
 //! ```
 //!
 //! 三处新输入挂点（`poll_front` / `poll_exit`，轮级另有 `poll_round`）：
-//! - `poll_front` 在意图识别后、检索前收集同源新消息，能回退就让意图做增量修订
-//!   （`new_input` 回边，≤ `MAX_INTENT_REWINDS` 次），否则尾插进本轮 Prompt；
-//! - `poll_exit` 在 `final` / `direct` / `clarify` 落地前收集：尚未检索则回意图，
-//!   已检索/执行过则尾插后继续思考（`rethink` 回 `prepare`），上限
-//!   `MAX_INJECTIONS_PER_WAKE`；
-//! - 两处都无新输入才正常收尾，避免把已作废的直答/澄清发出去。
+//! - 每条新输入先经小脑二选一判据：回意图重识别（`new_input` 回边）或尾插追加
+//!   （`rethink` 回 `prepare`），与挂点位置无关；
+//! - 三个挂点共用同一个吸收预算 `MAX_ABSORPTIONS_PER_WAKE` —— 回 intent 与尾插
+//!   各记一次、同池封顶，不再分「回退次数」与「注入次数」两套计数；
+//! - 预算耗尽或无新输入才正常收尾，避免把已作废的直答/澄清发出去。
 //!
 //! 主链 =「意图识别 → 检索 → 装配 → 执行」，`deliberate` 之后按退出的不同分岔。
 //!
@@ -54,7 +53,7 @@ use super::poll_node::{
 };
 use crate::pkg::think_path::types::SIGNAL_DONE;
 use crate::pkg::think_path::{PathLimits, PhaseId, ThinkPathBlueprint, ThinkPathBuilder};
-use crate::service::domain::runtime::inbox::{MAX_INJECTIONS_PER_WAKE, MAX_INTENT_REWINDS};
+use crate::service::domain::runtime::inbox::MAX_ABSORPTIONS_PER_WAKE;
 use common::error::Result;
 
 /// 「溢出 → 压缩 → 重装配」回环的次数上限
@@ -146,20 +145,20 @@ pub fn legacy_awaken_blueprint() -> Result<ThinkPathBlueprint> {
     // `retrieve` / `discover` 是新发现回环的配对预算：N 轮再识别 = N 次新词
     // 回检索 + 1 次初始检索，discover 再多 1 次激活留给软预算优雅退出。
     //
-    // 新输入挂点的预算必须覆盖最坏组合：意图最多回退 `MAX_INTENT_REWINDS`
-    // 次，尾插转向最多 `MAX_INJECTIONS_PER_WAKE` 次；`poll_exit` 每回退/转向
-    // 后都会被再次进入，所以是 `1 + 回退 + 转向`。漏算任意一项都会在
-    // 「无合法候选」处报错收场，而不是优雅降级。
+    // 新输入挂点的预算按「最多吸收 `MAX_ABSORPTIONS_PER_WAKE` 次」推导：
+    // 每次吸收无论是回 intent 还是尾插，都会让下游节点再次进入。意图/挂点
+    // 是 `1 + 吸收次数`；轮级节点叠加各自的周期预算。漏算会在「无合法候选」
+    // 处报错收场，而不是优雅降级。
     for node in bp.nodes.iter_mut() {
         node.budget.max_activations = Some(match node.id.as_str() {
-            "intent" => 1 + MAX_INTENT_REWINDS,
-            NODE_POLL_FRONT => 1 + MAX_INTENT_REWINDS,
-            NODE_POLL_EXIT => 1 + MAX_INTENT_REWINDS + MAX_INJECTIONS_PER_WAKE,
-            "prepare" | "deliberate" => MAX_LOOP_ROUNDS + MAX_INJECTIONS_PER_WAKE,
-            "compact" => MAX_LOOP_ROUNDS.saturating_sub(1) + MAX_INJECTIONS_PER_WAKE,
-            "force_compact" => 1 + MAX_INTENT_REWINDS + MAX_INJECTIONS_PER_WAKE,
-            "retrieve" => MAX_DISCOVERY_ROUNDS + 1 + MAX_INTENT_REWINDS,
-            "discover" => MAX_DISCOVERY_ROUNDS + 1 + MAX_INTENT_REWINDS,
+            "intent" => 1 + MAX_ABSORPTIONS_PER_WAKE,
+            NODE_POLL_FRONT => 1 + MAX_ABSORPTIONS_PER_WAKE,
+            NODE_POLL_EXIT => 1 + MAX_ABSORPTIONS_PER_WAKE,
+            "prepare" | "deliberate" => MAX_LOOP_ROUNDS + MAX_ABSORPTIONS_PER_WAKE,
+            "compact" => MAX_LOOP_ROUNDS.saturating_sub(1) + MAX_ABSORPTIONS_PER_WAKE,
+            "force_compact" => 1 + MAX_ABSORPTIONS_PER_WAKE,
+            "retrieve" => MAX_DISCOVERY_ROUNDS + 1 + MAX_ABSORPTIONS_PER_WAKE,
+            "discover" => MAX_DISCOVERY_ROUNDS + 1 + MAX_ABSORPTIONS_PER_WAKE,
             _ => 1,
         });
     }

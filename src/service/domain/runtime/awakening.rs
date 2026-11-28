@@ -32,6 +32,9 @@ use std::sync::Arc;
 
 use super::think_loop::{build_policy_for_scene, memory_index_budget_for};
 
+/// 单条多模态用户消息的视觉 part 上限（锚点 + 本批注入消息共用）
+pub(crate) const MAX_IMAGES_PER_MESSAGE: usize = 4;
+
 // ==================== re-export（保持外部引用路径不变）====================
 // pub use 同时完成导入（供本文件内部使用）和 re-export（供外部 awakening::xxx 访问）
 
@@ -220,66 +223,45 @@ pub(super) async fn mount_ontology_lexicon(
 /// （优雅降级，与 mount_ontology_lexicon 同构：可选增强不阻断唤醒主流程）。
 ///
 /// 返回：(资源上下文文本详情行, 当前消息图像 parts)
-pub(super) async fn resolve_current_message_resources(
+/// 锚点 + 本批吸收消息的附件统一解析
+///
+/// 注入消息只带附件引用（`InjectedMessage::attachment_ids`），不携带 base64；
+/// 视觉 part 在这里一次性解析，共用同一张 4 张上限的白名单。返回的第三项是
+/// 「仅注入消息贡献的图像」，供 Phase 2 seed / 续跑追加去重合并（Phase 1 修订
+/// 可能已经把它们放进同一条多模态消息，重复追加会撑爆上限）。
+async fn resolve_message_resources(
     ctx: &RequestContext,
     message: &Message,
-) -> (Vec<String>, Vec<ImagePart>) {
+    extra_attachment_ids: &[String],
+) -> (Vec<String>, Vec<ImagePart>, Vec<ImagePart>) {
     let mut lines: Vec<String> = Vec::new();
     let mut images: Vec<ImagePart> = Vec::new();
 
     // 仅用户发来的当前消息注入（token 裁剪口径：历史/系统消息零图像 part）
     if message.from_role() != common::enums::MessageRole::User {
-        return (lines, images);
+        return (lines, images, Vec::new());
     }
 
     let att_ids = message.attachment_ref_ids();
     let (_, ref_arts) = message.resource_ref_ids();
-    if att_ids.is_empty() && ref_arts.is_empty() {
-        return (lines, images);
+    if att_ids.is_empty() && ref_arts.is_empty() && extra_attachment_ids.is_empty() {
+        return (lines, images, Vec::new());
     }
 
-    use base64::Engine as _;
-    let attachment_dal = crate::service::dal::attachment::dal();
     let artifact_dal = crate::service::dal::artifact::dal();
-
     for att_id in &att_ids {
-        let att = match attachment_dal.get_by_id(ctx.clone(), att_id).await {
-            Ok(Some(att)) => att,
-            Ok(None) => {
-                lines.push(format!("附件「{att_id}」：未找到（可能已删除）"));
-                continue;
-            }
-            Err(e) => {
-                log_warn!(ctx, "awaken", "预解析附件 {att_id} 查询失败，跳过: {e:?}");
-                continue;
-            }
-        };
-        let po = &att.po;
-        // 生效 MIME（泛型按文件名补齐）：决定了能否进 `image/*` 视觉白名单，
-        // 历史 octet-stream 附件靠这里自愈，不必重传。
-        let mime = po.effective_mime_type();
-        let size = po.size;
-        lines.push(attachment_resource_line(po, att_id));
-        if let Err(reason) = image_part_admission(&mime, size, images.len()) {
-            lines.push(format!("  （{reason}）"));
+        append_attachment_resource(ctx, att_id, "附件", &mut images, &mut lines).await;
+    }
+    let injected_from = images.len();
+    // 与锚点引用去重：同一附件既被锚点引用又被补充消息引用时只注入一次。
+    let mut seen: std::collections::HashSet<String> = att_ids.iter().cloned().collect();
+    for att_id in extra_attachment_ids {
+        if !seen.insert(att_id.clone()) {
             continue;
         }
-        match attachment_dal.read_file(&att) {
-            Ok(bytes) => {
-                images.push(ImagePart {
-                    mime_type: mime,
-                    data_base64: base64::engine::general_purpose::STANDARD.encode(&bytes),
-                });
-            }
-            Err(e) => {
-                log_warn!(
-                    ctx,
-                    "awaken",
-                    "预解析附件 {att_id} 读取失败，仅保留文本详情: {e:?}"
-                );
-            }
-        }
+        append_attachment_resource(ctx, att_id, "补充输入附件", &mut images, &mut lines).await;
     }
+    let injected_images = images[injected_from..].to_vec();
 
     for art_id in &ref_arts {
         match artifact_dal.find_by_id(ctx.clone(), art_id).await {
@@ -300,14 +282,97 @@ pub(super) async fn resolve_current_message_resources(
         }
     }
 
-    (lines, images)
+    (lines, images, injected_images)
+}
+
+/// 把一组附件引用解析成视觉 part（供轮级 `poll_round` 尾插带图补充消息用）。
+///
+/// 与锚点 / 补充输入共用 [`append_attachment_resource`]，4 张 / 10MB /
+/// `image/*` 白名单口径完全一致；同 ID 去重，超限项只留文本占位行。
+/// 轮级图无法访问 `PrepareNode` 的 messages，故在此把图片直接装进尾插的
+/// 那一条 `UserMultimodal`，避免图片只留在 `absorbed_attachment_ids` 里
+/// 却因没有 PrepareNode 重跑而永远不进模型请求。
+///
+/// 返回 `(视觉 parts, 资源行)`：资源行描述每个附件（名称 / id / mime / 大小，
+/// 以及未通过视觉准入的原因），调用方必须把它们并入尾插文本 —— 否则 PDF、
+/// 文本等非图片附件会在轮级注入时静默消失，模型只看到图片看不到文件说明。
+pub(crate) async fn resolve_injected_images(
+    ctx: &RequestContext,
+    attachment_ids: &[String],
+) -> (Vec<ImagePart>, Vec<String>) {
+    let mut images = Vec::new();
+    let mut lines = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for att_id in attachment_ids {
+        if seen.insert(att_id.clone()) {
+            append_attachment_resource(ctx, att_id, "补充输入附件", &mut images, &mut lines).await;
+        }
+    }
+    (images, lines)
+}
+
+/// 单条附件的资源行 + 视觉 part 解析（超限只留文本占位行，不中断）
+async fn append_attachment_resource(
+    ctx: &RequestContext,
+    att_id: &str,
+    label: &str,
+    images: &mut Vec<ImagePart>,
+    lines: &mut Vec<String>,
+) {
+    use base64::Engine as _;
+    let attachment_dal = crate::service::dal::attachment::dal();
+    let att = match attachment_dal.get_by_id(ctx.clone(), att_id).await {
+        Ok(Some(att)) => att,
+        Ok(None) => {
+            lines.push(format!("{label}「{att_id}」：未找到（可能已删除）"));
+            return;
+        }
+        Err(e) => {
+            log_warn!(ctx, "awaken", "预解析附件 {att_id} 查询失败，跳过: {e:?}");
+            return;
+        }
+    };
+    let po = &att.po;
+    // 生效 MIME（泛型按文件名补齐）：决定了能否进 `image/*` 视觉白名单，
+    // 历史 octet-stream 附件靠这里自愈，不必重传。
+    let mime = po.effective_mime_type();
+    let size = po.size;
+    lines.push(attachment_resource_line_with_label(po, att_id, label));
+    if let Err(reason) = image_part_admission(&mime, size, images.len()) {
+        lines.push(format!("  （{reason}）"));
+        return;
+    }
+    match attachment_dal.read_file(&att) {
+        Ok(bytes) => images.push(ImagePart {
+            mime_type: mime,
+            data_base64: base64::engine::general_purpose::STANDARD.encode(&bytes),
+        }),
+        Err(e) => {
+            log_warn!(
+                ctx,
+                "awaken",
+                "预解析附件 {att_id} 读取失败，仅保留文本详情: {e:?}"
+            );
+            lines.push("  （附件读取失败，未注入视觉输入）".to_string());
+        }
+    }
 }
 
 /// 附件资源行：名称 + id + mime + 大小；已写入摘要时附带截断预览，
 /// 让模型能直接判断是否需要重新识别/覆盖，无需额外查询。
+#[cfg(test)]
 fn attachment_resource_line(po: &crate::models::attachment::AttachmentPo, att_id: &str) -> String {
+    attachment_resource_line_with_label(po, att_id, "附件")
+}
+
+/// 带来源标签的资源行：锚点附件写「附件」，补充消息附件写「补充输入附件」
+fn attachment_resource_line_with_label(
+    po: &crate::models::attachment::AttachmentPo,
+    att_id: &str,
+    label: &str,
+) -> String {
     let mut line = format!(
-        "附件「{}」 (id: {att_id}) · {} · {} 字节",
+        "{label}「{}」 (id: {att_id}) · {} · {} 字节",
         po.original_name,
         po.effective_mime_type(),
         po.size
@@ -337,7 +402,6 @@ fn image_part_admission(
     current_images: usize,
 ) -> std::result::Result<(), String> {
     const MAX_IMAGE_BYTES: i64 = 10 * 1024 * 1024;
-    const MAX_IMAGES_PER_MESSAGE: usize = 4;
     if !mime.starts_with("image/") {
         return Err(format!("mime「{mime}」不在 image/* 白名单，未注入视觉输入"));
     }
@@ -642,6 +706,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                 super::intent_analyze::IntentPhaseInput {
                     revision: None,
                     seed: None,
+                    extra_attachment_ids: &[],
                 },
             )
             .await;
@@ -829,14 +894,26 @@ pub(crate) async fn fill_prompt_base(builder: &mut dyn PromptBuilder, input: Pro
     builder.message_thread(input.message_thread);
 }
 
-/// 当前消息业务上下文的唯一取数入口：消息链 + 资源行 + 视觉 parts
+/// 当前消息业务上下文：消息链 + 资源行 + 视觉 parts
 ///
 /// 意图识别与正式装配都从这里取同一份数据，避免两阶段各查一次、结果漂移。
-/// 三块都是可选增强：查询失败只记日志并降级为空，不阻断唤醒主流程。
+/// 四块都是可选增强：查询失败只记日志并降级为空，不阻断唤醒主流程。
+pub(crate) struct MessageBusinessBlocks {
+    pub thread: Vec<String>,
+    pub resource_lines: Vec<String>,
+    /// 锚点 + 本批吸收消息的视觉 parts（共用 4 张上限）
+    pub vision_parts: Vec<ImagePart>,
+    /// 仅本批吸收消息贡献的视觉 parts（Phase 2 seed / 续跑追加去重合并用）
+    pub injected_vision_parts: Vec<ImagePart>,
+}
+
+/// `extra_attachment_ids` 来自 [`super::inbox::InboxState::absorbed_attachment_ids`]：
+/// 同批带图补充消息的图片在这里合并进锚点的视觉输入，而不是另起一条多模态消息。
 pub(crate) async fn fetch_message_business_blocks(
     ctx: &RequestContext,
     message: &Message,
-) -> (Vec<String>, Vec<String>, Vec<ImagePart>) {
+    extra_attachment_ids: &[String],
+) -> MessageBusinessBlocks {
     let thread = match fetch_message_thread(ctx, message).await {
         Ok(items) => items,
         Err(e) => {
@@ -850,9 +927,15 @@ pub(crate) async fn fetch_message_business_blocks(
             Vec::new()
         }
     };
-    let (mut resource_lines, vision_parts) = resolve_current_message_resources(ctx, message).await;
+    let (mut resource_lines, vision_parts, injected_vision_parts) =
+        resolve_message_resources(ctx, message, extra_attachment_ids).await;
     append_attachment_description_guidance(message, &mut resource_lines);
-    (thread, resource_lines, vision_parts)
+    MessageBusinessBlocks {
+        thread,
+        resource_lines,
+        vision_parts,
+        injected_vision_parts,
+    }
 }
 
 /// 当前消息携带附件时，向资源上下文追加「写摘要」引导行

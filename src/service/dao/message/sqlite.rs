@@ -726,6 +726,16 @@ fn push_query_filters<'args>(
             .push(" AND message_type = ")
             .push_bind(message_type as i32);
     }
+    if let Some(types) = &query.message_type_in
+        && !types.is_empty()
+    {
+        builder.push(" AND message_type IN (");
+        let mut separated = builder.separated(", ");
+        for t in types {
+            separated.push_bind(*t as i32);
+        }
+        separated.push_unseparated(")");
+    }
     if query.file_type_is_null {
         builder.push(" AND file_type IS NULL");
     }

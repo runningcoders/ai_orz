@@ -316,8 +316,9 @@ fn cursor_uses_id_tie_break_and_limits() {
         })
         .collect();
     let batch = take_batch(&a, &cursor, rows, None);
-    assert_eq!(batch.len(), MAX_INJECTED_MESSAGES);
-    assert_eq!(batch.last().unwrap().id, "m4");
+    // 不设条数硬上限：7 条合法候选全收（容量只由 token 预算兜住）
+    assert_eq!(batch.len(), 7);
+    assert_eq!(batch.last().unwrap().id, "m6");
 }
 
 #[test]
@@ -441,4 +442,103 @@ fn judged_ids_accumulate_deduped() {
     // 已判定 ID 与是否被吸收无关：不吸收的候选同样要排除，避免下批重扫
     state.advance(&[]);
     assert_eq!(state.judged_ids().len(), 3, "空批不得清掉已判定记录");
+}
+
+/// Text 锚点允许 Mixed + 附件引用的候选（正文仍是同一话题的补充输入），
+/// 但无附件的 Mixed / 旁路 file_type 图片仍必须拒绝。
+#[test]
+fn accepts_mixed_only_with_attachment_refs() {
+    let a = anchor(MessageRole::User, None, None, None, MessageType::Text);
+    let with_ref = message(
+        "m-mixed",
+        1001,
+        "sender-1",
+        MessageRole::User,
+        None,
+        None,
+        None,
+        MessageType::Mixed,
+        None,
+        "再看 [这张图](attachment:att-1)",
+    );
+    let bare_mixed = message(
+        "m-bare",
+        1001,
+        "sender-1",
+        MessageRole::User,
+        None,
+        None,
+        None,
+        MessageType::Mixed,
+        None,
+        "另一种协议类型",
+    );
+    assert!(accepts(&a, &with_ref));
+    assert!(!accepts(&a, &bare_mixed));
+}
+
+/// 吸收批次携带的附件引用跨 pending_turn / revision 消费后仍留在收件箱状态里
+#[test]
+fn absorbed_attachment_ids_survive_text_consumption() {
+    let mut state = InboxState::new(anchor(
+        MessageRole::User,
+        None,
+        None,
+        None,
+        MessageType::Text,
+    ));
+    let batch = vec![
+        InjectedMessage {
+            id: "m1".to_string(),
+            created_at: 1001,
+            content: "图 1".to_string(),
+            attachment_ids: vec!["att-1".to_string()],
+        },
+        InjectedMessage {
+            id: "m2".to_string(),
+            created_at: 1002,
+            content: "图 2".to_string(),
+            attachment_ids: vec!["att-1".to_string(), "att-2".to_string()],
+        },
+    ];
+    state.advance(&batch);
+    state.set_pending_turn(batch.clone());
+    let _ = state.pending_turn_texts();
+    state.clear_pending_turn();
+    assert!(state.pending_turn_texts().is_empty());
+    assert_eq!(
+        state.absorbed_attachment_ids(),
+        &["att-1".to_string(), "att-2".to_string()],
+        "文本批已消费，但附件引用仍须供视觉装配使用"
+    );
+}
+
+/// 预算总账：剩余值按「实际用量」扣减，None（无上限）扣减后仍是 None
+#[test]
+fn budget_ledger_spends_actual_usage_and_keeps_unlimited() {
+    let mut state = InboxState::new(anchor(
+        MessageRole::User,
+        None,
+        None,
+        None,
+        MessageType::Text,
+    ));
+    assert_eq!(state.remaining_inbox_tokens(), None, "默认无上限");
+    state.spend_inbox_tokens(50);
+    assert_eq!(
+        state.remaining_inbox_tokens(),
+        None,
+        "无上限扣减后不得突变出上限"
+    );
+
+    state.set_remaining_inbox_tokens(Some(120));
+    assert_eq!(state.remaining_inbox_tokens(), Some(120));
+    state.spend_inbox_tokens(45);
+    assert_eq!(state.remaining_inbox_tokens(), Some(75), "剩余 -= 实际用量");
+    state.spend_inbox_tokens(100);
+    assert_eq!(
+        state.remaining_inbox_tokens(),
+        Some(0),
+        "下限截到 0，不溢出"
+    );
 }

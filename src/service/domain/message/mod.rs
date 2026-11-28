@@ -340,7 +340,7 @@ pub struct SendToAgentCommand<'a> {
     /// 「只传数组、正文漏写引用」的调用方兜底补引用。正文含资源引用时消息类型
     /// 由 `Text` 归一为 `Mixed`（`AgentNotify` 等语义类型不升级）。
     /// 这样一条图文发送只产生一条消息、只唤醒一次 Agent，唤醒侧
-    /// `resolve_current_message_resources` 能在同一轮解析出图片 / 文件内容。
+    /// `resolve_message_resources` 能在同一轮解析出图片 / 文件内容。
     pub attachment_ids: Option<&'a [String]>,
     /// 消息类型（默认 Text，系统通知可指定 TaskDispatchNotification 等）
     pub message_type: common::enums::message::MessageType,

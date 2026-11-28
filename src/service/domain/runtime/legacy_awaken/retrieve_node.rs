@@ -4,7 +4,7 @@
 //! 搜索，且共用同一份意图关键词；向量路的查询 embedding 由 DAL 内部生成（属
 //! 检索基础设施，失败只降级为纯关键词）。图谱结构走一跳 SQL 扩展。可选的
 //! 「小脑精选」是唯一会做判断的一环
-//! （开关关闭时完全不发）。输入 = `bus[Intent]` + `deps.retrieval`（visited 差集），
+//! （开关关闭时完全不发）。输入 = `bus[Intent]` + 运行时 visited 差集，
 //! 输出 = `bus[Knowledge]` 的 [`RetrievalPack`]。空词 / 零命中都是合法结果
 //! （照常 Done）：检索是增强，不是闸门。
 //!
@@ -25,7 +25,7 @@
 //! 取前 [`METHOD_SKILLS_TOP_K`]」，`thinking_method` 只作召回序里的优先项，
 //! 不作硬过滤（design §3.1：`category=thinking_method` 优先）。
 
-use super::context::{AwakenDeps, RetrievalPack, read_bus};
+use super::context::{AwakenDeps, NodeBase, RetrievalPack, read_bus};
 use crate::models::memory::{Memory, MemoryIndexTier, MemoryPo};
 use crate::models::skill::SkillPo;
 use crate::pkg::RequestContext;
@@ -45,7 +45,6 @@ use common::api::PaginationParams;
 use common::enums::{MemoryType, SkillStatus};
 use common::error::Result;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 
 /// 节点 id：蓝图声明、runner 注册、轨迹指纹三处共用的同一真相
 pub(crate) const NODE_RETRIEVE: &str = "retrieve";
@@ -513,7 +512,7 @@ fn split_by_recall_order(entities: Vec<Memory>, keep: usize) -> RerankOutcome {
 /// 既传给排序形态作保留上限，也用于降级截断。两路共用一个函数但**不共用预算**，
 /// 否则短期记忆精选后能塞回 5 条。
 async fn rerank_if_enabled(
-    deps: &AwakenDeps,
+    input: &dyn RetrieveNodeInput,
     question: &str,
     memories: Vec<Memory>,
     keep: usize,
@@ -526,10 +525,14 @@ async fn rerank_if_enabled(
         Option<Vec<Memory>>,
         Option<&'static str>,
         Option<u64>,
-    ) = match deps.agent.brain.as_ref() {
+    ) = match input.agent().brain.as_ref() {
         Some(brain) => {
             let (ranked, latency_ms) = super::memory_relevance::rank_with_default_dao(
-                &deps.ctx, brain, question, &entities, keep,
+                input.ctx(),
+                brain,
+                question,
+                &entities,
+                keep,
             )
             .await;
             (ranked, Some(super::memory_relevance::SCENE), latency_ms)
@@ -538,7 +541,7 @@ async fn rerank_if_enabled(
     };
     // 小脑留痕：精选是增强，没出结论时也要能看见「这次是靠老路径兜的」
     if let Some(scene) = rerank_scene {
-        deps.trace_sink().cerebellum(
+        input.trace_sink().cerebellum(
             crate::service::domain::runtime::think_trace::ThinkTraceCerebellum {
                 scene: scene.to_string(),
                 decision: if ranked.is_some() {
@@ -610,16 +613,20 @@ fn graph_seeds(selected: &[Memory], rest: &[Memory]) -> Vec<String> {
 /// `traverse_graph` 做一次批量 SQL 扩展（成本极低），只取边与邻居名字。
 ///
 /// 失败降级为空扩展：检索是增强，不是闸门。
-async fn expand_graph(deps: &AwakenDeps, selected: &[Memory], rest: &[Memory]) -> GraphExpansion {
+async fn expand_graph(
+    input: &dyn RetrieveNodeInput,
+    selected: &[Memory],
+    rest: &[Memory],
+) -> GraphExpansion {
     let seeds = graph_seeds(selected, rest);
     if seeds.is_empty() {
         return GraphExpansion::default();
     }
 
-    let expanded = match deps
-        .domain
+    let expanded = match input
+        .domain()
         .traverse_graph(
-            deps.ctx.clone(),
+            input.ctx().clone(),
             &seeds,
             GRAPH_MAX_DEPTH,
             GRAPH_MAX_BREADTH,
@@ -633,7 +640,7 @@ async fn expand_graph(deps: &AwakenDeps, selected: &[Memory], rest: &[Memory]) -
         Ok(v) => v,
         Err(e) => {
             crate::log_warn!(
-                &deps.ctx,
+                &input.ctx(),
                 "legacy_awaken",
                 "graph expansion degraded to keyword hits: seeds={}, error={}",
                 seeds.len(),
@@ -668,7 +675,7 @@ async fn expand_graph(deps: &AwakenDeps, selected: &[Memory], rest: &[Memory]) -
     }
 
     crate::log_info!(
-        &deps.ctx,
+        &input.ctx(),
         "legacy_awaken",
         "graph expansion done, seeds={}, relations={}, neighbors={}",
         seeds.len(),
@@ -701,12 +708,41 @@ fn write_pack(bus: &mut ThinkBus, pack: &RetrievalPack) -> Result<()> {
 
 #[derive(Debug)]
 pub struct RetrieveNode {
-    deps: Arc<AwakenDeps>,
+    input: Arc<dyn RetrieveNodeInput>,
 }
 
 impl RetrieveNode {
-    pub fn new(deps: Arc<AwakenDeps>) -> Self {
-        Self { deps }
+    pub fn new(input: Arc<dyn RetrieveNodeInput>) -> Self {
+        Self { input }
+    }
+}
+
+/// `RetrieveNode` 对图输入的能力声明（节点侧定义）
+///
+/// 检索是纯 I/O 增强：只需要请求上下文/Agent（`NodeBase`）、图级检索状态、
+/// 记忆检索领域服务与轨迹信封。图负责把这些能力适配进来。
+pub(crate) trait RetrieveNodeInput: NodeBase {
+    /// 图级检索状态：已查词 / 检索次数（差集与计数都落在这里）
+    fn runtime(&self) -> &crate::service::domain::runtime::graph_runtime::GraphRuntime;
+
+    /// 轨迹信封（小脑留痕）
+    fn trace_sink(&self) -> crate::service::domain::runtime::think_trace::TraceSink;
+
+    /// 记忆检索领域服务（search / traverse_graph）
+    fn domain(&self) -> &crate::service::domain::runtime::RuntimeDomainImpl;
+}
+
+impl RetrieveNodeInput for AwakenDeps {
+    fn runtime(&self) -> &crate::service::domain::runtime::graph_runtime::GraphRuntime {
+        &self.runtime
+    }
+
+    fn trace_sink(&self) -> crate::service::domain::runtime::think_trace::TraceSink {
+        AwakenDeps::trace_sink(self)
+    }
+
+    fn domain(&self) -> &crate::service::domain::runtime::RuntimeDomainImpl {
+        &self.domain
     }
 }
 
@@ -727,7 +763,7 @@ impl ThinkNode for RetrieveNode {
     fn contract(&self) -> NodeContract {
         NodeContract {
             requires: vec![],
-            // 只声明 Intent：queried_terms 走 deps.retrieval 状态槽位，
+            // 只声明 Intent：queried_terms 走运行时检索状态，
             // 不在总线契约里（它是链路级累计状态，不是节点间数据流）
             reads: vec![ContextKey::Intent],
             writes: vec![ContextKey::Knowledge],
@@ -735,18 +771,14 @@ impl ThinkNode for RetrieveNode {
     }
 
     async fn run(&self, bus: &mut ThinkBus) -> Result<NodeOutcome> {
-        let deps = &self.deps;
+        let input = &self.input;
 
         // 1. 读意图产物：分区缺失 / 解码失败按空结构继续（intent 节点降级路径的下游）
         let ia: IntentAnalysis =
             read_bus::<IntentAnalysis>(bus, ContextKey::Intent).unwrap_or_default();
 
-        // 2. 快照后立刻放锁：MutexGuard 不跨 await（防死锁，照 BusinessProvider 的先例）
-        let queried_snapshot = deps
-            .retrieval
-            .lock()
-            .map(|s| s.queried_terms.clone())
-            .unwrap_or_else(|poisoned| poisoned.into_inner().queried_terms.clone());
+        // 2. 从图级运行时取已检索词快照（差集输入）
+        let queried_snapshot = input.runtime().queried_terms();
 
         // 3. 候选词 = intent 关键词 + discover 回环写入的新词（design §3.2：retrieve
         //    的输入是「IntentAnalysis.key_terms **或 discover 新词**」）。
@@ -771,10 +803,10 @@ impl ThinkNode for RetrieveNode {
                 prior_thinking_summary: prior,
             };
             crate::log_info!(
-                &deps.ctx,
+                &input.ctx(),
                 "legacy_awaken",
                 "retrieve node short-circuit (no new terms), agent_id={}, key_terms={}",
-                deps.agent.po.id,
+                input.agent().po.id,
                 ia.key_terms.len()
             );
             write_pack(bus, &pack)?;
@@ -785,7 +817,7 @@ impl ThinkNode for RetrieveNode {
         //     才算一次真检索。⚠️ 与 `queried_terms` 分开记（一个记词、一个记次数）：
         //     「第二次进入有没有再查」只能看次数，看 pack 形态会假绿——短路的空 pack
         //     与「查了但零命中」的空 pack 无法区分。
-        deps.retrieve_searches.fetch_add(1, Ordering::SeqCst);
+        input.runtime().note_retrieve_search();
 
         // 4. 分两路召回：长期知识图谱（主）+ 短期记忆（少量补充）
         //
@@ -796,34 +828,34 @@ impl ThinkNode for RetrieveNode {
 
         // 4a. 长期知识节点：宽召回 → 精选（入选全文 / 其余索引）→ 一跳图谱扩展
         //     （主召回不再带关系边，图谱结构全部由这次扩展补上）
-        let long_term = match deps
-            .domain
-            .search(deps.ctx.clone(), long_term_search(&keyword, width))
+        let long_term = match input
+            .domain()
+            .search(input.ctx().clone(), long_term_search(&keyword, width))
             .await
         {
-            Ok(nodes) => rerank_if_enabled(deps, &keyword, nodes, KNOWLEDGE_TOP_K).await,
+            Ok(nodes) => rerank_if_enabled(input.as_ref(), &keyword, nodes, KNOWLEDGE_TOP_K).await,
             Err(e) => {
                 crate::log_error!(
-                    &deps.ctx,
+                    &input.ctx(),
                     "legacy_awaken",
                     "long-term knowledge search degraded to empty: agent_id={}, error={}",
-                    deps.agent.po.id,
+                    input.agent().po.id,
                     e
                 );
                 RerankOutcome::default()
             }
         };
         // 种子必须覆盖 selected + rest：索引行里的知识节点同样要带出自己的边
-        let graph = expand_graph(deps, &long_term.selected, &long_term.rest).await;
+        let graph = expand_graph(input.as_ref(), &long_term.selected, &long_term.rest).await;
 
         // 4b. 短期记忆：独立宽召回 20 条 → 同形态精选（keep=3）。
         //     先按 PO 收一道口（防止 DAL 未来放宽类型语义时把别的实体混进
         //     候选池占选项位）；无小脑 / 开关关闭 / 决策降级时按召回序
         //     前 3 条入选，其余全部留作 [索引] 行。
-        let short_term = match deps
-            .domain
+        let short_term = match input
+            .domain()
             .search(
-                deps.ctx.clone(),
+                input.ctx().clone(),
                 short_term_search(&keyword, SHORT_TERM_RECALL_WIDTH),
             )
             .await
@@ -833,14 +865,14 @@ impl ThinkNode for RetrieveNode {
                     .into_iter()
                     .filter(|m| matches!(&m.po, MemoryPo::ShortTerm(_)))
                     .collect();
-                rerank_if_enabled(deps, &keyword, candidates, SHORT_TERM_TOP_K).await
+                rerank_if_enabled(input.as_ref(), &keyword, candidates, SHORT_TERM_TOP_K).await
             }
             Err(e) => {
                 crate::log_error!(
-                    &deps.ctx,
+                    &input.ctx(),
                     "legacy_awaken",
                     "short-term memory recall degraded to empty: agent_id={}, error={}",
-                    deps.agent.po.id,
+                    input.agent().po.id,
                     e
                 );
                 RerankOutcome::default()
@@ -855,7 +887,7 @@ impl ThinkNode for RetrieveNode {
         let mut rest = long_term.rest;
         rest.extend(short_term.rest);
         // 索引行摘要预算：与其它摘要消费者共用 `share::SNIPPET_BP`（容量未配 ⇒ 不截）
-        let index_snippet_tokens = deps.agent.brain.as_ref().and_then(|brain| {
+        let index_snippet_tokens = input.agent().brain.as_ref().and_then(|brain| {
             cerebellum_context::snippet_budget(brain, cerebellum_context::share::SNIPPET_BP)
         });
         let knowledge_hits = build_knowledge_lines(
@@ -873,16 +905,16 @@ impl ThinkNode for RetrieveNode {
         // 重叠重排会把最相关的那条挤掉。
         // ⚠️ 只有真的要排序才进小脑（[`should_rerank_skills`]）：只有一个技能、
         // 或本 run 没装配小脑时，连零调用请求都不发，也不写 fallback 留痕。
-        let candidates = recall_method_skills(&deps.ctx, &keyword).await;
-        let brain = deps
-            .agent
+        let candidates = recall_method_skills(input.ctx(), &keyword).await;
+        let brain = input
+            .agent()
             .brain
             .as_ref()
             .filter(|b| should_rerank_skills(candidates.len(), b.cerebellum.as_ref()));
 
         let ranked = if let Some(brain) = brain {
             let (ranked, latency_ms, reason) = super::skill_relevance::rank_with_default_dao(
-                &deps.ctx,
+                input.ctx(),
                 brain,
                 &keyword,
                 &candidates,
@@ -892,7 +924,7 @@ impl ThinkNode for RetrieveNode {
             // 小脑留痕：有没有出结论都要能看见，且降级原因必须分列 ——
             // 把「没发请求 / 配额耗尽 / 调用失败 / 答案不可用」一律折叠成
             // no_usable_answer，看板上就只能看到一片「无可用答案」。
-            deps.trace_sink().cerebellum(
+            input.trace_sink().cerebellum(
                 crate::service::domain::runtime::think_trace::ThinkTraceCerebellum {
                     scene: super::skill_relevance::SCENE.to_string(),
                     decision: if ranked.is_some() {
@@ -910,12 +942,13 @@ impl ThinkNode for RetrieveNode {
             ranked
         } else {
             crate::log_info!(
-                &deps.ctx,
+                &input.ctx(),
                 "legacy_awaken",
                 "skill rerank skipped, use recall order directly: agent_id={}, candidates={}, cerebellum={}",
-                deps.agent.po.id,
+                input.agent().po.id,
                 candidates.len(),
-                deps.agent
+                input
+                    .agent()
                     .brain
                     .as_ref()
                     .is_some_and(|b| b.cerebellum.is_some())
@@ -929,17 +962,17 @@ impl ThinkNode for RetrieveNode {
         };
 
         crate::log_info!(
-            &deps.ctx,
+            &input.ctx(),
             "legacy_awaken",
             "retrieve node done, agent_id={}, new_terms={}, long_term={}, short_term={}, index={}, knowledge_hits={}, method_skills={}, searches={}",
-            deps.agent.po.id,
+            input.agent().po.id,
             new_terms.len(),
             long_term_len,
             short_term_len,
             index_len,
             knowledge_hits.len(),
             method_skills.len(),
-            deps.retrieve_searches.load(Ordering::SeqCst)
+            input.runtime().retrieve_search_count()
         );
 
         // 6. 写总线 + 累积 visited（discover 回环下轮差集的输入）
@@ -954,12 +987,7 @@ impl ThinkNode for RetrieveNode {
         };
         write_pack(bus, &pack)?;
 
-        // 锁中毒自愈：状态槽位只是记账，拿旧值继续比丢更新更接近正确
-        let mut state = match deps.retrieval.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        state.queried_terms.extend(new_terms);
+        input.runtime().record_queried_terms(new_terms);
 
         Ok(NodeOutcome::new(NodeSignal::Done))
     }

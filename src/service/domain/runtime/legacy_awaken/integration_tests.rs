@@ -33,11 +33,15 @@ use crate::models::file::FileMeta;
 use crate::models::memory::MemoryTrace;
 use crate::models::message::Message;
 use crate::models::model_provider::ModelProviderPo;
+use crate::pkg::policy::decision::{DecisionAnswers, DecisionRequest, DecisionValue};
 use crate::pkg::think_path::{ContextKey, LoadDepth, NodeSignal, ThinkBus, ThinkNode};
+use crate::service::dal::brain::{BrainDal, DecisionOutcome};
 use crate::service::domain::runtime::compaction::CompactOutcome;
-use crate::service::domain::runtime::inbox::MAX_INJECTIONS_PER_WAKE;
+use crate::service::domain::runtime::inbox::MAX_ABSORPTIONS_PER_WAKE;
+use crate::service::domain::runtime::inbox_intent_shift::QUESTION_ID;
 use crate::service::domain::runtime::types::{IntentAnalysis, ThinkLoopResult, ThinkingOptions};
 use async_trait::async_trait;
+use common::api::cerebellum::CerebellumUsage;
 use common::enums::{AgentStatus, MessageRole, MessageType, ModelCapability, ProviderType};
 use common::error::{Result, err};
 use sqlx::SqlitePool;
@@ -492,20 +496,18 @@ async fn happy_path_runs_intent_retrieve_deliberate(pool: SqlitePool) {
     assert_eq!(outcome.raw_output, "done");
     assert_eq!(backend.intent_calls.load(Ordering::SeqCst), 1);
     // visited 记账证明 retrieve 真查了词（而非空意图短路）
-    let queried = deps
-        .retrieval
-        .lock()
-        .map(|s| s.queried_terms.clone())
-        .unwrap_or_default();
+    let queried = deps.runtime.queried_terms();
     assert_eq!(queried, vec!["测试".to_string()]);
 }
 
-/// 思考中收到同发送者的新消息：`poll_front` 收集并回退做意图增量修订
+/// 思考中收到同发送者的新消息：`poll_front` 收集并吸收
 ///
-/// 护栏意义：新输入必须被当前唤醒吸收（而不是并发开第二次唤醒），
-/// 且成功后 `injected_ids` 回传消费者批量置 `Processed`。
+/// 本例 Agent 未配小脑 ⇒ 意图二选一判据降级为 `supplement`，新消息尾插进当前
+/// Prompt（不回 intent）。护栏意义：新输入必须被当前唤醒吸收（而不是并发开
+/// 第二次唤醒），成功后 `injected_ids` 回传消费者批量置 `Processed`。
+/// `reinterpret` → 回 intent 的分支由 `inbox_intent_shift` 单测覆盖。
 #[sqlx::test]
-async fn poll_front_absorbs_same_sender_and_rewinds_intent(pool: SqlitePool) {
+async fn poll_front_absorbs_same_sender_and_appends_without_cerebellum(pool: SqlitePool) {
     let ctx = init_env(pool);
     let backend = ScriptedBackend::new(vec![final_result("done")]).with_intents(vec![
         IntentAnalysis {
@@ -534,24 +536,27 @@ async fn poll_front_absorbs_same_sender_and_rewinds_intent(pool: SqlitePool) {
         .await
         .expect("poll_front absorb must complete");
 
+    // 无小脑 ⇒ supplement 尾插，不回 intent（只有一次首轮意图识别）
     assert_eq!(
         outcome.fingerprint,
-        "intent#1>poll_front#1>intent#2>poll_front#2>retrieve#1>prepare#1>deliberate#1>poll_exit#1>consolidate#1"
+        "intent#1>poll_front#1>retrieve#1>prepare#1>deliberate#1>poll_exit#1>consolidate#1"
     );
     assert_eq!(outcome.injected_ids, vec![injected.po.id.clone()]);
     assert_eq!(
         backend.intent_calls.load(Ordering::SeqCst),
-        2,
-        "收集到新输入后应回退意图做一次增量修订"
+        1,
+        "无小脑时新输入尾插追加，不触发意图重识别"
     );
 }
 
-/// 直答落地前收到补充：`poll_exit` 回退意图，且旧直答不能再被发出
+/// 直答落地前收到补充（无小脑）：`poll_exit` 走 supplement 尾插 + rethink，
+/// 重装配后产出新回答，旧直答不再被发出
 ///
-/// 护栏意义：直答路径在总线上留了 `Artifacts`；如果回退时不清理，
-/// 后续路径一旦没有重新写产物，就会把已作废的直答原样发给用户。
+/// 护栏意义：直答路径在总线上留了 `Artifacts`；重装配路径一旦没重写产物，
+/// 就会把已作废的直答原样发给用户。reinterpret 回退分支由
+/// `poll_exit_reinterpret_rewinds_even_after_retrieve` 覆盖。
 #[sqlx::test]
-async fn poll_exit_rewinds_direct_and_drops_stale_answer(pool: SqlitePool) {
+async fn poll_exit_supplements_direct_and_drops_stale_answer_without_brain(pool: SqlitePool) {
     let ctx = init_env(pool);
     let backend = ScriptedBackend::new(vec![final_result("补充后的完整回答")]).with_intents(vec![
         IntentAnalysis {
@@ -580,18 +585,19 @@ async fn poll_exit_rewinds_direct_and_drops_stale_answer(pool: SqlitePool) {
         .await
         .expect("poll_exit rewind must complete");
 
+    // 无小脑 ⇒ supplement：poll_exit 走 rethink 回 prepare 重装配，不回 intent
     assert_eq!(
         outcome.fingerprint,
-        "intent#1>poll_exit#1>intent#2>poll_front#1>retrieve#1>prepare#1>deliberate#1>poll_exit#2>consolidate#1"
+        "intent#1>poll_exit#1>prepare#1>deliberate#1>poll_exit#2>consolidate#1"
     );
     assert_eq!(outcome.exit, EXIT_FINAL);
     assert_eq!(outcome.raw_output, "补充后的完整回答");
-    assert_ne!(outcome.raw_output, "旧的直答", "回退后不得复用旧直答产物");
+    assert_ne!(outcome.raw_output, "旧的直答", "重装配后不得复用旧直答产物");
     assert_eq!(outcome.injected_ids, vec![injected.po.id.clone()]);
     assert_eq!(
         backend.intent_calls.load(Ordering::SeqCst),
-        2,
-        "直答落地前的新输入必须触发一次意图增量修订"
+        1,
+        "无小脑时新输入尾插追加，不触发意图重识别"
     );
 
     // 补充消息此时仍为 Pending：状态提交属于消费者职责，图只负责回传 ID
@@ -712,24 +718,17 @@ async fn discovery_loop_retrieves_again(pool: SqlitePool) {
     assert_eq!(outcome.raw_output, "recovered after loop");
     assert_eq!(backend.discover_calls.load(Ordering::SeqCst), 1);
     // 回环新词被 retrieve 消费并记账（初始词 + 新线索各查一次）
-    let queried = deps
-        .retrieval
-        .lock()
-        .map(|s| s.queried_terms.clone())
-        .unwrap_or_default();
+    let queried = deps.runtime.queried_terms();
     assert_eq!(queried, vec!["初始词".to_string(), "新线索".to_string()]);
     // 检索发起次数：两次进入各发起一次（初始词一次、回环新词一次）。
     // 差值能挡住两类回归：①短路却仍发检索（>2）②一次进入分多趟查（>2）。
     assert_eq!(
-        deps.retrieve_searches.load(Ordering::SeqCst),
+        deps.runtime.retrieve_search_count(),
         2,
         "两次 retrieve 进入应各发起一次检索（已查词不重查、新词只查一次）"
     );
     assert_eq!(
-        deps.retrieval
-            .lock()
-            .map(|s| s.discovery_rounds)
-            .unwrap_or(0),
+        deps.runtime.discovery_rounds(),
         1,
         "new_findings 路径必须计一轮软预算"
     );
@@ -811,17 +810,10 @@ deliberate#2>discover#2>retrieve#3>prepare#3>deliberate#3>discover#3>force_compa
         );
     }
     // 两次 new_findings 各计一轮软预算；回环新词全部被 retrieve 消费记账
-    let queried = deps
-        .retrieval
-        .lock()
-        .map(|s| s.queried_terms.clone())
-        .unwrap_or_default();
+    let queried = deps.runtime.queried_terms();
     assert_eq!(queried, vec!["线索甲".to_string(), "线索乙".to_string()]);
     assert_eq!(
-        deps.retrieval
-            .lock()
-            .map(|s| s.discovery_rounds)
-            .unwrap_or(0),
+        deps.runtime.discovery_rounds(),
         2,
         "两次 new_findings 各计一轮软预算"
     );
@@ -944,9 +936,9 @@ async fn deliberation_error_propagates(pool: SqlitePool) {
 async fn loop_budget_exhaustion_errors_instead_of_returning_ok(pool: SqlitePool) {
     let ctx = init_env(pool);
     // 一路溢出：`prepare / deliberate` 各能出现
-    // `MAX_LOOP_ROUNDS + MAX_INJECTIONS_PER_WAKE` 次（新输入注入的预留额度），
+    // `MAX_LOOP_ROUNDS + MAX_ABSORPTIONS_PER_WAKE` 次（新输入吸收的预留额度），
     // `compact` 比之少一次。队列按新预算给足，下一次 prepare 无处可去时应中断。
-    let loop_capacity = MAX_LOOP_ROUNDS + MAX_INJECTIONS_PER_WAKE;
+    let loop_capacity = MAX_LOOP_ROUNDS + MAX_ABSORPTIONS_PER_WAKE;
     let backend = ScriptedBackend::new(
         (0..loop_capacity)
             .map(|_| ThinkLoopResult::ContextOverflow {
@@ -1004,7 +996,9 @@ async fn intent_node_writes_bus_and_degrades(pool: SqlitePool) {
     let ctx = init_env(pool);
     let deps = make_deps(ctx, Arc::new(FailingBackend));
 
-    let node = super::intent_node::IntentNode::new(Arc::clone(&deps));
+    let node = super::intent_node::IntentNode::new(
+        Arc::clone(&deps) as Arc<dyn super::intent_node::IntentNodeInput>
+    );
     let mut bus = ThinkBus::new();
     let outcome = node
         .run(&mut bus)
@@ -1038,12 +1032,11 @@ async fn retrieve_node_short_circuits_on_no_new_terms(pool: SqlitePool) {
         LoadDepth::Full,
         serde_json::to_value(&ia).expect("encode intent"),
     );
-    deps.retrieval
-        .lock()
-        .map(|mut s| s.queried_terms = vec!["已检索".to_string()])
-        .unwrap_or(());
+    deps.runtime.set_queried_terms(vec!["已检索".to_string()]);
 
-    let node = super::retrieve_node::RetrieveNode::new(Arc::clone(&deps));
+    let node = super::retrieve_node::RetrieveNode::new(
+        Arc::clone(&deps) as Arc<dyn super::retrieve_node::RetrieveNodeInput>
+    );
     let outcome = node
         .run(&mut bus)
         .await
@@ -1075,7 +1068,9 @@ async fn retrieve_node_records_new_terms_and_queries(pool: SqlitePool) {
         serde_json::to_value(&ia).expect("encode intent"),
     );
 
-    let node = super::retrieve_node::RetrieveNode::new(Arc::clone(&deps));
+    let node = super::retrieve_node::RetrieveNode::new(
+        Arc::clone(&deps) as Arc<dyn super::retrieve_node::RetrieveNodeInput>
+    );
     let outcome = node
         .run(&mut bus)
         .await
@@ -1089,11 +1084,7 @@ async fn retrieve_node_records_new_terms_and_queries(pool: SqlitePool) {
     assert!(pack.knowledge_hits.is_empty());
     assert!(pack.method_skills.is_empty());
     // visited 记账：同词下次差集为空 → 短路（上一条用例锁的行为）
-    let queried = deps
-        .retrieval
-        .lock()
-        .map(|s| s.queried_terms.clone())
-        .unwrap_or_default();
+    let queried = deps.runtime.queried_terms();
     assert_eq!(queried, vec!["新线索".to_string()]);
 }
 
@@ -1124,7 +1115,9 @@ async fn retrieve_second_pass_on_same_terms_issues_no_search(pool: SqlitePool) {
         key_terms: vec![original.clone()],
         ..Default::default()
     };
-    let node = super::retrieve_node::RetrieveNode::new(Arc::clone(&deps));
+    let node = super::retrieve_node::RetrieveNode::new(
+        Arc::clone(&deps) as Arc<dyn super::retrieve_node::RetrieveNodeInput>
+    );
 
     let mut first = ThinkBus::new();
     first.insert(
@@ -1135,18 +1128,14 @@ async fn retrieve_second_pass_on_same_terms_issues_no_search(pool: SqlitePool) {
     node.run(&mut first).await.expect("first retrieve pass");
 
     // ① 原文被登记进 run 级 visited，且确实发起过一次检索
-    let queried = deps
-        .retrieval
-        .lock()
-        .map(|s| s.queried_terms.clone())
-        .unwrap_or_default();
+    let queried = deps.runtime.queried_terms();
     assert_eq!(
         queried,
         vec![original.clone()],
         "跳过路径的整句原文必须登记进 queried_terms（与 intent 路径同一本账）"
     );
     assert_eq!(
-        deps.retrieve_searches.load(Ordering::SeqCst),
+        deps.runtime.retrieve_search_count(),
         1,
         "首进有新词 → 必须真发起一次检索"
     );
@@ -1161,15 +1150,11 @@ async fn retrieve_second_pass_on_same_terms_issues_no_search(pool: SqlitePool) {
     node.run(&mut second).await.expect("second retrieve pass");
 
     assert_eq!(
-        deps.retrieve_searches.load(Ordering::SeqCst),
+        deps.runtime.retrieve_search_count(),
         1,
         "第二次进入差集为空必须短路：检索发起次数增加即差集机制失效（回环会重复查同一批词）"
     );
-    let queried = deps
-        .retrieval
-        .lock()
-        .map(|s| s.queried_terms.clone())
-        .unwrap_or_default();
+    let queried = deps.runtime.queried_terms();
     assert_eq!(queried, vec![original], "短路路径不得重复登记已查词");
 }
 
@@ -1186,12 +1171,11 @@ async fn discover_node_yields_no_new_findings_when_budget_exhausted(pool: Sqlite
     // discover_calls 必须是 0 才算软预算真正生效
     let backend = ScriptedBackend::new(vec![]);
     let deps = make_deps(ctx, backend.clone());
-    deps.retrieval
-        .lock()
-        .map(|mut s| s.discovery_rounds = 2)
-        .unwrap_or(());
+    deps.runtime.set_discovery_rounds(2);
 
-    let node = super::discover_node::DiscoverNode::new(Arc::clone(&deps));
+    let node = super::discover_node::DiscoverNode::new(
+        Arc::clone(&deps) as Arc<dyn super::discover_node::DiscoverNodeInput>
+    );
     let mut bus = ThinkBus::new();
     let outcome = node
         .run(&mut bus)
@@ -1208,11 +1192,7 @@ async fn discover_node_yields_no_new_findings_when_budget_exhausted(pool: Sqlite
         "软预算尽时不得调模型"
     );
     // 退出不计轮次：状态原样（不像 new_findings 路径那样 +1）
-    let rounds = deps
-        .retrieval
-        .lock()
-        .map(|s| s.discovery_rounds)
-        .unwrap_or(0);
+    let rounds = deps.runtime.discovery_rounds();
     assert_eq!(rounds, 2);
 }
 
@@ -1229,10 +1209,7 @@ async fn discover_node_writes_pack_and_yields_new_findings(pool: SqlitePool) {
             .to_string(),
     ]);
     let deps = make_deps(ctx, backend.clone());
-    deps.retrieval
-        .lock()
-        .map(|mut s| s.queried_terms = vec!["已检索".to_string()])
-        .unwrap_or(());
+    deps.runtime.set_queried_terms(vec!["已检索".to_string()]);
 
     // 预置思考轨迹（Artifacts）：discover 的模型输入来自这里
     let artifacts = super::nodes::Artifacts {
@@ -1253,7 +1230,9 @@ async fn discover_node_writes_pack_and_yields_new_findings(pool: SqlitePool) {
         serde_json::to_value(&artifacts).expect("encode artifacts"),
     );
 
-    let node = super::discover_node::DiscoverNode::new(Arc::clone(&deps));
+    let node = super::discover_node::DiscoverNode::new(
+        Arc::clone(&deps) as Arc<dyn super::discover_node::DiscoverNodeInput>
+    );
     let outcome = node
         .run(&mut bus)
         .await
@@ -1275,11 +1254,7 @@ async fn discover_node_writes_pack_and_yields_new_findings(pool: SqlitePool) {
     assert!(pack.knowledge_hits.is_empty());
     assert!(pack.method_skills.is_empty());
     // 轮次记账：new_findings 才计 1（软预算的递增点）
-    let rounds = deps
-        .retrieval
-        .lock()
-        .map(|s| s.discovery_rounds)
-        .unwrap_or(0);
+    let rounds = deps.runtime.discovery_rounds();
     assert_eq!(rounds, 1);
 }
 
@@ -1315,12 +1290,11 @@ async fn retrieve_node_consumes_discovery_pack_terms(pool: SqlitePool) {
         LoadDepth::Full,
         serde_json::to_value(&ia).expect("encode intent"),
     );
-    deps.retrieval
-        .lock()
-        .map(|mut s| s.queried_terms = vec!["已查".to_string()])
-        .unwrap_or(());
+    deps.runtime.set_queried_terms(vec!["已查".to_string()]);
 
-    let node = super::retrieve_node::RetrieveNode::new(Arc::clone(&deps));
+    let node = super::retrieve_node::RetrieveNode::new(
+        Arc::clone(&deps) as Arc<dyn super::retrieve_node::RetrieveNodeInput>
+    );
     let outcome = node
         .run(&mut bus)
         .await
@@ -1337,10 +1311,207 @@ async fn retrieve_node_consumes_discovery_pack_terms(pool: SqlitePool) {
         Some("上一轮已整理三步方案")
     );
     // visited 记账：回环新词从此不再重复检索
-    let queried = deps
-        .retrieval
-        .lock()
-        .map(|s| s.queried_terms.clone())
-        .unwrap_or_default();
+    let queried = deps.runtime.queried_terms();
     assert!(queried.contains(&"回环新词".to_string()));
+}
+
+// ==================== 意图变更二选一判据（scripted DAL） ====================
+
+/// 只实现 decide、按剧本给出 reinterpret/supplement 的 DAL；其余方法本场景用不到
+struct IntentShiftDal {
+    verdict: DecisionOutcome,
+}
+
+impl IntentShiftDal {
+    fn reinterpret() -> Self {
+        Self {
+            verdict: DecisionOutcome {
+                answers: DecisionAnswers::new().with(
+                    QUESTION_ID,
+                    DecisionValue::Pick {
+                        chosen: "reinterpret".to_string(),
+                        confidence: 1.0,
+                        weights: Default::default(),
+                    },
+                ),
+                degraded: None,
+                latency_ms: 0,
+                usage: CerebellumUsage::default(),
+            },
+        }
+    }
+}
+
+#[async_trait]
+impl BrainDal for IntentShiftDal {
+    async fn decide(
+        &self,
+        _ctx: crate::pkg::RequestContext,
+        _brain: &Brain,
+        _requests: Vec<DecisionRequest>,
+    ) -> DecisionOutcome {
+        self.verdict.clone()
+    }
+    async fn wake_brain(
+        &self,
+        _ctx: crate::pkg::RequestContext,
+        _agent: &AgentPo,
+        _memories: Vec<crate::models::memory::Memory>,
+    ) -> Result<Brain> {
+        unimplemented!("not needed")
+    }
+    async fn test_connection(
+        &self,
+        _ctx: crate::pkg::RequestContext,
+        _provider: &crate::models::model_provider::ModelProvider,
+        _prompt: &str,
+    ) -> Result<String> {
+        unimplemented!("not needed")
+    }
+    async fn think(
+        &self,
+        _ctx: crate::pkg::RequestContext,
+        _brain: &Brain,
+        _messages: &[ChatMessage],
+        _tools: &[crate::models::cortex_types::ToolDescriptor],
+        _options: &crate::models::cortex_types::ModelCallOptions,
+    ) -> Result<crate::models::cortex_types::ThinkResult> {
+        unimplemented!("not needed")
+    }
+    async fn embed_entity(
+        &self,
+        _ctx: crate::pkg::RequestContext,
+        _entity: &dyn crate::models::vector::Vectorizable,
+    ) -> Result<Option<crate::models::vector::VectorIndexParams>> {
+        Ok(None)
+    }
+    async fn embed_text_for_search(
+        &self,
+        _ctx: crate::pkg::RequestContext,
+        _text: &str,
+    ) -> Result<Option<crate::models::vector::VectorIndexParams>> {
+        Ok(None)
+    }
+}
+
+/// 给 deps 注入 scripted 判据 DAL，并给 agent.brain 装一个 decision-capable 小脑
+/// （`inbox_intent_shift::decide` 会检查 cerebellum 与配额）
+fn with_intent_shift_dal(mut deps: Arc<AwakenDeps>, dal: Arc<dyn BrainDal>) -> Arc<AwakenDeps> {
+    {
+        let agent = Arc::get_mut(&mut Arc::get_mut(&mut deps).expect("deps 尚未被 clone").agent)
+            .expect("agent 尚未被 clone");
+        let provider = ModelProviderPo::new(
+            "cerebellum".to_string(),
+            ProviderType::Jev,
+            ModelCapability::Decision,
+            "m".to_string(),
+            "k".to_string(),
+            None,
+            None,
+            "t".to_string(),
+        );
+        agent.brain.as_mut().expect("agent 有 brain").cerebellum = Some(provider);
+    }
+    // 同一个替身同时注入运行时的小脑判定入口：inbox 相关性判定默认走
+    // `brain::dal()` 真实单例，不注入就会打真实模型（靠 base_url 残缺快速
+    // 失败才没超时）。ScriptedDAL 对相关性问题无 weights 答案 ⇒ fail-open
+    // 放行全部候选，正是这些用例期待的「补充消息被收集」。
+    let deps_mut = Arc::get_mut(&mut deps).expect("deps 尚未被 clone");
+    Arc::get_mut(&mut deps_mut.runtime)
+        .expect("runtime 尚未被 clone")
+        .set_judge_dal(Arc::clone(&dal));
+    deps_mut.intent_shift_dal = Some(dal);
+    deps
+}
+
+/// 小脑判定 reinterpret：`poll_front` 回 intent 做增量修订（与是否检索无关）
+#[sqlx::test]
+async fn poll_front_reinterpret_rewinds_intent_with_brain(pool: SqlitePool) {
+    let ctx = init_env(pool);
+    let backend = ScriptedBackend::new(vec![final_result("done")]).with_intents(vec![
+        IntentAnalysis {
+            key_terms: vec!["第一问".to_string()],
+            summary: "用户第一问".to_string(),
+            ..Default::default()
+        },
+        IntentAnalysis {
+            key_terms: vec!["新方向".to_string()],
+            summary: "用户改了意图".to_string(),
+            ..Default::default()
+        },
+    ]);
+    let deps = with_intent_shift_dal(
+        make_deps(ctx.clone(), backend.clone()),
+        Arc::new(IntentShiftDal::reinterpret()),
+    );
+    let mut injected = make_message("换个方向，别做原来那个了");
+    injected.po.to_id = deps.agent.po.id.clone();
+    injected.po.created_at = deps.message.po.created_at + 1;
+    crate::service::dal::message::dal()
+        .save_message(ctx, &injected)
+        .await
+        .expect("injected message should save");
+
+    let outcome = run_legacy_awaken(deps)
+        .await
+        .expect("reinterpret must complete");
+    assert_eq!(
+        outcome.fingerprint,
+        "intent#1>poll_front#1>intent#2>poll_front#2>retrieve#1>prepare#1>deliberate#1>poll_exit#1>consolidate#1"
+    );
+    assert_eq!(
+        backend.intent_calls.load(Ordering::SeqCst),
+        2,
+        "reinterpret 应触发意图增量修订"
+    );
+}
+
+/// 小脑判定 reinterpret：`poll_exit`（出口挂点）回 intent
+///
+/// 覆盖取消「已检索就不能回」的位置硬约束后，出口处的 reinterpret 仍能回 intent
+#[sqlx::test]
+async fn poll_exit_reinterpret_rewinds_intent(pool: SqlitePool) {
+    let ctx = init_env(pool);
+    let backend = ScriptedBackend::new(vec![final_result("补充后的完整回答")]).with_intents(vec![
+        IntentAnalysis {
+            // 首轮走直答短路：intent → poll_exit（跳过 poll_front），
+            // 这样新消息只在 poll_exit 被收集，才能真正测到「出口处 reinterpret」
+            intent_type: "Chat".to_string(),
+            direct_answer: "旧的直答".to_string(),
+            summary: "用户第一问".to_string(),
+            ..Default::default()
+        },
+        IntentAnalysis {
+            key_terms: vec!["新方向".to_string()],
+            summary: "用户改了意图".to_string(),
+            ..Default::default()
+        },
+    ]);
+    let deps = with_intent_shift_dal(
+        make_deps(ctx.clone(), backend.clone()),
+        Arc::new(IntentShiftDal::reinterpret()),
+    );
+    let mut injected = make_message("换方向：请重新梳理需求");
+    injected.po.to_id = deps.agent.po.id.clone();
+    injected.po.created_at = deps.message.po.created_at + 1;
+    crate::service::dal::message::dal()
+        .save_message(ctx.clone(), &injected)
+        .await
+        .expect("injected message should save");
+
+    let outcome = run_legacy_awaken(deps)
+        .await
+        .expect("reinterpret must complete");
+    // 关键：poll_exit（无论 direct 短路还是已检索）收到 reinterpret 都回 intent#2，
+    // 不再被「已检索就不能回」的位置硬约束挡住
+    assert!(
+        outcome.fingerprint.contains("poll_exit#1>intent#2"),
+        "poll_exit 的 reinterpret 必须回 intent，实际：{}",
+        outcome.fingerprint
+    );
+    assert_eq!(
+        backend.intent_calls.load(Ordering::SeqCst),
+        2,
+        "已检索后 reinterpret 仍触发意图重识别"
+    );
 }

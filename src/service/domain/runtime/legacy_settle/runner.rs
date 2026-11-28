@@ -55,9 +55,15 @@ pub async fn run_legacy_settle(deps: Arc<SettleDeps>) -> Result<LegacySettleOutc
     // ⚠️ 节点每次回环都要重新解析：`NodePool` 按 id 取 `Arc<dyn ThinkNode>`，
     // 三个节点实例在 run 内是共享的，状态全在 `deps` 的 Mutex 槽位里。
     let nodes: Vec<Arc<dyn ThinkNode>> = vec![
-        Arc::new(PrepareNode::new(Arc::clone(&deps))),
-        Arc::new(SettleNode::new(Arc::clone(&deps))),
-        Arc::new(FinalizeNode::new(Arc::clone(&deps))),
+        Arc::new(PrepareNode::new(
+            Arc::clone(&deps) as Arc<dyn super::nodes::SettlePrepareNodeInput>
+        )),
+        Arc::new(SettleNode::new(
+            Arc::clone(&deps) as Arc<dyn super::nodes::SettleNodeInput>
+        )),
+        Arc::new(FinalizeNode::new(
+            Arc::clone(&deps) as Arc<dyn super::nodes::SettleFinalizeNodeInput>
+        )),
     ];
     let path_id = blueprint.id.clone();
     let engine = ThinkPathEngine::new(

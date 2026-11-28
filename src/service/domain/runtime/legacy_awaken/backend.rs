@@ -51,8 +51,8 @@ pub struct ThinkInput {
     pub force_intensity: Option<common::enums::ThinkingIntensity>,
     /// 唤醒级用量表（思考循环每轮写回，跨周期累计）
     pub usage: Arc<Mutex<WakeUsage>>,
-    /// 唤醒级收件箱：`Some` 时轮级图启用 `poll_round`
-    pub inbox: Option<Arc<Mutex<crate::service::domain::runtime::inbox::InboxState>>>,
+    /// 图级运行总线实例：`Some` 时轮级图启用 `poll_round`
+    pub runtime: Option<Arc<crate::service::domain::runtime::graph_runtime::GraphRuntime>>,
 }
 
 /// 一次「压缩 / 总结」的输入
@@ -122,13 +122,12 @@ impl ThinkBackend for LegacyBackend {
         .with_usage(&input.usage)
         .with_monitoring(&deps.think_runtime, &deps.policy)
         .with_progress(&deps.progress)
-        .with_collected(&deps.collected)
         .with_thinking_intensity_offset(input.thinking_intensity_offset)
         .with_force_intensity(input.force_intensity)
         // 影子跑不发布实时观测事件，与根图观测者的开关保持一致
         .with_silent(deps.shadow);
-        if let Some(inbox) = &input.inbox {
-            params = params.with_inbox(inbox);
+        if let Some(runtime) = &input.runtime {
+            params = params.with_runtime(runtime);
         }
 
         let result = deps.domain.run_think_loop(params).await;
@@ -173,7 +172,10 @@ impl ThinkBackend for LegacyBackend {
         // 避免缝里先发一份「成功」事件、节点又降级，监控口径分裂。
         //
         // Prompt 与 Phase 2 共用主 trace_id；`intent-{main}` 只用于事件子轨迹。
-        // 初始消息快照写入 `deps.intent_seed` 供正式装配续接。
+        // 初始消息快照写入图运行时的 intent_seed 槽供正式装配续接。
+        // 回 intent 重识别时把已吸收消息的附件一并交给视觉装配（图片不另起消息）。
+        let extra_attachment_ids = deps.runtime.inbox_absorbed_attachment_ids();
+        let intent_seed_slot = deps.runtime.intent_seed_slot();
         deps.domain
             .analyze_input_intent_inner(
                 deps.ctx.clone(),
@@ -183,7 +185,8 @@ impl ThinkBackend for LegacyBackend {
                 &deps.trace_id,
                 super::super::intent_analyze::IntentPhaseInput {
                     revision: input.revision.as_ref(),
-                    seed: Some(&deps.intent_seed),
+                    seed: Some(intent_seed_slot),
+                    extra_attachment_ids: &extra_attachment_ids,
                 },
             )
             .await

@@ -12,9 +12,10 @@
 //! | 长于图（Err / 超时也要） | 调用方持有的 `Arc` 句柄 |
 //! | 进程外的读者（前端 / 查询接口） | 写穿落盘，不进内存 |
 //!
-//! 本类型挂在唤醒图上下文（`AwakenDeps.collected`）上、经 `ThinkLoopParams`
-//! 传给轮级图、由 dispatch 节点写入、由 `AwakeningResult` 移交给消费侧。
-//! 它**不是**进程级键控表：所有权一路显式，图结束随 `deps` 回收。
+//! 本类型由图级运行总线实例（`GraphRuntime`）持有，dispatch 节点经总线方法
+//! `record_resources` 写入，图结束后由 `take_collected` 取出、随
+//! `AwakeningResult` 移交给消费侧。它**不是**进程级键控表：所有权一路显式，
+//! 图结束随运行时实例回收。
 //!
 //! ## 为什么「解析」也在这里
 //!
