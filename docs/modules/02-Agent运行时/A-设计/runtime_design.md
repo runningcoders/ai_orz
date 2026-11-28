@@ -1733,6 +1733,13 @@ Consumer 层
 
 **收益**：减少无效 IO 和重试开销，与 busy 状态语义一致。
 
+**同 key 新消息 = 催促**：gated 事件 `nack` 后仍占着 order_key 门闩，指数退避期间同 Agent 的后继消息只能在门闩队列里等。若用户补发一条同 key 消息，队列层把这条投递视为「催促」，两条路径合力补齐时效性：
+
+- **旧事件已在退避**（在 global 堆里）：入队时把该 key 下退避条目的 `not_before` 归零，下一次 worker 立即重试前一条；
+- **旧事件仍在 `in_progress`**（已出队、不在堆里）：清退避够不到它，入队改为记下 `nudged_at[key]` 时间戳；该事件随后失败 `nack` 时，若催促时刻晚于本次消费开始时刻（`consumed_at`），就免这一次退避、立即重投。
+
+约束：只清退避 / 免退避，不放行门闩、不重置 `attempt`；`enqueue_ungated` 的事件不触发（门闩是订阅者 opt-in）。**一次催促只兑现一次**——无论命中哪条路径都清掉标记，之后没有新催促就恢复指数退避，避免快速失败变成无间隔紧循环。无需再做手动清退避的管理出口。
+
 #### 23.3.2 wake_agent_brain ctx 补充
 
 **问题**：doc 注释承诺返回含 `model_provider_id`/`model_name` 的 enriched ctx，但 `wake_brain` 返回 `Result<Brain>`，内部的 `enrich_ctx!(ctx, &provider)` 作用在局部变量上，返回后丢失。

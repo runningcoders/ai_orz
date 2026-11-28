@@ -7,7 +7,7 @@
 > 覆盖三个层：`A-设计`（为什么）· `B-落地方案`（要去哪）· `C-知识`（是什么）。
 > 机器可读版见 `INDEX.json`；Agent 实现需求请从 `docs/AGENT_GUIDE.md` 进入。
 
-**合计 683 篇 / 14,445,217 B**，分布于 15 个模块。
+**合计 683 篇 / 14,448,047 B**，分布于 15 个模块。
 
 ## 模块概览
 
@@ -15,7 +15,7 @@
 |---|---:|---:|---:|---:|---:|
 | [00-总览与架构](#00-总览与架构) | 0 | 2 | 35 | 37 | 652,410 |
 | [01-组织与权限](#01-组织与权限) | 4 | 7 | 36 | 47 | 906,320 |
-| [02-Agent运行时](#02-agent运行时) | 11 | 16 | 19 | 46 | 1,273,180 |
+| [02-Agent运行时](#02-agent运行时) | 11 | 16 | 19 | 46 | 1,276,010 |
 | [03-记忆系统](#03-记忆系统) | 1 | 4 | 13 | 18 | 385,247 |
 | [04-对话与消息](#04-对话与消息) | 8 | 9 | 21 | 38 | 912,326 |
 | [05-任务与项目](#05-任务与项目) | 7 | 11 | 53 | 71 | 1,289,911 |
@@ -152,10 +152,10 @@
 |---:|---|---|---:|
 | 1 | [Agent 循环驱动引擎设计](<02-Agent运行时/A-设计/agent_loop_engine_design.md>) | 已废弃 | 36,120 |
 | 2 | [决策型策略设计（策略引擎承载小脑场景）](<02-Agent运行时/A-设计/cerebellum_decision_strategy_design.md>) | 现行 | 24,591 |
-| 3 | [思考循环中的新输入收集与意图回退设计（可中断唤醒）](<02-Agent运行时/A-设计/inbox_poll_and_intent_revision_design.md>) | 现行 | 19,854 |
+| 3 | [思考循环中的新输入收集与意图回退设计（可中断唤醒）](<02-Agent运行时/A-设计/inbox_poll_and_intent_revision_design.md>) | 现行 | 21,604 |
 | 4 | [意图感知两阶段唤醒设计](<02-Agent运行时/A-设计/intent_aware_two_stage_awaken_design.md>) | 已废弃 | 27,455 |
 | 5 | [运行时数据总线设计（收集、移交与写穿）](<02-Agent运行时/A-设计/runtime_data_bus_design.md>) | 现行 | 10,943 |
-| 6 | [Runtime Domain 设计](<02-Agent运行时/A-设计/runtime_design.md>) | 现行 | 142,235 |
+| 6 | [Runtime Domain 设计](<02-Agent运行时/A-设计/runtime_design.md>) | 现行 | 143,315 |
 | 7 | [Runtime Domain 推进路线图](<02-Agent运行时/A-设计/runtime_domain_roadmap.md>) | 已废弃 | 31,664 |
 | 8 | [思考生命周期设计（Think Lifecycle）](<02-Agent运行时/A-设计/think_lifecycle_design.md>) | 现行 | 43,584 |
 | 9 | [思考图引擎改造设计（Awaken 主思考路径节点化）](<02-Agent运行时/A-设计/thinking_graph_engine_design.md>) | 落地中 | 10,207 |
