@@ -7,7 +7,7 @@
 > 覆盖三个层：`A-设计`（为什么）· `B-落地方案`（要去哪）· `C-知识`（是什么）。
 > 机器可读版见 `INDEX.json`；Agent 实现需求请从 `docs/AGENT_GUIDE.md` 进入。
 
-**合计 683 篇 / 14,448,047 B**，分布于 15 个模块。
+**合计 683 篇 / 14,457,256 B**，分布于 15 个模块。
 
 ## 模块概览
 
@@ -15,7 +15,7 @@
 |---|---:|---:|---:|---:|---:|
 | [00-总览与架构](#00-总览与架构) | 0 | 2 | 35 | 37 | 652,410 |
 | [01-组织与权限](#01-组织与权限) | 4 | 7 | 36 | 47 | 906,320 |
-| [02-Agent运行时](#02-agent运行时) | 11 | 16 | 19 | 46 | 1,276,010 |
+| [02-Agent运行时](#02-agent运行时) | 11 | 16 | 19 | 46 | 1,285,219 |
 | [03-记忆系统](#03-记忆系统) | 1 | 4 | 13 | 18 | 385,247 |
 | [04-对话与消息](#04-对话与消息) | 8 | 9 | 21 | 38 | 912,326 |
 | [05-任务与项目](#05-任务与项目) | 7 | 11 | 53 | 71 | 1,289,911 |
@@ -152,9 +152,9 @@
 |---:|---|---|---:|
 | 1 | [Agent 循环驱动引擎设计](<02-Agent运行时/A-设计/agent_loop_engine_design.md>) | 已废弃 | 36,120 |
 | 2 | [决策型策略设计（策略引擎承载小脑场景）](<02-Agent运行时/A-设计/cerebellum_decision_strategy_design.md>) | 现行 | 24,591 |
-| 3 | [思考循环中的新输入收集与意图回退设计（可中断唤醒）](<02-Agent运行时/A-设计/inbox_poll_and_intent_revision_design.md>) | 现行 | 21,604 |
+| 3 | [思考循环中的新输入收集与意图回退设计（可中断唤醒）](<02-Agent运行时/A-设计/inbox_poll_and_intent_revision_design.md>) | 现行 | 25,941 |
 | 4 | [意图感知两阶段唤醒设计](<02-Agent运行时/A-设计/intent_aware_two_stage_awaken_design.md>) | 已废弃 | 27,455 |
-| 5 | [运行时数据总线设计（收集、移交与写穿）](<02-Agent运行时/A-设计/runtime_data_bus_design.md>) | 现行 | 10,943 |
+| 5 | [运行时数据总线设计（收集、移交与写穿）](<02-Agent运行时/A-设计/runtime_data_bus_design.md>) | 现行 | 14,473 |
 | 6 | [Runtime Domain 设计](<02-Agent运行时/A-设计/runtime_design.md>) | 现行 | 143,315 |
 | 7 | [Runtime Domain 推进路线图](<02-Agent运行时/A-设计/runtime_domain_roadmap.md>) | 已废弃 | 31,664 |
 | 8 | [思考生命周期设计（Think Lifecycle）](<02-Agent运行时/A-设计/think_lifecycle_design.md>) | 现行 | 43,584 |
@@ -193,7 +193,7 @@
 | 4 | [Agent 搜索与推荐](<02-Agent运行时/C-知识/Agent 搜索与推荐.md>) | 13,286 |
 | 5 | [Agent 生命周期管理](<02-Agent运行时/C-知识/Agent 生命周期管理.md>) | 28,090 |
 | 6 | [Agent处理器](<02-Agent运行时/C-知识/Agent处理器.md>) | 24,451 |
-| 7 | [Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2](<02-Agent运行时/C-知识/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md>) | 27,874 |
+| 7 | [Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2](<02-Agent运行时/C-知识/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md>) | 28,014 |
 | 8 | [ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板](<02-Agent运行时/C-知识/ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板/ThinkTrace 轮级轨迹：JSONL 落盘 + query_think_traces 作用域守门 + 轮次时间线与轨迹面板.md>) | 13,626 |
 | 9 | [小脑快判断（Cerebellum）：System One 协议 DTO + SystemOneCerebellumDao client + 默认小脑获取 + 运行时快判断路由三分类](<02-Agent运行时/C-知识/小脑快判断（Cerebellum）：System One 协议 DTO + SystemOneCerebellumDao client + 默认小脑获取 + 运行时快判断路由三分类/小脑快判断（Cerebellum）：System One 协议 DTO + SystemOneCerebellumDao client + 默认小脑获取 + 运行时快判断路由三分类.md>) | 18,042 |
 | 10 | [小脑快判断（System One）](<02-Agent运行时/C-知识/小脑快判断（System One）.md>) | 52,297 |
@@ -205,7 +205,7 @@
 | 16 | [策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层 + PolicyAction 动作上浮 + Shell 拦截层](<02-Agent运行时/C-知识/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层.md>) | 15,003 |
 | 17 | [记忆系统管理](<02-Agent运行时/C-知识/记忆系统管理.md>) | 36,203 |
 | 18 | [运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化](<02-Agent运行时/C-知识/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化.md>) | 13,011 |
-| 19 | [运行时领域](<02-Agent运行时/C-知识/运行时领域.md>) | 58,012 |
+| 19 | [运行时领域](<02-Agent运行时/C-知识/运行时领域.md>) | 59,214 |
 
 ### 03-记忆系统
 

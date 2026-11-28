@@ -3,7 +3,7 @@
   "schema": 1,
   "note": "机器可读知识库索引，由 `make wiki-index` 重建，请勿手工编辑。path 相对 docs/modules/；status 只从文档显式信号推导，未标注表示需人工确认。",
   "total": 683,
-  "total_bytes": 14448047,
+  "total_bytes": 14457256,
   "modules": [
     {
       "id": "00-总览与架构",
@@ -729,7 +729,7 @@
           "path": "02-Agent运行时/A-设计/inbox_poll_and_intent_revision_design.md",
           "name": "inbox_poll_and_intent_revision_design",
           "title": "思考循环中的新输入收集与意图回退设计（可中断唤醒）",
-          "bytes": 21604,
+          "bytes": 25941,
           "status": "现行",
           "scope": [
             "src/service/domain/runtime/legacy_awaken/blueprint.rs",
@@ -771,7 +771,7 @@
           "path": "02-Agent运行时/A-设计/runtime_data_bus_design.md",
           "name": "runtime_data_bus_design",
           "title": "运行时数据总线设计（收集、移交与写穿）",
-          "bytes": 10943,
+          "bytes": 14473,
           "status": "现行",
           "scope": [
             "src/service/domain/runtime/think_trace.rs",
@@ -1114,7 +1114,7 @@
           "path": "02-Agent运行时/C-知识/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md",
           "name": "Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联",
           "title": "Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2",
-          "bytes": 27874
+          "bytes": 28014
         },
         {
           "tier": "C-知识",
@@ -1198,7 +1198,7 @@
           "path": "02-Agent运行时/C-知识/运行时领域.md",
           "name": "运行时领域",
           "title": "运行时领域",
-          "bytes": 58012
+          "bytes": 59214
         }
       ]
     },
