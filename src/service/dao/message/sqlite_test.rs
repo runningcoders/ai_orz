@@ -1628,3 +1628,52 @@ async fn test_poll_after_cursor_survives_long_history(pool: SqlitePool) -> Resul
 
     Ok(())
 }
+
+/// 排除已判定 ID 后能拉到后续消息：收件箱分批拉取的核心保障。
+/// 不排除时 limit 会被头部已判定的消息占满，新消息永远进不来。
+#[sqlx::test(migrations = "./migrations")]
+async fn test_query_exclude_ids_skips_judged(pool: SqlitePool) -> Result<()> {
+    let (message_dao, ctx) = init_test_env(pool);
+
+    let mut ids = Vec::new();
+    for i in 0..12i64 {
+        let mut msg = create_test_message("task-exclude-1", "user-exclude", &format!("msg-{i}"));
+        msg.created_at = 2_000_000 + i;
+        msg.updated_at = 2_000_000 + i;
+        ids.push(msg.id.clone());
+        message_dao.insert(ctx.clone(), &msg).await?;
+    }
+
+    // 排除前 10 条已判定的 → 应取到后 2 条，而不是被 limit 卡在头部
+    let page = message_dao
+        .query(
+            ctx.clone(),
+            MessageQuery {
+                task_id: Some("task-exclude-1".to_string()),
+                exclude_ids: ids[..10].to_vec(),
+                order_by: Some("created_at ASC".to_string()),
+                limit: Some(10),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(page.len(), 2, "排除已判定后应拉到后续新消息");
+    assert_eq!(page[0].id, ids[10]);
+    assert_eq!(page[1].id, ids[11]);
+
+    // 空 exclude_ids 不过滤（向后兼容）
+    let all = message_dao
+        .query(
+            ctx.clone(),
+            MessageQuery {
+                task_id: Some("task-exclude-1".to_string()),
+                order_by: Some("created_at ASC".to_string()),
+                limit: Some(10),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(all.len(), 10);
+
+    Ok(())
+}

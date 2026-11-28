@@ -668,6 +668,14 @@ fn push_query_filters<'args>(
         }
         separated.push_unseparated(")");
     }
+    if !query.exclude_ids.is_empty() {
+        builder.push(" AND id NOT IN (");
+        let mut separated = builder.separated(", ");
+        for id in &query.exclude_ids {
+            separated.push_bind(id.clone());
+        }
+        separated.push_unseparated(")");
+    }
     if query.task_id_is_null {
         builder.push(" AND task_id IS NULL");
     } else if let Some(task_id) = &query.task_id {

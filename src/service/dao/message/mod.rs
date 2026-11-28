@@ -17,6 +17,9 @@ pub struct MessageQuery {
     pub id: Option<String>,
     /// 按多个消息 ID 批量查询（用于向量搜索结果回填）
     pub ids: Option<Vec<String>>,
+    /// 排除指定 ID：收件箱分批拉取时排除本唤醒内已判定的候选，
+    /// 避免每批都从同一批头部重扫、永远拉不到新消息。空 vec 不过滤。
+    pub exclude_ids: Vec<String>,
     /// 按任务 ID 查询
     ///
     /// `None` 表示**不限制**；要表达「任务为空」必须用
