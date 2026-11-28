@@ -112,6 +112,31 @@ impl<E: RankedEntry> PriorityQueue<E> {
         rank_changed
     }
 
+    /// 原地修改命中条目的载荷。
+    ///
+    /// 若闭包改动了 `rank`，本方法会把条目按新 rank 重新入堆（旧堆项惰性失效）；
+    /// 未改动则完全不动堆与 seq —— 适合「排序无关字段」的原地更新（如清退避）。
+    /// 返回是否命中该 key。
+    pub fn update_entry<F: FnOnce(&mut E)>(&mut self, key: &str, f: F) -> bool {
+        let Some(stored) = self.entries.get_mut(key) else {
+            return false;
+        };
+        let old_rank = stored.entry.rank();
+        f(&mut stored.entry);
+        let rank_changed = stored.entry.rank() != old_rank;
+        // 显式释放借用，下方可能改 entries
+        let _ = stored;
+        if rank_changed {
+            let entry = self
+                .entries
+                .remove(key)
+                .expect("entry existed just above")
+                .entry;
+            self.upsert(entry);
+        }
+        true
+    }
+
     /// 带版本门禁的写入：同 key 已有条目且新版本不更新（`<=`）时拒绝，返回 `false`。
     ///
     /// 门禁只决定「是否接纳」，不改变排序结构 —— 接受后仍走 [`Self::upsert`]：
