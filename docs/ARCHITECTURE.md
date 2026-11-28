@@ -340,7 +340,7 @@ data/
 |--------|--------|------|
 | [docs/diagrams/ai-orz-architecture.html](docs/diagrams/ai-orz-architecture.html) | 总图：三级 workspace、四层单向调用、存储与外部系统、认知架构分层 | 主请求路径 / 异步与 Agent 运行时 / 持久化 |
 | [docs/diagrams/ai-orz-ontology.html](docs/diagrams/ai-orz-ontology.html) | 本体子系统：四条能力线 + 五道门闩 + 治理看板 | 读侧 / 写入门闩 / 治理面 |
-| [docs/diagrams/ai-orz-think-path.html](docs/diagrams/ai-orz-think-path.html) | 思维轨迹：两阶段唤醒 → 快判断 → 输入注入（结构判据先筛同上下文 + 小脑一次 Choice 多选，无时间窗、双向缓存、降级放行）→ 轮次（跨周期收集 + 收尾守卫）→ 相位 → 两段式落盘 → 查询（旁车索引 + seek，PagedResult 分页 + 无项目口径）→ 前端；含思考强度判相对偏移、先验与兜底分离 | 一轮思考 / 两阶段唤醒 / 轨迹链路 / 认知分层 |
+| [docs/diagrams/ai-orz-think-path.html](docs/diagrams/ai-orz-think-path.html) | 思维轨迹：两阶段唤醒 → 快判断 → 输入注入（两层判据：结构同上下文 + 小脑 Choice 多选相关性 → 再 Pick 二选一判意图偏移，循环分批 + token 预算总账，无时间窗、双向缓存、降级放行；跨节点共享状态收在图级运行总线 GraphRuntime）→ 轮次（跨周期收集 + 收尾守卫）→ 相位 → 两段式落盘 → 查询（旁车索引 + seek，PagedResult 分页 + 无项目口径）→ 前端；含思考强度判相对偏移、先验与兜底分离 | 一轮思考 / 两阶段唤醒 / 轨迹链路 / 认知分层 |
 | [docs/diagrams/ai-orz-memory.html](docs/diagrams/ai-orz-memory.html) | 记忆子系统：四层记忆 + 两条 JSONL + 三路召回 + 沉淀 | 四层 / 存储面 / 检索与沉淀 |
 | [docs/diagrams/ai-orz-tools.html](docs/diagrams/ai-orz-tools.html) | 工具与技能：三层调用 + 凭据编排 + 策略拦截与六态授权 + 技能包 | 三层调用 / 策略与授权 / 注册与装配 |
 | [docs/diagrams/ai-orz-tool-context.html](docs/diagrams/ai-orz-tool-context.html) | 工具调用上下文（身份）数据流转：声明（CredentialKind 的 UserInfo / AgentInfo + field 白名单 + binding）→ 解析（is_identity 二元分派 + 失败语义按来源分叉）→ 注入（check + base_env 九键末位 insert）→ 使用（git 子进程 / commit-msg hook） | 四层主链路 / 失败语义分叉 / 注入与优先级 |

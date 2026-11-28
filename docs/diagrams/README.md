@@ -17,7 +17,7 @@
 | 文件 | 层级 | 讲什么 | 视图 | 对应知识库模块 |
 |---|---|---|---|---|
 | [ai-orz-architecture.html](./ai-orz-architecture.html) | 容器级总图 | 三级 workspace、四层单向调用、存储与外部系统、认知架构分层 | 主请求路径 / 异步与 Agent 运行时 / 持久化 | 00-总览与架构 |
-| [ai-orz-think-path.html](./ai-orz-think-path.html) | 组件级 | 两阶段唤醒 → 小脑决策契约（entry_gate / entry_pool / chain_reply, close_default）→ 思考中注入新输入（结构判据先筛同上下文 + 小脑一次 Choice 多选，无时间窗、双向缓存、降级放行）→ 三层预算循环（跨周期 RoundCollected 收集）→ 七相位图引擎 → 两段式落盘（增量 + 收尾，TraceFinishGuard 五条退出路径兜底 close 行）→ 前端时间线 → 专注浮层实时（RunObserver 骨架事件经 FocusLiveConsumer 出 SSE）；轨迹查询走 `.jsonl.idx` 旁车索引（索引过滤 + seek 命中行），返回契约为 PagedResult（items + total，total 取自索引命中数），作用域新增 `without_project` 无项目口径（带 ctx.project_id 时拒绝）；含思考强度判相对偏移、先验与兜底分离 | 一轮思考 / 两阶段唤醒 / 轨迹链路 / 认知分层 | 02-Agent运行时 |
+| [ai-orz-think-path.html](./ai-orz-think-path.html) | 组件级 | 两阶段唤醒 → 小脑决策契约（entry_gate / entry_pool / chain_reply, close_default）→ 思考中注入新输入（两层判据：结构同上下文 + 小脑 Choice 多选相关性 → 再小脑 Pick 二选一判意图偏移 reinterpret/supplement；无时间窗、双向缓存、降级放行；循环分批 + token 预算总账）→ 三层预算循环（跨周期 RoundCollected 收集）→ 七相位图引擎 → 两段式落盘（增量 + 收尾，TraceFinishGuard 五条退出路径兜底 close 行）→ 前端时间线 → 专注浮层实时（RunObserver 骨架事件经 FocusLiveConsumer 出 SSE）；轨迹查询走 `.jsonl.idx` 旁车索引（索引过滤 + seek 命中行），返回契约为 PagedResult（items + total，total 取自索引命中数），作用域新增 `without_project` 无项目口径（带 ctx.project_id 时拒绝）；含思考强度判相对偏移、先验与兜底分离 | 一轮思考 / 两阶段唤醒 / 轨迹链路 / 认知分层 | 02-Agent运行时 |
 | [ai-orz-tools.html](./ai-orz-tools.html) | 组件级 | CoreTool 三协议路由（Builtin / HTTP / MCP）+ 工具级凭据契约与身份注入 + 策略拦截与六态授权 + 技能包装配 | 三层调用 / 策略与授权 / 注册与装配 | 06-工具与技能 |
 | [ai-orz-tool-context.html](./ai-orz-tool-context.html) | 组件级 | 工具调用中的上下文（身份）数据流转：声明（`CredentialKind` 的 `UserInfo` / `AgentInfo` 两个非凭据变体 + `field` 白名单 + `binding` 四注入点）→ 解析（`is_identity` 二元分派 + 未命中按来源分叉）→ 注入（`check` 注入 + `base_env` 九键末位硬 insert）→ 使用（git 子进程 4 个 `GIT_*` / commit-msg hook） | 四层主链路 / 失败语义分叉 / 注入与优先级 / 落点实证 | 06-工具与技能 |
 | [ai-orz-aop.html](./ai-orz-aop.html) | 组件级 | pkg/aop 六 Trait + Registry 单例 + 14 类业务消费者（20 处注册 / 10 Sync + 10 Async）+ 3 类 tick 生产者 + context_carrier 贯穿 | 一次事件流转 / 启动顺序 / 生产者与兜底 | 10-异步基建(AOP) |
@@ -789,3 +789,39 @@
 **门禁**：两张图各自 `validate`（9 checks）→ `finalize --browser-check`（validate / deliver / check / browser-check 四道全 pass，diagnostics=0）→ `check`，全部 exit 0。`*.delivery.json` 与 `*.finalize*.json` 收据未入仓（`ls docs/diagrams/*.json` = 0）。
 
 **已知局限**：本轮**未做人眼视觉复核**（`visualReview=not-requested`），几何指标全绿≠视觉可读；think-path 的 22 条证据路径、frontend 的 19 条均 MISSING=0。
+
+### 2026-11-28 增量同步（第 3 批：think-path 1 张重渲染，revision → `404d746e`）
+
+本批在途 PR #21 追加 2 笔提交（`404d746e` 代码笔 + `5b2aaaf3` 文档笔），判图基数按**合并后终态**取三源并集：`git diff --name-only origin/main...HEAD`（54）+ `git diff --name-only HEAD`（37）+ `git ls-files --others --exclude-standard`（4），去重后 **84 条**。
+
+**touched 矩阵（18 张全量重判，逐张一句话理由）**
+
+| 图 | 图内路径数 | 本批命中 | 判定 |
+|---|---:|---:|---|
+| ai-orz-think-path.html | 22 | 5 | **真需刷**：`inbox.rs`(+238/−84)、`poll_node.rs`(+205/−148)、`awakening.rs`(+133/−50)、`think_loop.rs`、`think_round/runner.rs` —— 主语组件本人被重写（两层判据 / 循环分批 / 预算总账 / GraphRuntime 注入），且新增图级运行总线组件 |
+| ai-orz-architecture.html | 17 | 2 | 不刷：`llm` 组件命中 `dao/cortex/native/mod.rs`（新增 NoVisionGuardDao 包装）与 `runtime` 组件命中 `awakening.rs`。容器级总览的 `llm` sublabel 是「协议 × 厂商」，护栏包装不改变「谁调模型」这一层；`awakening` 的组网关系未变 |
+| ai-orz-messaging.html | 21 | 3 | 不刷：`dao` 命中 `dao/message/mod.rs`（新增 `message_type_in` 过滤字段）、`domain` 命中 `domain/message/mod.rs`（文档注释）、`wake` 命中 `awakening.rs`。前两者是查询过滤器扩展，消息图画的渠道归一化→路由→DAL/DAO→SSE 主链路未变；`awakening.rs` 属唤醒侧，与该图承载域不符 |
+| ai-orz-memory.html | 13 | 1 | 不刷：唯一命中 `think_loop.rs`，改动是把 `inbox`/`collected` 两个形参合并成 `runtime` 一个参数（机械适配：调用签名变更，不改变记忆链路的检索/写入语义） |
+| ai-orz-tools.html | 15 | 1 | 不刷：同上，`think_loop.rs` 的签名合并，工具执行面（Auto/Manual/MCP）未变 |
+| ai-orz-task-project.html | 23 | 1 | 不刷：同上，`think_loop.rs` 形参合并，与任务项目状态机/DAG 抽象层无关 |
+| ai-orz-schedule.html | 19 | 0 | 不刷：本批零命中（日程事件驱动改造已在 PR 前序笔次交付并重渲染，见上一条记录） |
+| ai-orz-aop.html | 14 | 0 | 不刷：本批零命中（队列退避改动落在 `pkg/aop/queue/`，不在该图 sources） |
+| ai-orz-frontend.html | 19 | 0 | 不刷：本批零前端路径 |
+| 其余 9 张 | — | 0 | 不刷：a2a / data-model / infra / ontology / org-federation / search / stats / testing / tool-context，本批零命中且 TBox 零变更 |
+
+**重渲染摘要**
+
+| 图 | 结构 | 字节 | sha256 前 16 | 几何度量 |
+|---|---|---:|---|---|
+| ai-orz-think-path.html | **18 组件（+1）/ 17 连线（不变）/ 14 卡片（+1）** | 881,801 | `5161b3390546b6bf` | `properCrossings=0`、`resolvedCrossovers=0`、`ambiguousCorridors=0`、`arrowheadCollisions=0`、`maxBends=2`、`routesOverSuggestedBends=0`、`maxStretch=1.0`、`minSegmentPx=60`、`desktopReadabilityIssues=0`、`minProjectedNodeTextPx=6.28`（**与基线逐项持平，零新增交叉/零超建议弯道**） |
+
+**本张改了什么**
+
+- 新增组件 `GraphRuntime 图级运行总线`（553 行 · 共享状态 + 锁中毒分级），**刻意不画调用/持有连线**：它是图内共享面的所有者、由 think_loop 构造并下发给各节点，画成一条边会被读成「运行时调用一跳」的拓扑边，属把容器关系当调用关系。语义改由第 14 张卡 + 组件 `sources`（`graph_runtime.rs` / `inbox.rs` / `legacy_awaken/context.rs`）承载。
+- 组件 `inbox` 行数 422 → **576**、副标改「两层判据」并补 `inbox_intent_shift.rs` 证据路径（组件 sources 上限 3 条，故不再列 `poll_node.rs`，它已在卡片 1 第 1 条显式点明）；`think_loop` 副标 889 → **887 行**。
+- 卡片 1 从「语义判据」升级为「两层判据：相关性 + 意图偏移」，并把 AMan 手改的五条语义（Mixed + 附件引用兼容、吸收只受 token 预算、≤10 条循环分批、小脑二选一、补充消息只传附件引用）与本批的口径总账（`remaining_inbox_tokens` / `MAX_COLLECT_BATCHES=8` / `MAX_ABSORPTIONS_PER_WAKE=3` / 5% = 10,000 token @200K）合成 8 条。
+- 新增第 14 张卡「图级运行总线 GraphRuntime（2026-11-28 新增）」：站位、消除反向依赖、锁中毒分级、图内共享面 vs 出图即消费的边界。
+
+**门禁（三次迭代的过程如实记录，不写成一次过）**：候选稿首版 `validate` 连挂两次（`schema/maxItems` sources 超 3 条、`schema/enum` 组件 type 非枚举值），第三次 `architecture/component-sublabel-overflow`（inbox 副标 188px > 172px）；改法都是**改候选稿降粒度**，未放宽任何阈值。几何上先试 `think_loop → graph_runtime` 一条 emphasis 边（引入 `maxBends=4` / `routesOverSuggestedBends=2` / `minSegmentPx=21`），再试 `graph_runtime → inbox` 一条（降为 `maxBends=3` / `routesOverSuggestedBends=1` / `stretch=1.207`），最终判「该关系不属拓扑边」**直接不画边**，几何回到与基线逐项持平。三次 `finalize` 分别用 `review-1` / `review-2` / `review-3` 三个新 `--out-dir`（沿用会撞 `viewer/evidence-path-conflict`）。终版 `validate`（9 checks）→ `finalize --browser-check`（validate / deliver / check / browser-check 四道全 pass、diagnostics=0）→ `check`，全部 exit 0。`docs/diagrams/*.json` = **0**（收据未入仓），图内 **25 条证据路径 / 18 个证据节点 / referenceCount=27 全部 MISSING=0**，`meta.repository.revision` = `404d746e`（已推送 commit，非孤儿锚点）。
+
+**已知局限**：本轮**未做人眼视觉复核**（`visualReview=not-requested`），几何指标全绿≠视觉观感合格。
