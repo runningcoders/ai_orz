@@ -232,7 +232,7 @@ class CronTriggerDalImpl {
 +pause(ctx, id) Result
 +resume(ctx, id) Result
 +list_due(ctx, now, limit) Vec<CronTriggerPo>
-+mark_executed(ctx, id, executed_at) Result
++mark_executed(ctx, id, fired_at, finished_at) Result
 }
 class CronManager {
 +create_trigger(ctx, trigger) Result
@@ -243,7 +243,7 @@ class CronManager {
 +pause_trigger(ctx, id) Result
 +resume_trigger(ctx, id) Result
 +list_due_triggers(ctx, now, limit) Vec<CronTriggerPo>
-+mark_trigger_executed(ctx, id, executed_at) Result
++mark_trigger_executed(ctx, id, fired_at, finished_at) Result
 }
 CronTriggerDalImpl --> CronTriggerDao : "委托"
 CronManager --> CronTriggerDalImpl : "调用"

@@ -1,13 +1,16 @@
-use std::cell::UnsafeCell;
-use std::collections::{BinaryHeap, HashMap};
+use std::cmp::Reverse;
+use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard};
 
 use crate::pkg::RequestContext;
+use crate::pkg::priority_queue::{PriorityQueue, RankedEntry};
 use async_trait::async_trait;
 use common::error::Result;
 
 use super::EventQueue;
 
+/// AOP 队列条目。排序/去重/惰性失效由基础 [`PriorityQueue`] 负责，
+/// 这里只放场景字段：`order_key` 门闩、`attempt` 退避计数、`not_before` 最早出队时刻。
 #[derive(Debug, Clone)]
 struct EventRef {
     event_id: String,
@@ -16,7 +19,6 @@ struct EventRef {
     created_at: i64,
     /// 本事件被消费的**累计次数**：入队即 1，每次 `nack` 自增（`ack` 后随事件消亡，无需持久化）
     attempt: u32,
-    /// 最早可出队时刻（epoch 毫秒；`0` = 立即可取）。仅 `nack` 重投时设置（per-event 指数退避）。
     /// 本事件是否走了「同 key 门闩」
     ///
     /// 由入队方法决定：`enqueue`（未下沉前 = 订阅声明了 `ordered`）为 true，
@@ -29,46 +31,52 @@ struct EventRef {
     /// 串行保证被悄悄绕过），ungated 事件的 nack 则会给该 key 打上「门闩占用」
     /// 却再无 gated 事件能解开它（该 key 永久饥饿）。
     gated: bool,
+    /// 最早可出队时刻（epoch 毫秒；`0` = 立即可取）。仅 `nack` 重投时设置（per-event 指数退避）。
+    /// 同 key 新消息催促会把它归零（见 `clear_backoff_for_order_key`）。
     not_before: i64,
+    /// 最近一次「开始消费」的时刻（epoch 毫秒；`dequeue_next` 写入）。
+    /// 与 `nudged_at` 比较可判断催促是否发生在这次消费之后 —— 只有「新鲜」的催促
+    /// 才在 `nack` 时兑现一次免退避，避免快速失败场景变成无间隔紧循环。
+    consumed_at: i64,
 }
 
-impl PartialEq for EventRef {
-    fn eq(&self, other: &Self) -> bool {
-        self.event_id == other.event_id
+impl RankedEntry for EventRef {
+    type Rank = (u8, Reverse<i64>);
+    fn key(&self) -> &str {
+        &self.event_id
+    }
+    fn rank(&self) -> Self::Rank {
+        (self.priority, Reverse(self.created_at))
     }
 }
 
-impl Eq for EventRef {}
-
-impl PartialOrd for EventRef {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for EventRef {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.priority
-            .cmp(&other.priority)
-            .then_with(|| other.created_at.cmp(&self.created_at))
-    }
+/// 队列内部状态。所有字段由同一把 `Mutex` 保护，无需 `UnsafeCell`。
+#[derive(Debug, Default)]
+struct AopState {
+    /// 全局待出队堆（含 gated 串的首条与全部 ungated 事件）
+    global: PriorityQueue<EventRef>,
+    /// 同 key 门闩队列：首条上全局堆，其余在此等待前一条 ack
+    gates: HashMap<String, PriorityQueue<EventRef>>,
+    /// 事件载荷（含在飞事件；只在 `ack` 时移除，`contains` / 监控页以此为准）
+    events: HashMap<String, serde_json::Value>,
+    /// 已出队、正在消费的事件：event_id → (条目, order_key)
+    in_progress: HashMap<String, (EventRef, String)>,
+    /// order_key → 当前是否有事件占用门闩
+    has_active_message: HashMap<String, bool>,
+    /// order_key → 最近一次「同 key 新消息催促」的时刻（epoch 毫秒）。
+    /// 只在 gated 入队时写入；gated 事件的 `nack` / `ack` 消费并清除。
+    /// 这是催促时效性的另一半：入队时清 global 堆够不到仍在 `in_progress` 的事件，
+    /// 时间戳接力到它的 `nack`，兑现一次性免退避。
+    nudged_at: HashMap<String, i64>,
 }
 
 #[derive(Debug)]
 pub struct InMemoryEventQueue {
-    events: UnsafeCell<HashMap<String, serde_json::Value>>,
-    queues: UnsafeCell<HashMap<String, BinaryHeap<EventRef>>>,
-    global_heap: UnsafeCell<BinaryHeap<EventRef>>,
-    in_progress: UnsafeCell<HashMap<String, (EventRef, String)>>,
-    has_active_message: UnsafeCell<HashMap<String, bool>>,
-    lock: Mutex<()>,
+    state: Mutex<AopState>,
     /// 重试退避参数（生产默认 15s 起、5min 封顶，取值理由见常量处；测试注入毫秒级以保持用例速度）
     backoff_base_ms: i64,
     backoff_max_ms: i64,
 }
-
-unsafe impl Send for InMemoryEventQueue {}
-unsafe impl Sync for InMemoryEventQueue {}
 
 impl Default for InMemoryEventQueue {
     fn default() -> Self {
@@ -84,13 +92,12 @@ impl InMemoryEventQueue {
     /// 消费链路就此**永久死亡**（awakening 侧表现为 `dequeue error: ... poisoned lock:
     /// another task failed inside` 死循环，用户侧表现为「发消息没响应」）。
     ///
-    /// 这里锁保护的是 `HashMap` / `BinaryHeap` 的 insert/remove/pop —— 单次操作要么
+    /// 这里锁保护的是各 `HashMap` / `PriorityQueue` 的 insert/remove/pop —— 单次操作要么
     /// 完成、要么不改变结构，**不存在跨多步的半更新不变式**，故 panic 后取回内部 guard
-    /// 继续访问是安全的。真正的修复是消灭持锁 panic 源（见 [`Self::get_event`] 的 UTF-8
-    /// 安全截断），本恢复是「即便将来又踩到别的 panic，也不至于把整个消费者拖死」的
-    /// 第二道防线。
-    fn lock_guard(&self) -> MutexGuard<'_, ()> {
-        self.lock.lock().unwrap_or_else(|e| e.into_inner())
+    /// 继续访问是安全的。真正的修复是消灭持锁 panic 源（见 `get_event` 的完整 payload
+    /// 返回），本恢复是「即便将来又踩到别的 panic，也不至于把整个消费者拖死」的第二道防线。
+    fn lock_guard(&self) -> MutexGuard<'_, AopState> {
+        self.state.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     pub fn new() -> Self {
@@ -100,12 +107,7 @@ impl InMemoryEventQueue {
     /// 以自定义退避参数构造（仅测试用：毫秒级退避换取用例速度）
     pub fn with_backoff_policy(base_ms: i64, max_ms: i64) -> Self {
         Self {
-            events: UnsafeCell::new(HashMap::new()),
-            queues: UnsafeCell::new(HashMap::new()),
-            global_heap: UnsafeCell::new(BinaryHeap::new()),
-            in_progress: UnsafeCell::new(HashMap::new()),
-            has_active_message: UnsafeCell::new(HashMap::new()),
-            lock: Mutex::new(()),
+            state: Mutex::new(AopState::default()),
             backoff_base_ms: base_ms,
             backoff_max_ms: max_ms,
         }
@@ -115,13 +117,13 @@ impl InMemoryEventQueue {
     /// （首条上堆、其余在 key 队列里等前一条 ack）；`gated = false` 时无视
     /// `order_key` 直进堆，按 `(priority, created_at)` 排序 —— 供**未声明
     /// `ordered`** 的订阅走（门闩是订阅者的 opt-in，见设计稿 §4.1）。
-    async fn do_enqueue(&self, event: serde_json::Value, gated: bool) -> Result<()> {
-        let _guard = self.lock_guard();
-
-        let events = unsafe { &mut *self.events.get() };
-        let queues = unsafe { &mut *self.queues.get() };
-        let global_heap = unsafe { &mut *self.global_heap.get() };
-        let has_active_message = unsafe { &mut *self.has_active_message.get() };
+    async fn do_enqueue(
+        &self,
+        ctx: RequestContext,
+        event: serde_json::Value,
+        gated: bool,
+    ) -> Result<()> {
+        let mut state = self.lock_guard();
 
         let event_id = event
             .get("event_id")
@@ -155,40 +157,93 @@ impl InMemoryEventQueue {
             attempt: 1,
             not_before: 0,
             gated: gate,
+            consumed_at: 0,
         };
 
-        if events.contains_key(&event_id) {
+        if state.events.contains_key(&event_id) {
             return Ok(());
         }
 
-        events.insert(event_id.clone(), event);
+        // 同 key 又来一条消息 = 用户在催促：记下时刻，并立刻解冻已在退避的队首。
+        // 若队首仍在 `in_progress`（不在 global 堆里），清退避够不到它 —— 时间戳留给
+        // `nack` 兑现一次性免退避（见 `nack`），补上催促的时效性缺口。
+        // 只清 `not_before` / 记时刻，不动门闩与 attempt —— 串行仍由 ack 释放，重试计数不丢。
+        // ungated 事件不触发：门闩是订阅者 opt-in，不能被旁路事件影响。
+        if gate {
+            let nudge_at = now_ms();
+            state.nudged_at.insert(order_key.clone(), nudge_at);
+            let cleared = Self::clear_backoff_for_order_key(&mut state, &order_key, nudge_at);
+            if cleared > 0 {
+                crate::log_info!(
+                    ctx,
+                    "aop_queue",
+                    "nudge clears retry backoff: order_key={}, cleared={}",
+                    order_key,
+                    cleared
+                );
+            }
+        }
+
+        state.events.insert(event_id.clone(), event);
 
         if gate {
-            let queue = queues.entry(order_key.clone()).or_default();
-            let was_empty = queue.is_empty();
-            queue.push(event_ref.clone());
-
+            let was_empty = {
+                let queue = state.gates.entry(order_key.clone()).or_default();
+                let was_empty = queue.is_empty();
+                queue.upsert(event_ref.clone());
+                was_empty
+            };
             if was_empty
-                && !has_active_message.get(&order_key).copied().unwrap_or(false)
-                && let Some(top_ref) = queue.pop()
+                && !state
+                    .has_active_message
+                    .get(&order_key)
+                    .copied()
+                    .unwrap_or(false)
+                && let Some((_, top_ref)) = state
+                    .gates
+                    .get_mut(&order_key)
+                    .and_then(|queue| queue.pop())
             {
-                global_heap.push(top_ref);
-                has_active_message.insert(order_key, true);
+                state.global.upsert(top_ref);
+                state.has_active_message.insert(order_key, true);
             }
         } else {
-            global_heap.push(event_ref);
+            state.global.upsert(event_ref);
         }
 
         Ok(())
     }
 
-    /// 收集各 order_key 的待处理数量统计。
-    /// 注意：调用前必须持有 self.lock，否则存在数据竞争。
-    fn collect_order_key_stats(&self) -> Vec<super::OrderKeyStats> {
-        let queues = unsafe { &*self.queues.get() };
+    /// 催促的「立即可见」一半：把该 key 下所有尚在退避的 gated 条目归零。
+    ///
+    /// 正常情况下一个 key 只会有一个退避条目（nack 后的门闩持有者），其余在同 key
+    /// 的 `gates` 队列里等 ack、没有退避。这里仍按集合处理，避免对未来多条目场景
+    /// 漏清。调用前须持锁。
+    ///
+    /// ⚠️ 只覆盖「已在 global 堆退避」的事件；仍在 `in_progress` 的事件由
+    /// `nudged_at` 时间戳接力，在随后的 `nack` 里兑现一次性免退避。
+    fn clear_backoff_for_order_key(state: &mut AopState, order_key: &str, now: i64) -> usize {
+        let mut cleared = 0;
+        for event_id in state.global.keys() {
+            // `not_before` 不参与 rank ⇒ 原地改载荷，seq 与堆项都不动，
+            // 同 rank 不同 key 的 FIFO 顺序不受影响。
+            state.global.update_entry(&event_id, |event_ref| {
+                if event_ref.gated
+                    && event_ref.order_key.as_str() == order_key
+                    && event_ref.not_before > now
+                {
+                    event_ref.not_before = 0;
+                    cleared += 1;
+                }
+            });
+        }
+        cleared
+    }
 
+    /// 收集各 order_key 的待处理数量统计。调用前须持锁。
+    fn collect_order_key_stats(state: &AopState) -> Vec<super::OrderKeyStats> {
         let mut stats = Vec::new();
-        for (order_key, queue) in queues.iter() {
+        for (order_key, queue) in state.gates.iter() {
             let pending = queue.len();
             if pending > 0 {
                 stats.push(super::OrderKeyStats {
@@ -201,18 +256,17 @@ impl InMemoryEventQueue {
         stats
     }
 
-    /// 查找最老事件的年龄（秒）。
-    /// 注意：调用前必须持有 self.lock，否则存在数据竞争。
-    fn find_oldest_event_age(&self) -> Option<u64> {
+    /// 查找最老事件的年龄（秒）。调用前须持锁。
+    fn find_oldest_event_age(state: &AopState) -> Option<u64> {
         use std::time::{SystemTime, UNIX_EPOCH};
 
-        let events = unsafe { &*self.events.get() };
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
 
-        events
+        state
+            .events
             .values()
             .filter_map(|e| e.get("created_at").and_then(|v| v.as_i64()))
             .min()
@@ -239,9 +293,14 @@ impl InMemoryEventQueue {
 /// 把这个区间钉死，改任一个常量都会在那里失败）。
 ///
 /// ⚠️ **代价（已知且接受）**：gated 事件 `nack` 后**继续占着 order_key 门闩**
-/// （见 [`Self::nack`]），所以退避窗口就是同一 Agent 后继消息的**最长等待**。
-/// 它只在「该 Agent 持续忙满整个窗口」时才兑现 —— 那种情况下后继消息本来也
-/// 处理不了，故不算回归；Agent 一旦空闲，下一次退避到期即消费成功、门闩放行。
+/// （见 [`EventQueue::nack`]），所以退避窗口就是同一 Agent 后继消息的最长等待。
+/// 但同 key 又来一条消息时视为用户在「催促」，入队会把这份退避立即清零
+/// （见 [`Self::clear_backoff_for_order_key`]）—— 不需要手动干预，也不放行门闩。
+///
+/// ⚠️ **催促的时效性**：入队时清退避只覆盖「已在 global 堆退避」的事件。若旧事件
+/// 当时仍在 `in_progress`，入队会记下催促时刻（`nudged_at`），它随后失败 `nack`
+/// 时若确认催促晚于本次消费开始，就免这一次退避。一次催促只兑现一次，之后没有
+/// 新催促就照常指数退避 —— 既补上时效性缺口，又不让快速失败变成无间隔紧循环。
 const RETRY_BACKOFF_BASE_MS: i64 = 15_000;
 const RETRY_BACKOFF_MAX_MS: i64 = 300_000;
 
@@ -259,12 +318,12 @@ fn now_ms() -> i64 {
 
 #[async_trait]
 impl EventQueue for InMemoryEventQueue {
-    async fn enqueue(&self, _ctx: RequestContext, event: serde_json::Value) -> Result<()> {
-        self.do_enqueue(event, /* gated */ true).await
+    async fn enqueue(&self, ctx: RequestContext, event: serde_json::Value) -> Result<()> {
+        self.do_enqueue(ctx, event, /* gated */ true).await
     }
 
-    async fn enqueue_ungated(&self, _ctx: RequestContext, event: serde_json::Value) -> Result<()> {
-        self.do_enqueue(event, /* gated */ false).await
+    async fn enqueue_ungated(&self, ctx: RequestContext, event: serde_json::Value) -> Result<()> {
+        self.do_enqueue(ctx, event, /* gated */ false).await
     }
 
     async fn enqueue_batch(
@@ -279,33 +338,21 @@ impl EventQueue for InMemoryEventQueue {
     }
 
     async fn dequeue_next(&self, _ctx: RequestContext) -> Result<Option<serde_json::Value>> {
-        let _guard = self.lock_guard();
-
-        let events = unsafe { &mut *self.events.get() };
-        let global_heap = unsafe { &mut *self.global_heap.get() };
-        let in_progress = unsafe { &mut *self.in_progress.get() };
-
+        let mut state = self.lock_guard();
         let now = now_ms();
-        // 退避中（not_before 未到）的事件先摘出来，取完再放回——
-        // 它们不阻塞堆里已到期的后继事件。
-        let mut deferred: Vec<EventRef> = Vec::new();
 
+        // 基础队列的 pop_where 会把「退避中（not_before 未到）」的条目临时摘出、
+        // 遍历结束后原样放回 —— 它们不阻塞堆里已到期的后继事件。
         loop {
-            let Some(event_ref) = global_heap.pop() else {
-                global_heap.extend(deferred);
+            let Some((event_id, mut event_ref)) = state
+                .global
+                .pop_where(&|event_ref| event_ref.not_before <= now)
+            else {
                 return Ok(None);
             };
 
-            if event_ref.not_before > now {
-                deferred.push(event_ref);
-                continue;
-            }
-
-            let event_id = event_ref.event_id.clone();
-            let order_key = event_ref.order_key.clone();
-
-            let Some(event) = events.get(&event_id) else {
-                // 事件体已消失（ack 竞态窗口）：同旧实现——丢弃该 ref，继续扫堆
+            let Some(event) = state.events.get(&event_id) else {
+                // 事件体已消失（ack 竞态窗口）：丢弃该条目，继续扫堆
                 continue;
             };
 
@@ -319,9 +366,11 @@ impl EventQueue for InMemoryEventQueue {
                     serde_json::Value::from(event_ref.attempt),
                 );
             }
-            in_progress.insert(event_id, (event_ref, order_key));
+            // 记录本次消费开始时刻：nack 时据此判断催促是否「新鲜」
+            event_ref.consumed_at = now;
+            let order_key = event_ref.order_key.clone();
+            state.in_progress.insert(event_id, (event_ref, order_key));
 
-            global_heap.extend(deferred);
             return Ok(Some(cloned_event));
         }
     }
@@ -329,25 +378,18 @@ impl EventQueue for InMemoryEventQueue {
     /// 见 trait 文档。`events` 只在 `ack` 时移除 ⇒ 本查询同时覆盖三种在飞形态：
     /// 等待出队、退避重试中（`not_before` 未到）、正在消费（已挪进 `in_progress`）。
     fn contains(&self, event_id: &str) -> bool {
-        let _guard = self.lock_guard();
-        let events = unsafe { &*self.events.get() };
-        events.contains_key(event_id)
+        let state = self.lock_guard();
+        state.events.contains_key(event_id)
     }
 
     async fn ack(&self, _ctx: RequestContext, event_id: &str) -> Result<()> {
-        let _guard = self.lock_guard();
+        let mut state = self.lock_guard();
 
-        let events = unsafe { &mut *self.events.get() };
-        let queues = unsafe { &mut *self.queues.get() };
-        let global_heap = unsafe { &mut *self.global_heap.get() };
-        let in_progress = unsafe { &mut *self.in_progress.get() };
-        let has_active_message = unsafe { &mut *self.has_active_message.get() };
-
-        let Some((event_ref, _order_key)) = in_progress.remove(event_id) else {
+        let Some((event_ref, _order_key)) = state.in_progress.remove(event_id) else {
             return Ok(());
         };
 
-        events.remove(event_id);
+        state.events.remove(event_id);
 
         // ⚠️ 只有走门闩进来的事件碰门闩状态；ungated 事件即使带着同一个
         // `order_key`，也与相邻小贴士/latch 无关（详见 `EventRef::gated`）。
@@ -355,9 +397,14 @@ impl EventQueue for InMemoryEventQueue {
             return Ok(());
         }
         let order_key = event_ref.order_key.clone();
+        // 门闩状态已变化（放行后继或释放），此前记下的催促不再指向在飞的旧事件
+        state.nudged_at.remove(&order_key);
 
-        let Some(queue) = queues.get_mut(&order_key) else {
-            return Ok(());
+        let next_ref = {
+            let Some(queue) = state.gates.get_mut(&order_key) else {
+                return Ok(());
+            };
+            queue.pop().map(|(_, next_ref)| next_ref)
         };
 
         // ⚠️ 两段必须互斥：只要还 pop 出了后继（它已上堆、等待被消费），
@@ -365,42 +412,56 @@ impl EventQueue for InMemoryEventQueue {
         // 会判定「门闩空闲」而直接上堆，与上一个后继同时在堆里 → 并发 > 1 时同 key
         // 被并行消费，`order_key` 串行门闩静默失效（FIFO 也可能乱序）。
         // 只有 pop 返回 None（该 key 确实无后继）才清理状态。
-        if let Some(next_ref) = queue.pop() {
-            global_heap.push(next_ref);
-            has_active_message.insert(order_key.clone(), true);
+        if let Some(next_ref) = next_ref {
+            state.global.upsert(next_ref);
+            state.has_active_message.insert(order_key, true);
         } else {
-            queues.remove(&order_key);
-            has_active_message.remove(&order_key);
+            state.gates.remove(&order_key);
+            state.has_active_message.remove(&order_key);
         }
 
         Ok(())
     }
 
     async fn nack(&self, _ctx: RequestContext, event_id: &str) -> Result<()> {
-        let _guard = self.lock_guard();
+        let mut state = self.lock_guard();
 
-        let global_heap = unsafe { &mut *self.global_heap.get() };
-        let in_progress = unsafe { &mut *self.in_progress.get() };
-        let has_active_message = unsafe { &mut *self.has_active_message.get() };
-
-        let Some((mut event_ref, order_key)) = in_progress.remove(event_id) else {
+        let Some((mut event_ref, order_key)) = state.in_progress.remove(event_id) else {
             return Ok(());
         };
 
         // 重投：累计消费次数自增 → 下次出队时封套里的 `attempt` 即新值
         event_ref.attempt = event_ref.attempt.saturating_add(1);
+
+        // 催促兑现：仅当「同 key 新消息」发生在这次消费开始之后，才免这一次退避。
+        // 入队时已在退避的事件已由 `clear_backoff_for_order_key` 兑现，随后重新消费
+        // 时 `consumed_at` 晚于催促时刻，这里自然不会再免 —— 一次催促只兑现一次。
+        // 无论是否命中都清标记：没有新催促就恢复指数退避，避免快速失败变紧循环。
+        let nudged = event_ref.gated
+            && state
+                .nudged_at
+                .get(&order_key)
+                .is_some_and(|&at| at > event_ref.consumed_at);
+        if event_ref.gated {
+            state.nudged_at.remove(&order_key);
+        }
+
         // per-event 指数退避：第 n 次重试前先静默 `retry_backoff_ms(attempt)`，
         // 期间 `dequeue_next` 跳过它（不阻塞同堆其他事件）。
-        event_ref.not_before = now_ms()
-            + retry_backoff_ms(self.backoff_base_ms, self.backoff_max_ms, event_ref.attempt);
+        let now = now_ms();
+        event_ref.not_before = if nudged {
+            now
+        } else {
+            now + retry_backoff_ms(self.backoff_base_ms, self.backoff_max_ms, event_ref.attempt)
+        };
 
         // gated 事件重投后仍然占着门闩 —— 这里是显式重申（幂等），不是状态迁移：
         // 真正的释放只在 `ack` 里发生。
         if event_ref.gated {
-            has_active_message.insert(order_key, true);
+            state.has_active_message.insert(order_key, true);
         }
 
-        global_heap.push(event_ref);
+        state.global.upsert(event_ref);
         // ⚠️ 同一 key 上的 ungated 事件**不写**这个标记：它不是从 key 队列出来的，
         // 没有一个 gated 的 ack 能为它收尾 → 一旦写上就再没人解开，该 key 的
         // gated 后继永远不会被放行（永久饥饿）。
@@ -408,15 +469,11 @@ impl EventQueue for InMemoryEventQueue {
     }
 
     fn len(&self) -> usize {
-        let _guard = self.lock_guard();
-        let events = unsafe { &*self.events.get() };
-        events.len()
+        self.lock_guard().events.len()
     }
 
     fn in_progress_count(&self) -> usize {
-        let _guard = self.lock_guard();
-        let in_progress = unsafe { &*self.in_progress.get() };
-        in_progress.len()
+        self.lock_guard().in_progress.len()
     }
 
     fn recover(&self, _ctx: RequestContext) -> Result<usize> {
@@ -424,44 +481,25 @@ impl EventQueue for InMemoryEventQueue {
     }
 
     fn clear(&self) {
-        let _guard = self.lock_guard();
-        let events = unsafe { &mut *self.events.get() };
-        let queues = unsafe { &mut *self.queues.get() };
-        let global_heap = unsafe { &mut *self.global_heap.get() };
-        let in_progress = unsafe { &mut *self.in_progress.get() };
-        let has_active_message = unsafe { &mut *self.has_active_message.get() };
-
-        events.clear();
-        queues.clear();
-        global_heap.clear();
-        in_progress.clear();
-        has_active_message.clear();
+        *self.lock_guard() = AopState::default();
     }
 
     fn stats(&self) -> super::QueueStats {
-        let _guard = self.lock_guard();
-
-        let events = unsafe { &*self.events.get() };
-        let in_progress = unsafe { &*self.in_progress.get() };
-
+        let state = self.lock_guard();
         super::QueueStats {
-            pending_count: events.len().saturating_sub(in_progress.len()),
-            in_progress_count: in_progress.len(),
-            order_keys: self.collect_order_key_stats(),
-            oldest_event_age_secs: self.find_oldest_event_age(),
+            pending_count: state.events.len().saturating_sub(state.in_progress.len()),
+            in_progress_count: state.in_progress.len(),
+            order_keys: Self::collect_order_key_stats(&state),
+            oldest_event_age_secs: Self::find_oldest_event_age(&state),
         }
     }
 
     fn query_events(&self, filter: super::EventQueryFilter) -> Vec<super::EventSummary> {
-        let _guard = self.lock_guard();
-
-        let events = unsafe { &*self.events.get() };
-        let in_progress = unsafe { &*self.in_progress.get() };
-
+        let state = self.lock_guard();
         let mut results: Vec<super::EventSummary> = Vec::new();
 
         // 收集所有事件
-        for (event_id, event) in events.iter() {
+        for (event_id, event) in state.events.iter() {
             let order_key = event
                 .get("order_key")
                 .and_then(|v| v.as_str())
@@ -475,7 +513,7 @@ impl EventQueue for InMemoryEventQueue {
                 continue;
             }
 
-            let status = if in_progress.contains_key(event_id) {
+            let status = if state.in_progress.contains_key(event_id) {
                 super::EventStatus::Processing
             } else {
                 super::EventStatus::Pending
@@ -523,12 +561,9 @@ impl EventQueue for InMemoryEventQueue {
     }
 
     fn get_event(&self, event_id: &str) -> Option<super::EventDetail> {
-        let _guard = self.lock_guard();
+        let state = self.lock_guard();
 
-        let events = unsafe { &*self.events.get() };
-        let in_progress = unsafe { &*self.in_progress.get() };
-
-        let event = events.get(event_id)?;
+        let event = state.events.get(event_id)?;
         let event_json = event.clone();
 
         let order_key = event_json
@@ -537,7 +572,7 @@ impl EventQueue for InMemoryEventQueue {
             .unwrap_or("")
             .to_string();
 
-        let status = if in_progress.contains_key(event_id) {
+        let status = if state.in_progress.contains_key(event_id) {
             super::EventStatus::Processing
         } else {
             super::EventStatus::Pending

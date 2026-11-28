@@ -328,6 +328,50 @@ async fn test_claim_due_lease(pool: SqlitePool) -> Result<()> {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn test_claim_by_id_is_exclusive_and_scoped(pool: SqlitePool) -> Result<()> {
+    let (dao, ctx) = init_test_env(pool);
+    let due = create_test_trigger("trigger-1", "due", TriggerType::Cron, 1000);
+    let future = create_test_trigger("trigger-2", "future", TriggerType::Cron, 9000);
+    for t in [&due, &future] {
+        dao.create(ctx.clone(), t).await?;
+    }
+
+    // 按 id 只领指定条，不会取到另一条到期的（用独立的 due 对照）
+    let another_due = create_test_trigger("trigger-3", "another", TriggerType::Cron, 500);
+    dao.create(ctx.clone(), &another_due).await?;
+    let claimed = dao
+        .claim_by_id(ctx.clone(), "trigger-1", 3000, "instance-a", 8000)
+        .await?;
+    assert_eq!(claimed.map(|t| t.id), Some("trigger-1".to_string()));
+
+    // 租约期内另一实例领不到同一条
+    let none = dao
+        .claim_by_id(ctx.clone(), "trigger-1", 3000, "instance-b", 8000)
+        .await?;
+    assert!(none.is_none());
+
+    // 未到期的条目领不到
+    let not_due = dao
+        .claim_by_id(ctx.clone(), "trigger-2", 3000, "instance-a", 8000)
+        .await?;
+    assert!(not_due.is_none());
+
+    // 租约到期后可重新领取
+    let reclaimed = dao
+        .claim_by_id(ctx.clone(), "trigger-1", 8000, "instance-b", 12000)
+        .await?;
+    assert_eq!(reclaimed.map(|t| t.id), Some("trigger-1".to_string()));
+
+    // 不存在的 id 返回 None
+    let missing = dao
+        .claim_by_id(ctx.clone(), "no-such", 8000, "instance-b", 12000)
+        .await?;
+    assert!(missing.is_none());
+
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn test_update_next_run_at_clears_lease_and_counts(pool: SqlitePool) -> Result<()> {
     let (dao, ctx) = init_test_env(pool);
     let trigger = create_test_trigger("trigger-1", "cron", TriggerType::Cron, 1000);
@@ -386,6 +430,67 @@ async fn test_list_statuses_with_pagination_and_count(pool: SqlitePool) -> Resul
     };
     assert_eq!(dao.count(ctx.clone(), all.clone()).await?, 4);
     assert_eq!(dao.list(ctx.clone(), all).await?.len(), 4);
+
+    Ok(())
+}
+
+/// DB 兜底刷新窗口：时间上界 + 已在派发队列的 id 排除，都在 SQL 层完成，
+/// 不让「已经在队列里」的记录再占查询/传输带宽。
+#[sqlx::test(migrations = "./migrations")]
+async fn test_list_dispatch_window_excludes_queued_ids(pool: SqlitePool) -> Result<()> {
+    let (dao, ctx) = init_test_env(pool);
+    for (id, next_run_at) in [("queued", 1000), ("fresh", 2000), ("far", 9000)] {
+        dao.create(
+            ctx.clone(),
+            &create_test_trigger(id, id, TriggerType::Cron, next_run_at),
+        )
+        .await?;
+    }
+
+    let rows = dao
+        .list(
+            ctx.clone(),
+            CronTriggerQuery {
+                next_run_before: Some(5000),
+                exclude_ids: vec!["queued".to_string()],
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].id, "fresh");
+
+    Ok(())
+}
+
+/// 兜底刷新按 next_run_at ASC：窗口内超 limit 时先补最早到期的条目，
+/// 而不是按 created_at DESC 漏掉最紧急的那批。
+#[sqlx::test(migrations = "./migrations")]
+async fn test_list_order_by_due_prioritizes_earliest(pool: SqlitePool) -> Result<()> {
+    let (dao, ctx) = init_test_env(pool);
+    for (id, next_run_at) in [("late", 4000), ("early", 1000), ("mid", 2000)] {
+        dao.create(
+            ctx.clone(),
+            &create_test_trigger(id, id, TriggerType::Cron, next_run_at),
+        )
+        .await?;
+    }
+
+    let rows = dao
+        .list(
+            ctx.clone(),
+            CronTriggerQuery {
+                next_run_before: Some(5000),
+                order_by_due: true,
+                limit: Some(2),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(
+        rows.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(),
+        ["early", "mid"]
+    );
 
     Ok(())
 }

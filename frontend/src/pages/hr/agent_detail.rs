@@ -1,10 +1,10 @@
 use crate::api::finance::{list_model_providers, list_tool_tags, search_tools};
 use crate::api::hr::*;
-use crate::api::message::{load_older_messages, poll_new_messages, send_message_to_agent};
+use crate::api::message::{load_older_messages, poll_new_messages};
 use crate::api::project::{query_projects, query_tasks};
 use crate::components::SearchableSelect;
 use crate::components::avatar_bubble::collapse_avatar_bubble;
-use crate::components::chat::{MessageBubble, TypingIndicator};
+use crate::components::chat::MessageBubble;
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::hud::{HudCard, HudPanel};
 use crate::components::markdown::MarkdownRenderer;
@@ -25,8 +25,7 @@ use crate::pages::hr::onboard_modal::OnboardModal;
 use crate::pages::hr::{PRESET_ROLES, ROLES_HINT, ROLES_LABEL_HINT};
 use crate::store::toast::use_toast;
 use crate::utils::{
-    OPTIMISTIC_USER_ID, build_optimistic_user_msg, format_time_hm as format_time,
-    replace_tmp_with_real,
+    OPTIMISTIC_USER_ID, format_time_hm as format_time, replace_tmp_with_real,
     status::{
         agent_lifecycle_badge, agent_lifecycle_text, agent_status_options, short_id,
         skill_author_type_badge, skill_author_type_text, tag_chip,
@@ -37,11 +36,10 @@ use common::api::{
     GetAgentRequest, InstallSkillPackRequest, InstallSkillToAgentRequest, InstallToolPackRequest,
     ListExpiredAgentSkillsRequest, ListMessagesRequest, ListModelProvidersResponseItem,
     MessageListItem, PaginationParams, ProjectListItem, ProjectQueryRequest, RestoreSkillRequest,
-    RuntimeReady, SearchSkillsRequest, SearchToolsRequest, SelectAgentCareerRequest,
-    SendMessageToAgentParams, SkillListItem, StartAgentOffboardRequest, TaskListItem,
-    TaskQueryRequest, ToolListItem, UnbindToolFromAgentRequest, UninstallSkillFromAgentRequest,
-    UninstallSkillPackRequest, UninstallToolPackRequest, UpdateAgentRequest,
-    UpdateAgentStatusRequest,
+    RuntimeReady, SearchSkillsRequest, SearchToolsRequest, SelectAgentCareerRequest, SkillListItem,
+    StartAgentOffboardRequest, TaskListItem, TaskQueryRequest, ToolListItem,
+    UnbindToolFromAgentRequest, UninstallSkillFromAgentRequest, UninstallSkillPackRequest,
+    UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentStatusRequest,
 };
 use common::enums::{AgentStatus, AssigneeType, SkillStatus, ThinkingIntensity};
 use dioxus::dioxus_core::{Runtime, current_scope_id};
@@ -340,10 +338,6 @@ const LIFECYCLE_STEPS: &[(i32, &str, &str)] = &[
 /// 消息流单页条数（双向查询各取 PAGE_SIZE，合并去重后取最新的 PAGE_SIZE 条）
 const MSG_PAGE_SIZE: usize = 20;
 
-/// 发送后等待 Agent 回复的轮询节奏：最多 20 次 × 3s ≈ 60s，与 is_typing 超时保护一致
-const REPLY_POLL_MAX: usize = 20;
-const REPLY_POLL_INTERVAL_MS: u32 = 3_000;
-
 /// 拉取「与指定 Agent 相关」的消息（双向 OR 查询 + 合并去重）
 ///
 /// 后端 `/api/v1/finance/messages` 的 `from_id` 与 `to_id` 是 **AND** 关系，
@@ -416,9 +410,6 @@ pub fn HrAgentDetail(id: String) -> Element {
     let mut msg_loading = use_signal(|| false);
     let mut msg_loading_more = use_signal(|| false);
     let mut msg_has_more = use_signal(|| true);
-    let mut is_typing = use_signal(|| false);
-    // 修复 H3：为聊天输入框分离独立 signal，避免状态污染
-    let mut input_message = use_signal(String::new);
     let toast = use_toast();
     let mut tool_packs = use_signal(Vec::<String>::new);
     let mut tool_tags = use_signal(Vec::<String>::new);
@@ -614,7 +605,7 @@ pub fn HrAgentDetail(id: String) -> Element {
     // Agent 详情页的对话定位是「信息流回看」，不需要实时推送：
     // SSE 会常驻一条连接、且让消息列表与实时事件耦合（断连/重连都要处理）。
     // 改为：进入页面拉最新一页，点「加载更早」按 before_timestamp 向前翻页，
-    // 发送消息后短时轮询拉取 Agent 回复（见 handle_send）。
+    // 点顶部「刷新」增量拉取最新消息（本页不提供发送入口）。
 
     // 上拉加载更早消息。
     // 捕获 `rid`（Signal，Copy）而非 `id`（String）—— 让闭包保持 Copy，
@@ -691,84 +682,12 @@ pub fn HrAgentDetail(id: String) -> Element {
                 current.push(msg);
                 changed = true;
             }
-            // 收到 Agent 的回复即可停止「思考中」提示
             if changed {
                 // 无游标那次取的是「最新一页」，可能含列表里还没有的更早消息
                 current.sort_by_key(|m| m.created_at);
             }
-            if changed && current.iter().any(|m| m.from_role == 1 && m.from_id == aid) {
-                is_typing.set(false);
-            }
         });
     };
-
-    let id_for_send = id.clone();
-    let handle_send = use_callback(move |_: ()| {
-        let text = input_message().trim().to_string();
-        if text.is_empty() {
-            return;
-        }
-        let aid = id_for_send.clone();
-
-        // 修复 M4（对齐 chat.rs）：保存输入快照，失败时恢复
-        let text_snapshot = text.clone();
-        input_message.set(String::new());
-        is_typing.set(true);
-
-        // 修复 M6（对齐 chat.rs）：is_typing 超时保护，防止 Agent 失败时永久卡死。
-        // 用 `callback::Timeout::new(..).forget()` 而非 `spawn + TimeoutFuture`：
-        // 组件卸载时 spawn 的 future 被 drop，TimeoutFuture 底层 Closure::once 在
-        // 「已入队未触发」时会被浏览器调用已释放的闭包 → "closure invoked recursively
-        // or after being dropped"。forget() 有意泄漏该一次性定时器，规避该竞态。
-        gloo_timers::callback::Timeout::new(
-            REPLY_POLL_MAX as u32 * REPLY_POLL_INTERVAL_MS,
-            move || {
-                is_typing.set(false);
-            },
-        )
-        .forget();
-
-        spawn(async move {
-            let req = SendMessageToAgentParams {
-                to_agent_id: Some(aid.clone()),
-                content: text.clone(),
-                project_id: None,
-                task_id: None,
-                reply_to_id: None,
-                attachment_ids: None,
-                notify_only: None,
-            };
-
-            match send_message_to_agent(req).await {
-                Ok(resp) => {
-                    // 构造乐观用户消息（统一使用 build_optimistic_user_msg）
-                    // 用响应里的真实 message_id 覆盖 tmp_ ID：本页无 SSE、仅靠 poll_new
-                    // 兜底，保留 tmp_ ID 会让 Agent 回复的 reply_to_id 无法解析，
-                    // 引用块不渲染（同 chat 页问题）。
-                    let mut user_msg =
-                        build_optimistic_user_msg(text, None, None, Some(aid.clone()));
-                    user_msg.message_id = resp.message_id;
-                    messages.write().push(user_msg);
-
-                    // 无 SSE：发送后短时轮询拉取 Agent 回复（最多 ~60s，与超时保护同步）。
-                    // 一旦 `poll_new` 收到该 Agent 的消息就会把 is_typing 置回 false。
-                    for _ in 0..REPLY_POLL_MAX {
-                        gloo_timers::future::TimeoutFuture::new(REPLY_POLL_INTERVAL_MS).await;
-                        if !is_typing() {
-                            break;
-                        }
-                        poll_new();
-                    }
-                }
-                Err(e) => {
-                    // 修复 M4：失败时恢复用户输入
-                    input_message.set(text_snapshot);
-                    toast.error(format!("发送消息失败: {}", e));
-                    is_typing.set(false);
-                }
-            }
-        });
-    });
 
     rsx! {
         AppLayout {
@@ -2080,10 +1999,10 @@ pub fn HrAgentDetail(id: String) -> Element {
 
                                             if msg_loading() {
                                                 Loading { size: "sm" }
-                                            } else if messages().is_empty() && !is_typing() {
+                                            } else if messages().is_empty() {
                                                 div { class: "text-center py-12",
                                                     div { class: "text-5xl mb-4 opacity-30", "💬" }
-                                                    div { class: "text-base-content/70", "暂无对话记录，发送消息开始对话" }
+                                                    div { class: "text-base-content/70", "暂无对话记录" }
                                                 }
                                             } else {
                                                 for msg in messages().iter().cloned() {
@@ -2095,29 +2014,6 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                         key: "{msg.message_id}",
                                                     }
                                                 }
-                                                if is_typing() {
-                                                    TypingIndicator {}
-                                                }
-                                            }
-                                        }
-                                        div { class: "flex gap-2 mt-3",
-                                            input {
-                                                class: "input input-bordered flex-1",
-                                                r#type: "text",
-                                                placeholder: "输入消息...",
-                                                value: input_message,
-                                                oninput: move |e| input_message.set(e.value().clone()),
-                                                onkeydown: move |e| {
-                                                    if e.key() == Key::Enter {
-                                                        e.prevent_default();
-                                                        handle_send(());
-                                                    }
-                                                },
-                                            }
-                                            button {
-                                                class: "btn hud-btn btn-primary",
-                                                onclick: move |_| handle_send(()),
-                                                "发送"
                                             }
                                         }
                                     }
@@ -2841,6 +2737,30 @@ pub fn HrAgentDetail(id: String) -> Element {
                 }
             },
             }}
+        }
+    }
+}
+
+#[cfg(test)]
+mod no_chat_input_tests {
+    /// Agent 详情页不是聊天入口：发消息统一走对话页 / 工作台，
+    /// 这里保留独立输入框只会导致三处交互漂移。
+    #[test]
+    fn agent_detail_has_no_chat_input() {
+        let src = include_str!("agent_detail.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap_or_default();
+        for needle in [
+            "let handle_send =",
+            "let mut input_message =",
+            "send_message_to_agent",
+            "placeholder: \"输入消息...\"",
+        ] {
+            assert!(
+                !src.contains(needle),
+                "agent detail must not own a chat input ({needle})"
+            );
         }
     }
 }

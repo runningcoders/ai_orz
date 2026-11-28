@@ -17,6 +17,9 @@ pub struct MessageQuery {
     pub id: Option<String>,
     /// 按多个消息 ID 批量查询（用于向量搜索结果回填）
     pub ids: Option<Vec<String>>,
+    /// 排除指定 ID：收件箱分批拉取时排除本唤醒内已判定的候选，
+    /// 避免每批都从同一批头部重扫、永远拉不到新消息。空 vec 不过滤。
+    pub exclude_ids: Vec<String>,
     /// 按任务 ID 查询
     ///
     /// `None` 表示**不限制**；要表达「任务为空」必须用
@@ -49,6 +52,9 @@ pub struct MessageQuery {
     pub to_role: Option<MessageRole>,
     /// 按消息类型查询
     pub message_type: Option<MessageType>,
+    /// 按多个消息类型 IN 查询（inbox 需要 Text + Mixed 一起扫描：
+    /// 带协议附件的消息落库为 Mixed，但正文里仍是同一话题的补充输入）
+    pub message_type_in: Option<Vec<MessageType>>,
     /// 要求 `file_type IS NULL`（无附件的纯文本消息）
     pub file_type_is_null: bool,
     /// 线程兼容过滤：只返回 `thread_id IS NULL` 或等于该值的消息

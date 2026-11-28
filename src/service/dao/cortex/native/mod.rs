@@ -4,7 +4,7 @@
 //! 按 provider_type 路由到具体实现。所有实现都是无状态单例（仅持有共享 reqwest::Client），
 //! 所有配置从 `&ModelProviderPo` 读取。
 
-use crate::models::cortex_types::{ChatMessage, ThinkResult, ToolDescriptor};
+use crate::models::cortex_types::{ChatMessage, ModelCallOptions, ThinkResult, ToolDescriptor};
 use crate::models::model_provider::{ModelProviderConfig, ModelProviderPo};
 use crate::models::vector::{VectorIndexParams, VectorPayload, Vectorizable};
 use crate::pkg::RequestContext;
@@ -32,6 +32,11 @@ pub fn downgrade_messages_for_no_vision(
     if provider_supports_vision(provider) {
         return messages.to_vec();
     }
+    downgrade_messages(messages)
+}
+
+/// 无条件降级：仅由「已确认不支持视觉」的路径调用，避免重复探测能力位。
+fn downgrade_messages(messages: &[ChatMessage]) -> Vec<ChatMessage> {
     messages
         .iter()
         .map(|m| match m {
@@ -212,11 +217,20 @@ impl CortexDaoRegistry {
     /// 入参是完整的 `&ModelProviderPo` 而非 `ProviderType`：协议口味
     /// (`config.api_flavor`) 与厂商 (`provider_type`) 是**正交两维**，
     /// 前者只能从 config 读。
+    ///
+    /// 无论哪种协议，**仅当 provider 未开启视觉**时才套 [`NoVisionGuardDao`]：
+    /// 支持视觉的 provider 直接返回内层 DAO，热路径上零包装、零克隆。未显式
+    /// 开启时，`UserMultimodal` 在发请求前降级为文本占位，避免 gateway 400 /
+    /// 静默忽略。
     pub fn chat_dao(&self, provider: &ModelProviderPo) -> Arc<dyn CortexDao> {
-        match provider_api_flavor(provider) {
+        let inner = match provider_api_flavor(provider) {
             ChatApiFlavor::Responses => self.responses.clone(),
             ChatApiFlavor::ChatCompletions => self.provider_type_dao(provider.provider_type),
+        };
+        if provider_supports_vision(provider) {
+            return inner;
         }
+        Arc::new(NoVisionGuardDao { inner })
     }
 
     /// 获取向量化（`embed()`）面 DAO
@@ -253,6 +267,64 @@ impl CortexDaoRegistry {
                 )
             }
         }
+    }
+}
+
+/// 发送前的视觉能力门禁：两种协议共用一层，避免各自实现漂移
+struct NoVisionGuardDao {
+    inner: Arc<dyn CortexDao>,
+}
+
+#[async_trait]
+impl CortexDao for NoVisionGuardDao {
+    async fn think(
+        &self,
+        ctx: RequestContext,
+        provider: &ModelProviderPo,
+        messages: &[ChatMessage],
+        tools: &[ToolDescriptor],
+        options: &ModelCallOptions,
+    ) -> Result<ThinkResult> {
+        // 防御性口径：包装本身只在 `chat_dao` 判定无视觉时创建，但直接构造本
+        // 包装的调用方（含测试）仍可能传入支持视觉的 provider。支持视觉时直通
+        // 内层、零拷贝；不支持时才降级，能力位只探测一次。
+        if provider_supports_vision(provider) {
+            return self
+                .inner
+                .think(ctx, provider, messages, tools, options)
+                .await;
+        }
+        let prepared = downgrade_messages(messages);
+        self.inner
+            .think(ctx, provider, &prepared, tools, options)
+            .await
+    }
+
+    async fn embed(
+        &self,
+        ctx: RequestContext,
+        provider: &ModelProviderPo,
+        texts: &[String],
+    ) -> Result<Vec<Vec<f32>>> {
+        self.inner.embed(ctx, provider, texts).await
+    }
+
+    async fn embed_entity(
+        &self,
+        ctx: RequestContext,
+        provider: &ModelProviderPo,
+        entity: &dyn Vectorizable,
+    ) -> Result<VectorIndexParams> {
+        self.inner.embed_entity(ctx, provider, entity).await
+    }
+
+    async fn embed_text_for_search(
+        &self,
+        ctx: RequestContext,
+        provider: &ModelProviderPo,
+        text: &str,
+    ) -> Result<VectorIndexParams> {
+        self.inner.embed_text_for_search(ctx, provider, text).await
     }
 }
 
@@ -363,5 +435,70 @@ mod tests {
         let non_bool = provider_with_config(r#"{"supports_vision": "yes"}"#);
         let out = downgrade_messages_for_no_vision(&[multimodal()], &non_bool);
         assert!(matches!(out[0], ChatMessage::User { .. }));
+    }
+
+    /// 接线回归：发送前的门禁确实把多模态改成文本（而非只在纯函数里生效）
+    #[derive(Debug, Default)]
+    struct RecordingDao {
+        seen: std::sync::Mutex<Vec<Vec<ChatMessage>>>,
+    }
+
+    #[async_trait]
+    impl CortexDao for RecordingDao {
+        async fn think(
+            &self,
+            _ctx: RequestContext,
+            _provider: &ModelProviderPo,
+            messages: &[ChatMessage],
+            _tools: &[ToolDescriptor],
+            _options: &ModelCallOptions,
+        ) -> Result<ThinkResult> {
+            self.seen.lock().expect("lock").push(messages.to_vec());
+            Ok(ThinkResult::Final {
+                content: "ok".to_string(),
+                usage: Default::default(),
+                reasoning_items: Vec::new(),
+            })
+        }
+
+        async fn embed(
+            &self,
+            _ctx: RequestContext,
+            _provider: &ModelProviderPo,
+            _texts: &[String],
+        ) -> Result<Vec<Vec<f32>>> {
+            Err(err!(UnsupportedOperation, "stub"))
+        }
+    }
+
+    #[sqlx::test]
+    async fn no_vision_guard_downgrades_before_inner_think(pool: sqlx::SqlitePool) {
+        let ctx = crate::pkg::request_context_test_support::new_test_ctx("u", pool);
+        let inner = Arc::new(RecordingDao::default());
+        let guard = NoVisionGuardDao {
+            inner: inner.clone(),
+        };
+        let options = ModelCallOptions {
+            thinking_intensity: None,
+        };
+        let no_vision = provider_with_config("{}");
+        guard
+            .think(ctx.clone(), &no_vision, &[multimodal()], &[], &options)
+            .await
+            .expect("think");
+        assert!(matches!(
+            &inner.seen.lock().expect("lock")[0][0],
+            ChatMessage::User { .. }
+        ));
+
+        let with_vision = provider_with_config(r#"{"supports_vision": true}"#);
+        guard
+            .think(ctx, &with_vision, &[multimodal()], &[], &options)
+            .await
+            .expect("think");
+        assert!(matches!(
+            &inner.seen.lock().expect("lock")[1][0],
+            ChatMessage::UserMultimodal { .. }
+        ));
     }
 }

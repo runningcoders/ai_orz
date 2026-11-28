@@ -38,6 +38,8 @@ pub enum EventTopic {
     AgentSettleRequested,
     /// `cron.trigger`
     CronTrigger,
+    /// `schedule.changed`（日程配置变更的原始事件，由 domain 发出、派发队列消费）
+    ScheduleChanged,
     /// `agent.loop`
     AgentLoop,
     /// `agent.think.round`
@@ -87,6 +89,7 @@ impl EventTopic {
         EventTopic::MessageCreated,
         EventTopic::AgentSettleRequested,
         EventTopic::CronTrigger,
+        EventTopic::ScheduleChanged,
         EventTopic::AgentLoop,
         EventTopic::AgentThinkRound,
         EventTopic::AgentThinkGraph,
@@ -117,6 +120,7 @@ impl EventTopic {
             EventTopic::MessageCreated => "message.created",
             EventTopic::AgentSettleRequested => "agent.settle.requested",
             EventTopic::CronTrigger => "cron.trigger",
+            EventTopic::ScheduleChanged => "schedule.changed",
             EventTopic::AgentLoop => "agent.loop",
             EventTopic::AgentThinkRound => "agent.think.round",
             EventTopic::AgentThinkGraph => "agent.think.graph",
@@ -147,6 +151,7 @@ impl EventTopic {
             "message.created" => Some(EventTopic::MessageCreated),
             "agent.settle.requested" => Some(EventTopic::AgentSettleRequested),
             "cron.trigger" => Some(EventTopic::CronTrigger),
+            "schedule.changed" => Some(EventTopic::ScheduleChanged),
             "agent.loop" => Some(EventTopic::AgentLoop),
             "agent.think.round" => Some(EventTopic::AgentThinkRound),
             "agent.think.graph" => Some(EventTopic::AgentThinkGraph),
@@ -256,6 +261,7 @@ mod tests {
             "agent.settle.requested"
         );
         assert_eq!(EventTopic::CronTrigger.as_str(), "cron.trigger");
+        assert_eq!(EventTopic::ScheduleChanged.as_str(), "schedule.changed");
         assert_eq!(
             EventTopic::FederationInboundSendTask.as_str(),
             "federation.inbound.send_task"

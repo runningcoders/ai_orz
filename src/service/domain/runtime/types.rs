@@ -264,19 +264,12 @@ pub struct ThinkLoopParams<'a> {
     /// - `None`：compact / intent / settle 等固定开销场景 ⇒ 本次循环自建零表，
     ///   计量口径仍是单周期（这些场景没有「再来一次」的回环）。
     pub usage: Option<Arc<Mutex<WakeUsage>>>,
-    /// 唤醒级收件箱（仅 awaken 主链传入）
+    /// 图级运行总线实例（仅 awaken 主链传入）
     ///
-    /// `Some` 时轮级图插入 `poll_round` 节点：每轮边界检查是否到达新输入并尾插；
+    /// 收件箱状态由运行时对象持有；`Some` 时轮级图插入 `poll_round` 节点，
+    /// 节点通过总线方法读写共享数据，不再直接摸 `Mutex<InboxState>`。
     /// `None` 时拓扑保持不变（intent 单轮 / settle / summary / discover 等）。
-    pub inbox: Option<Arc<Mutex<crate::service::domain::runtime::inbox::InboxState>>>,
-    /// 唤醒级业务产出收集器（仅 awaken 主链传入）
-    ///
-    /// 与 [`Self::usage`] 同一范式：图上下文持有共享句柄，节点写入、跨周期累计，
-    /// 由图结束后的持有者（`AwakeningResult`）移交给消费侧。
-    ///
-    /// 内部小循环（compact / intent / settle）不传：它们的产出不作为用户的
-    /// 交付物，自建一个丢弃即可。
-    pub collected: Option<Arc<Mutex<super::RoundCollected>>>,
+    pub runtime: Option<Arc<super::graph_runtime::GraphRuntime>>,
     /// 静默运行：不发布任何实时观测事件（影子模式 / 对照跑）
     ///
     /// 与 `deps.shadow` 同源：影子跑不能引入新副作用（AOP 事件也算）。
@@ -314,27 +307,14 @@ impl<'a> ThinkLoopParams<'a> {
             thinking_intensity_offset: 0,
             force_intensity: None,
             usage: None,
-            inbox: None,
-            collected: None,
+            runtime: None,
             silent: false,
         }
     }
 
-    /// 接入唤醒级业务产出收集器（跨周期累计，随结果移交）
-    ///
-    /// 只有 awaken 主链需要：它产生的附件 / 产物是用户可见交付物。
-    /// 内部小循环传 None，避免为「没人读的收集器」付一次锁开销。
-    pub fn with_collected(mut self, collected: &Arc<Mutex<super::RoundCollected>>) -> Self {
-        self.collected = Some(Arc::clone(collected));
-        self
-    }
-
-    /// 接入唤醒级收件箱（启用轮级 `poll_round`）
-    pub fn with_inbox(
-        mut self,
-        inbox: &Arc<Mutex<crate::service::domain::runtime::inbox::InboxState>>,
-    ) -> Self {
-        self.inbox = Some(Arc::clone(inbox));
+    /// 接入图级运行总线实例（启用轮级 `poll_round`）
+    pub fn with_runtime(mut self, runtime: &Arc<super::graph_runtime::GraphRuntime>) -> Self {
+        self.runtime = Some(Arc::clone(runtime));
         self
     }
 

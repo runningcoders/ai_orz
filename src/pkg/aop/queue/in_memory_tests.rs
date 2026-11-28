@@ -367,6 +367,12 @@ async fn new_queue_with_fast_backoff() -> InMemoryEventQueue {
     InMemoryEventQueue::with_backoff_policy(FAST_BACKOFF_BASE_MS, FAST_BACKOFF_MAX_MS)
 }
 
+/// 长退避队列（催促语义用例专用）：避免测试执行慢于退避窗口导致假通过
+async fn new_queue_with_long_backoff() -> InMemoryEventQueue {
+    crate::pkg::storage::test_support::init_for_test().await;
+    InMemoryEventQueue::with_backoff_policy(60_000, 60_000)
+}
+
 /// 退避曲线：按 attempt 指数递增并封顶
 #[test]
 fn retry_backoff_grows_exponentially_and_caps() {
@@ -481,6 +487,259 @@ async fn nack_backoff_defers_event_without_blocking_due_ones() {
     assert_eq!(retried["attempt"].as_u64(), Some(2));
 }
 
+/// 同 key 新消息 = 用户催促：nack 退避中的队首事件立即恢复可取，
+/// 但 attempt 不重置（重试计数不因催促丢失）
+#[tokio::test]
+async fn same_key_enqueue_clears_backoff_and_keeps_attempt() {
+    let queue = new_queue_with_long_backoff().await;
+    queue
+        .enqueue(
+            RequestContext::new_system(),
+            envelope("e1", "message.created", "agent-a", 1),
+        )
+        .await
+        .unwrap();
+
+    let first = queue
+        .dequeue_next(RequestContext::new_system())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(first["event_id"], "e1");
+    queue
+        .nack(RequestContext::new_system(), "e1")
+        .await
+        .unwrap();
+
+    assert!(
+        queue
+            .dequeue_next(RequestContext::new_system())
+            .await
+            .unwrap()
+            .is_none(),
+        "催促前仍在静默期"
+    );
+
+    // 用户补发一条同 agent 消息 = 催促
+    queue
+        .enqueue(
+            RequestContext::new_system(),
+            envelope("e2", "message.created", "agent-a", 2),
+        )
+        .await
+        .unwrap();
+
+    let retried = queue
+        .dequeue_next(RequestContext::new_system())
+        .await
+        .unwrap()
+        .expect("催促后 e1 应立即可取");
+    assert_eq!(retried["event_id"], "e1");
+    assert_eq!(
+        retried["attempt"].as_u64(),
+        Some(2),
+        "attempt 不因催促而重置"
+    );
+}
+
+/// 催促不得波及其他 key 的退避（全堆遍历最常见的写错点）
+#[tokio::test]
+async fn nudge_does_not_clear_backoff_of_other_order_keys() {
+    let queue = new_queue_with_long_backoff().await;
+    let ctx = RequestContext::new_system();
+
+    for (id, key, at) in [("a1", "agent-a", 1), ("b1", "agent-b", 2)] {
+        queue
+            .enqueue(ctx.clone(), envelope(id, "message.created", key, at))
+            .await
+            .unwrap();
+    }
+    // 先让 b1 进 in_progress，再 nack 进退避；a1 还没被 dequeue，仍在 global（无退避）
+    let first = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+    assert_eq!(first["event_id"], "a1");
+    queue.ack(ctx.clone(), "a1").await.unwrap();
+    let second = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+    assert_eq!(second["event_id"], "b1");
+    queue.nack(ctx.clone(), "b1").await.unwrap();
+    let _ = first; // 仅用于断言 a1 先出，后续不再使用
+
+    // a2 催促 agent-a：b1 属于 agent-b，不得被清退避
+    queue
+        .enqueue(ctx.clone(), envelope("a2", "message.created", "agent-a", 3))
+        .await
+        .unwrap();
+    let got = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+    assert_eq!(got["event_id"], "a2", "同 key 催促事件正常出队");
+    assert!(
+        queue.dequeue_next(ctx).await.unwrap().is_none(),
+        "agent-b 的 b1 仍在退避中"
+    );
+}
+
+/// 多次催促幂等：同一退避事件只被清一次，attempt 不叠加
+#[tokio::test]
+async fn repeated_nudges_are_idempotent_for_attempt() {
+    let queue = new_queue_with_long_backoff().await;
+    let ctx = RequestContext::new_system();
+    queue
+        .enqueue(ctx.clone(), envelope("e1", "message.created", "agent-a", 1))
+        .await
+        .unwrap();
+    let first = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+    assert_eq!(first["event_id"], "e1");
+    queue.nack(ctx.clone(), "e1").await.unwrap();
+
+    for i in 2..=4 {
+        queue
+            .enqueue(
+                ctx.clone(),
+                envelope(&format!("e{i}"), "message.created", "agent-a", i),
+            )
+            .await
+            .unwrap();
+    }
+    let retried = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+    assert_eq!(retried["event_id"], "e1");
+    assert_eq!(
+        retried["attempt"].as_u64(),
+        Some(2),
+        "多次催促不叠加 attempt"
+    );
+}
+
+/// 已到期的退避事件不应被「清退避」误改：本就可取，无需干预
+#[tokio::test]
+async fn nudge_does_not_touch_already_due_event() {
+    crate::pkg::storage::test_support::init_for_test().await;
+    let queue = InMemoryEventQueue::with_backoff_policy(0, 0);
+    let ctx = RequestContext::new_system();
+    queue
+        .enqueue(ctx.clone(), envelope("e1", "message.created", "agent-a", 1))
+        .await
+        .unwrap();
+    let first = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+    assert_eq!(first["event_id"], "e1", "首次出队应是 e1");
+    assert_eq!(first["attempt"].as_u64(), Some(1), "首次消费 attempt=1");
+    queue.nack(ctx.clone(), "e1").await.unwrap();
+    // 退避为 0，e1 本就立即取得到；此时同 key 新消息入队不应改变 attempt
+    queue
+        .enqueue(ctx.clone(), envelope("e2", "message.created", "agent-a", 2))
+        .await
+        .unwrap();
+    let got = queue.dequeue_next(ctx).await.unwrap().unwrap();
+    assert_eq!(got["event_id"], "e1");
+    assert_eq!(got["attempt"].as_u64(), Some(2));
+}
+
+/// 催促只清退避、不放行门闩：同 key 后继仍要等前一条 ack
+#[tokio::test]
+async fn nudge_keeps_order_key_gate_and_unlocks_on_ack() {
+    let queue = new_queue_with_long_backoff().await;
+    queue
+        .enqueue(
+            RequestContext::new_system(),
+            envelope("e1", "message.created", "agent-a", 1),
+        )
+        .await
+        .unwrap();
+    queue
+        .enqueue(
+            RequestContext::new_system(),
+            envelope("e2", "message.created", "agent-a", 2),
+        )
+        .await
+        .unwrap();
+
+    let first = queue
+        .dequeue_next(RequestContext::new_system())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(first["event_id"], "e1");
+    queue
+        .nack(RequestContext::new_system(), "e1")
+        .await
+        .unwrap();
+
+    // e3 入队触发催促，e1 恢复可取，但它仍是同 key 独占者
+    queue
+        .enqueue(
+            RequestContext::new_system(),
+            envelope("e3", "message.created", "agent-a", 3),
+        )
+        .await
+        .unwrap();
+    let retried = queue
+        .dequeue_next(RequestContext::new_system())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(retried["event_id"], "e1", "催促不得绕过门闩");
+    assert!(
+        queue
+            .dequeue_next(RequestContext::new_system())
+            .await
+            .unwrap()
+            .is_none(),
+        "e1 未 ack 前，e2/e3 不得出队"
+    );
+
+    queue.ack(RequestContext::new_system(), "e1").await.unwrap();
+    let successor = queue
+        .dequeue_next(RequestContext::new_system())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(successor["event_id"], "e2", "ack 后门闩按 FIFO 放行");
+}
+
+/// ungated 事件不能触发 gated 退避清零：门闩是订阅者 opt-in，旁路不得影响
+#[tokio::test]
+async fn ungated_same_key_enqueue_does_not_clear_gated_backoff() {
+    let queue = new_queue_with_long_backoff().await;
+    queue
+        .enqueue(
+            RequestContext::new_system(),
+            envelope("e1", "message.created", "agent-a", 1),
+        )
+        .await
+        .unwrap();
+    let first = queue
+        .dequeue_next(RequestContext::new_system())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(first["event_id"], "e1");
+    queue
+        .nack(RequestContext::new_system(), "e1")
+        .await
+        .unwrap();
+
+    queue
+        .enqueue_ungated(
+            RequestContext::new_system(),
+            envelope("e2", "stats.collected", "agent-a", 2),
+        )
+        .await
+        .unwrap();
+
+    // ungated 事件可立即出队；若误清了 e1 退避，堆顶会先出 e1（created_at 更早）
+    let second = queue
+        .dequeue_next(RequestContext::new_system())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(second["event_id"], "e2");
+    assert!(
+        queue
+            .dequeue_next(RequestContext::new_system())
+            .await
+            .unwrap()
+            .is_none(),
+        "gated 事件 e1 应仍在退避中"
+    );
+}
+
 /// §4.1 wiring：未声明 `ordered` 的订阅走 `enqueue_ungated`——
 /// 事件即使带 `order_key` 也不进同 key 门闩队列，立即可出队
 #[tokio::test]
@@ -589,4 +848,156 @@ async fn queue_recovers_after_lock_poisoned() {
         .expect("poison 后 dequeue 仍应成功")
         .expect("事件应可取到");
     assert_eq!(got["event_id"], "e1");
+}
+
+/// 催促时效性缺口：旧事件仍在 `in_progress` 时同 key 新消息入队，清退避够不到它；
+/// 这次催促应由时间戳接力到 `nack`，让失败重投立即可取。
+#[tokio::test]
+async fn nudge_during_in_progress_skips_backoff_on_nack() {
+    let queue = new_queue_with_long_backoff().await;
+    let ctx = RequestContext::new_system();
+
+    queue
+        .enqueue(ctx.clone(), envelope("e1", "message.created", "agent-a", 1))
+        .await
+        .unwrap();
+    let first = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+    assert_eq!(first["event_id"], "e1");
+
+    // 保证催促时刻严格晚于本次消费开始时刻（毫秒时钟精度）
+    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+    // e1 仍在 in_progress，不在 global 堆里 —— 清退避路径够不到它
+    queue
+        .enqueue(ctx.clone(), envelope("e2", "message.created", "agent-a", 2))
+        .await
+        .unwrap();
+
+    queue.nack(ctx.clone(), "e1").await.unwrap();
+    let retried = queue
+        .dequeue_next(ctx.clone())
+        .await
+        .unwrap()
+        .expect("in_progress 期间的催促应在 nack 后立即可取");
+    assert_eq!(retried["event_id"], "e1");
+    assert_eq!(retried["attempt"].as_u64(), Some(2), "催促不重置 attempt");
+
+    // 一次性：再次 nack 没有新催促 → 恢复指数退避，不成紧循环
+    queue.nack(ctx.clone(), "e1").await.unwrap();
+    assert!(
+        queue.dequeue_next(ctx).await.unwrap().is_none(),
+        "一次催促只兑现一次，之后应恢复退避"
+    );
+}
+
+/// 已在退避中的事件被催促：入队时清退避已兑现一次；随后重新消费时
+/// `consumed_at` 晚于催促时刻，再次 nack 不得二次免退避。
+#[tokio::test]
+async fn nudge_while_already_in_backoff_is_not_double_exempted() {
+    let queue = new_queue_with_long_backoff().await;
+    let ctx = RequestContext::new_system();
+
+    queue
+        .enqueue(ctx.clone(), envelope("e1", "message.created", "agent-a", 1))
+        .await
+        .unwrap();
+    queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+    queue.nack(ctx.clone(), "e1").await.unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    queue
+        .enqueue(ctx.clone(), envelope("e2", "message.created", "agent-a", 2))
+        .await
+        .unwrap();
+
+    let retried = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+    assert_eq!(retried["event_id"], "e1", "催促后队首立即恢复可取");
+    queue.nack(ctx.clone(), "e1").await.unwrap();
+    assert!(
+        queue.dequeue_next(ctx).await.unwrap().is_none(),
+        "入队时的清退避已兑现催促，不得在 nack 再免一次"
+    );
+}
+
+/// 催促按 order_key 隔离：别的 key 来消息不得让本 key 的 nack 免退避
+#[tokio::test]
+async fn unrelated_key_nudge_does_not_exempt_in_progress_nack() {
+    let queue = new_queue_with_long_backoff().await;
+    let ctx = RequestContext::new_system();
+
+    queue
+        .enqueue(ctx.clone(), envelope("e1", "message.created", "agent-a", 1))
+        .await
+        .unwrap();
+    queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+    queue
+        .enqueue(ctx.clone(), envelope("e2", "message.created", "agent-b", 2))
+        .await
+        .unwrap();
+    queue.nack(ctx.clone(), "e1").await.unwrap();
+
+    // 不同 key 互不阻塞：e2 立即可取，e1 仍应正常退避
+    let got = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+    assert_eq!(got["event_id"], "e2");
+    assert!(
+        queue.dequeue_next(ctx).await.unwrap().is_none(),
+        "无关 key 的催促不得免 e1 的退避"
+    );
+}
+
+/// ungated 同 key 入队不算催促：门闩是订阅者 opt-in，旁路事件不得触发 gated 免退避
+#[tokio::test]
+async fn ungated_same_key_enqueue_does_not_exempt_gated_nack() {
+    let queue = new_queue_with_long_backoff().await;
+    let ctx = RequestContext::new_system();
+
+    queue
+        .enqueue(ctx.clone(), envelope("e1", "message.created", "agent-a", 1))
+        .await
+        .unwrap();
+    queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+    queue
+        .enqueue_ungated(ctx.clone(), envelope("u1", "stats.collected", "agent-a", 2))
+        .await
+        .unwrap();
+    queue.nack(ctx.clone(), "e1").await.unwrap();
+
+    let got = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+    assert_eq!(got["event_id"], "u1", "ungated 事件绕开门闩先出");
+    assert!(
+        queue.dequeue_next(ctx).await.unwrap().is_none(),
+        "ungated 同 key 不得触发 gated 事件免退避"
+    );
+}
+
+/// ack 后门闩状态变化，此前指向旧事件的催促标记必须清除，不能误免后继的退避
+#[tokio::test]
+async fn ack_clears_stale_nudge_marker() {
+    let queue = new_queue_with_long_backoff().await;
+    let ctx = RequestContext::new_system();
+
+    queue
+        .enqueue(ctx.clone(), envelope("e1", "message.created", "agent-a", 1))
+        .await
+        .unwrap();
+    queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    queue
+        .enqueue(ctx.clone(), envelope("e2", "message.created", "agent-a", 2))
+        .await
+        .unwrap();
+
+    queue.ack(ctx.clone(), "e1").await.unwrap();
+    let second = queue.dequeue_next(ctx.clone()).await.unwrap().unwrap();
+    assert_eq!(second["event_id"], "e2");
+
+    queue.nack(ctx.clone(), "e2").await.unwrap();
+    assert!(
+        queue.dequeue_next(ctx).await.unwrap().is_none(),
+        "旧催促指向 e1，ack 后不得让 e2 免退避"
+    );
 }

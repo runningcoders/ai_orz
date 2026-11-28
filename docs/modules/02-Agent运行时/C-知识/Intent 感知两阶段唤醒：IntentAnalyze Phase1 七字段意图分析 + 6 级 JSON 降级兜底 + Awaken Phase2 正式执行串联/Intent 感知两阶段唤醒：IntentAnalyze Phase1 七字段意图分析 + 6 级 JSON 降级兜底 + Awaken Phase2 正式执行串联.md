@@ -83,7 +83,7 @@ source_files:
 | [运行时领域 Wiki 长文](docs/modules/02-Agent运行时/C-知识/运行时领域.md) | 人类百科 | §5 两阶段唤醒流程详细说明 §8 故障排查 |
 | [cortex_types.rs DeltaToolCall index 消歧](src/models/cortex_types.rs) (2026-09 增量) | LLM 流式 tool_call index 多路 fragment 消歧 | DeltaToolCall.index 改 Option；新增 `resolve_tool_call_index` 方法合并多路 fragment 的 index 消除歧义 |
 | [handler_adapter check_stream_end](src/pkg/tool_registry/handler_adapter/mod.rs) (2026-09 增量) | 流式终止校验 | `check_stream_end` 无 `[DONE]` 或 `finish_reason=length` 一律判截断；empty tool arguments 独立错误路径 |
-| [inbox.rs 统一收集器](src/service/domain/runtime/inbox.rs#L232-L342) (2026-11-02 增量) | 新输入合并判据 / 游标 / 批量预算 | `Option` 相等比较（None 也是取值）；`from_id + from_role` 相同；`thread_id` 仅否决；Text 白名单；≤5 条 / ≤2000 字 |
+| [inbox.rs 统一收集器](src/service/domain/runtime/inbox.rs) (2026-11-28 更新) | 新输入合并判据 / 游标 / 批量预算 | `Option` 相等比较（None 也是取值）；`from_id + from_role` 相同；`thread_id` 仅否决；锚点 Text + 候选 Text/带附件 `Mixed`；每批 ≤10 条循环分批、无时间窗、不设条数上限，只受 token 预算（上下文 5%，唤醒级总账跨挂点扣减）约束 |
 | [poll_node.rs 三处挂点](src/service/domain/runtime/legacy_awaken/poll_node.rs#L31-L242) (2026-11-02 增量) | 意图回退 / 尾插转向 / 落地前检查 | `poll_front` / `poll_exit`（轮级 `poll_round`）；回退 ≤2 次、转向 ≤3 次；出口信号 `exit_done` 必须唯一 |
 | [inbox_poll_and_intent_revision_design.md](docs/modules/02-Agent运行时/A-设计/inbox_poll_and_intent_revision_design.md) | 为什么 / 决策表 | 合并判据、意图增量修订、状态提交、预算护栏 |
 

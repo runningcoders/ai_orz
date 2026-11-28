@@ -30,6 +30,8 @@ pub(crate) struct IntentPhaseInput<'a> {
     pub revision: Option<&'a super::inbox::IntentRevision>,
     /// Phase 1 初始消息快照回写槽（由正式装配读取作为请求前缀）
     pub seed: Option<&'a std::sync::Mutex<Option<Vec<ChatMessage>>>>,
+    /// 本唤醒已吸收消息携带的附件引用，合并进锚点视觉输入（首次识别为空）
+    pub extra_attachment_ids: &'a [String],
 }
 
 impl RuntimeDomainImpl {
@@ -97,8 +99,7 @@ impl RuntimeDomainImpl {
 
         // 3. 全量技能 + 业务块：与正式装配同一来源，保证 base 逐字节一致
         let skills: Vec<SkillPo> = agent.skills().iter().map(|s| s.po.clone()).collect();
-        let (message_thread, resource_lines, vision_parts) =
-            fetch_message_business_blocks(&ctx, message).await;
+        let blocks = fetch_message_business_blocks(&ctx, message, extra.extra_attachment_ids).await;
 
         // 4. 唯一 base 装配（System + 公共上下文 + 历史 + 消息链 + 资源/视觉 + 当前消息）
         let mut builder = self.prompt_builder(agent);
@@ -114,9 +115,9 @@ impl RuntimeDomainImpl {
                 skills: &skills,
                 compacted: None,
                 past_memories: &[],
-                message_thread: &message_thread,
-                resource_lines: &resource_lines,
-                vision_parts: &vision_parts,
+                message_thread: &blocks.thread,
+                resource_lines: &blocks.resource_lines,
+                vision_parts: &blocks.vision_parts,
             },
         )
         .await;

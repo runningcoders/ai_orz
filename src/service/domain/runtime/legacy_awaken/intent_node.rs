@@ -6,7 +6,7 @@
 //! 空则不渲染，链路等价于「没有 Phase 1」的老行为。
 
 use super::backend::IntentInput;
-use super::context::{AwakenDeps, read_bus};
+use super::context::{AwakenDeps, NodeBase, read_bus};
 use super::nodes::{
     Artifacts, EXIT_CLARIFY, EXIT_DIRECT, PromptPack, SIGNAL_CLARIFY, SIGNAL_DIRECT,
     write_artifacts,
@@ -16,7 +16,7 @@ use crate::pkg::think_path::{
     ContextKey, LoadDepth, NodeContract, NodeId, NodeOutcome, NodeSignal, PhaseId, ThinkBus,
     ThinkNode,
 };
-use crate::service::domain::runtime::inbox::IntentRevision;
+use crate::service::domain::runtime::inbox::{InjectedMessage, IntentRevision};
 use crate::service::domain::runtime::types::IntentAnalysis;
 use async_trait::async_trait;
 use common::error::Result;
@@ -26,14 +26,61 @@ use std::time::SystemTime;
 /// 节点 id：蓝图声明、runner 注册、轨迹指纹三处共用的同一真相
 pub(crate) const NODE_INTENT: &str = "intent";
 
+/// `IntentNode` 对图输入的能力声明（节点侧定义）
+///
+/// 意图识别只关心：身份/请求上下文（`NodeBase`）、轨迹 id、意图增量修订的
+/// 共享状态，以及「跑一次意图识别」。图负责把这些能力适配进来。
+#[async_trait]
+pub(crate) trait IntentNodeInput: NodeBase {
+    /// 主运行轨迹 id（子轨迹为 `intent-{trace_id}`）
+    fn trace_id(&self) -> &str;
+
+    /// 取走待修订的新输入（回退重入时的增量输入）
+    fn inbox_take_revision(&self) -> Option<Vec<InjectedMessage>>;
+
+    /// 修订失败：把新输入降级为尾插转向消息
+    fn inbox_fallback_revision(&self, batch: Vec<InjectedMessage>);
+
+    /// 修订成功后清掉残留的降级输入
+    fn inbox_clear_pending_turn(&self);
+
+    /// 执行一次意图识别（带增量修订入参）
+    async fn analyze_intent(&self, revision: Option<IntentRevision>) -> Result<IntentAnalysis>;
+}
+
+#[async_trait]
+impl IntentNodeInput for AwakenDeps {
+    fn trace_id(&self) -> &str {
+        &self.trace_id
+    }
+
+    fn inbox_take_revision(&self) -> Option<Vec<InjectedMessage>> {
+        self.runtime.inbox_take_revision()
+    }
+
+    fn inbox_fallback_revision(&self, batch: Vec<InjectedMessage>) {
+        self.runtime.inbox_fallback_revision(batch);
+    }
+
+    fn inbox_clear_pending_turn(&self) {
+        self.runtime.inbox_clear_pending_turn();
+    }
+
+    async fn analyze_intent(&self, revision: Option<IntentRevision>) -> Result<IntentAnalysis> {
+        self.backend
+            .analyze_intent(self, IntentInput { revision })
+            .await
+    }
+}
+
 #[derive(Debug)]
 pub struct IntentNode {
-    deps: Arc<AwakenDeps>,
+    input: Arc<dyn IntentNodeInput>,
 }
 
 impl IntentNode {
-    pub fn new(deps: Arc<AwakenDeps>) -> Self {
-        Self { deps }
+    pub fn new(input: Arc<dyn IntentNodeInput>) -> Self {
+        Self { input }
     }
 }
 
@@ -65,13 +112,13 @@ impl ThinkNode for IntentNode {
     }
 
     async fn run(&self, bus: &mut ThinkBus) -> Result<NodeOutcome> {
-        let deps = &self.deps;
+        let input = &self.input;
         // 子 trace 约定：intent-{主 trace_id}，监控里与主唤醒循环可区分
-        let trace_id = format!("intent-{}", deps.trace_id);
+        let trace_id = format!("intent-{}", input.trace_id());
         let started = SystemTime::now();
         let _ = crate::pkg::aop::publish(
-            &deps.ctx,
-            AgentLoopEvent::started(&deps.agent.po.id, &trace_id, "intent-analyze", None),
+            input.ctx(),
+            AgentLoopEvent::started(&input.agent().po.id, &trace_id, "intent-analyze", None),
         )
         .await;
 
@@ -79,11 +126,7 @@ impl ThinkNode for IntentNode {
         // 新增输入由 poll_front / poll_exit 暂存在共享收件箱里，这里取走并
         // 组装成一次增量修订（上次结论 + 新增输入）。
         let previous = read_bus::<IntentAnalysis>(bus, ContextKey::Intent).ok();
-        let revision_batch = deps
-            .inbox
-            .lock()
-            .map(|mut state| state.take_revision())
-            .unwrap_or(None);
+        let revision_batch = input.inbox_take_revision();
         let revision = match (&previous, &revision_batch) {
             (Some(prev), Some(batch)) if !batch.is_empty() => Some(IntentRevision {
                 previous: prev.clone(),
@@ -95,23 +138,14 @@ impl ThinkNode for IntentNode {
         // 失败降级：空 IntentAnalysis，主流程照常（retrieve 对空词自行短路）。
         // 事件口径与 awakening::analyze_input_intent 对齐：失败也发 finished 事件
         // （status=failed），监控才能追踪 Phase 1 的失败率与耗时。
-        let (analysis, status) = match deps
-            .backend
-            .analyze_intent(
-                deps,
-                IntentInput {
-                    revision: revision.clone(),
-                },
-            )
-            .await
-        {
+        let (analysis, status) = match input.analyze_intent(revision.clone()).await {
             Ok(ia) => (ia, "success".to_string()),
             Err(e) => {
                 crate::log_error!(
-                    &deps.ctx,
+                    &input.ctx(),
                     "legacy_awaken",
                     "intent analyze degraded: agent_id={}, error={}",
-                    deps.agent.po.id,
+                    input.agent().po.id,
                     e
                 );
                 // 修订失败：保留旧理解结论，但必须清空针对上一条消息的终态判断；
@@ -120,9 +154,7 @@ impl ThinkNode for IntentNode {
                     prev.direct_answer.clear();
                     prev.need_clarification.clear();
                     prev.retrieved_context.clear();
-                    if let Ok(mut state) = deps.inbox.lock() {
-                        state.fallback_revision(batch);
-                    }
+                    input.inbox_fallback_revision(batch);
                     (prev, format!("failed: {e}"))
                 } else {
                     (IntentAnalysis::default(), format!("failed: {e}"))
@@ -131,17 +163,15 @@ impl ThinkNode for IntentNode {
         };
 
         // 修订成功：旧结论已被完整新结论替换，清掉可能残留的降级输入
-        if revision.is_some()
-            && let Ok(mut state) = deps.inbox.lock()
-        {
-            state.clear_pending_turn();
+        if revision.is_some() {
+            input.inbox_clear_pending_turn();
         }
 
         crate::log_info!(
-            &deps.ctx,
+            &input.ctx(),
             "legacy_awaken",
             "intent node done, agent_id={}, intent_type={}, confidence={}, key_terms={}",
-            deps.agent.po.id,
+            input.agent().po.id,
             analysis.intent_type,
             analysis.confidence,
             analysis.key_terms.len()
@@ -149,9 +179,9 @@ impl ThinkNode for IntentNode {
 
         let duration_ms = started.elapsed().map(|d| d.as_millis() as u64).unwrap_or(0);
         let _ = crate::pkg::aop::publish(
-            &deps.ctx,
+            input.ctx(),
             AgentLoopEvent::finished(
-                &deps.agent.po.id,
+                &input.agent().po.id,
                 &trace_id,
                 "intent-analyze",
                 &status,
@@ -169,10 +199,10 @@ impl ThinkNode for IntentNode {
         // retrieve / prepare / deliberate 三个节点，省掉一次完整 LLM 调用。
         if analysis.has_direct_answer() {
             crate::log_info!(
-                &deps.ctx,
+                &input.ctx(),
                 "legacy_awaken",
                 "intent direct answer hit, skip retrieve/prepare/deliberate, agent_id={}",
-                deps.agent.po.id
+                input.agent().po.id
             );
             return short_circuit(
                 bus,
@@ -193,7 +223,7 @@ impl ThinkNode for IntentNode {
             .collect();
         if !questions.is_empty() {
             crate::log_info!(
-                &deps.ctx,
+                &input.ctx(),
                 "legacy_awaken",
                 "intent clarification hit, skip retrieve/prepare/deliberate, questions={}",
                 questions.len()

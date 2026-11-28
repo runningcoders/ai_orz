@@ -8,6 +8,7 @@
 
 use common::api::GetAgentResponse;
 use dioxus::prelude::*;
+use dioxus_router::Link;
 
 use crate::utils::{
     agent_lifecycle_badge, agent_lifecycle_text, agent_runtime_badge, agent_runtime_text,
@@ -49,6 +50,106 @@ pub fn agent_badge_row(agent: &GetAgentResponse) -> Element {
             for role in agent.roles.iter() {
                 span { key: "{role}", class: "{tag_chip()}", "{role}" }
             }
+        }
+    }
+}
+
+/// 身份行右上角的管理入口：在详情页打开。
+///
+/// 这是「查看完整档案」而不是快捷交互，故与下方 [`agent_quick_actions`] 分开摆放。
+/// 图标 + 原生 `title` hover，不占卡片纵向空间。
+pub fn agent_detail_link(agent_id: &str) -> Element {
+    let aid = agent_id.to_string();
+    rsx! {
+        Link {
+            class: "btn hud-btn btn-ghost btn-xs btn-circle flex-none",
+            title: "在详情页打开",
+            to: crate::pages::Route::HrAgentDetail { id: aid },
+            svg {
+                width: 15, height: 15, view_box: "0 0 24 24",
+                fill: "none", stroke: "currentColor", stroke_width: 1.9,
+                path { d: "M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" }
+            }
+        }
+    }
+}
+
+/// 签名下方的横向快捷功能组，对齐飞书个人名片：
+/// 头像 → 姓名 → 个性签名 → **消息 / 语音 / 视频 图标组** → 个人信息字段。
+///
+/// 每个入口是「上图标 + 下文字」的方块卡片（飞书同款组合），不是裸图标圆钮。
+/// Agent 场景下专注模式 = 工作台消息视图，文案就叫「消息」；后续电话 / 视频
+/// 只在这里加同结构的 `Link` 即可，简介卡与信息页上部同时生效。
+pub fn agent_quick_actions(agent_id: &str) -> Element {
+    let aid = agent_id.to_string();
+    rsx! {
+        div { class: "flex items-center gap-2",
+            // 专注模式 = 工作台 AgentDetail 视图；只需要 Agent ID，无需额外状态
+            Link {
+                class: "btn hud-btn btn-ghost btn-sm flex-col h-14 w-16 gap-0.5",
+                title: "进入专注模式（消息）",
+                to: crate::pages::Route::Workspace {
+                    view: Some(format!("agent:{aid}")),
+                },
+                // 图标与文案同为「消息」语义（对话气泡），不再用聚焦框图标
+                svg {
+                    width: 18, height: 18, view_box: "0 0 24 24",
+                    fill: "none", stroke: "currentColor", stroke_width: 1.9,
+                    path { d: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" }
+                }
+                span { class: "text-[11px] leading-none", "消息" }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// 两组入口分离：右上角详情圆钮 / 签名下方横向快捷组；均为图标 + hover 文案。
+    #[test]
+    fn agent_actions_are_icon_only_and_layered() {
+        let src = include_str!("agent_summary.rs");
+        let detail = src
+            .find("pub fn agent_detail_link")
+            .expect("agent_detail_link must exist");
+        let quick = src
+            .find("pub fn agent_quick_actions")
+            .expect("agent_quick_actions must exist");
+        let detail_body = &src[detail..quick];
+        let quick_body = &src[quick..src.find("#[cfg(test)]").unwrap_or(src.len())];
+
+        assert!(
+            detail_body.contains("btn-circle"),
+            "详情页入口必须是右上角圆钮"
+        );
+        assert!(detail_body.contains("title: \"在详情页打开\""));
+        assert!(
+            !detail_body.contains("进入专注模式"),
+            "专注模式不属于右上角管理入口"
+        );
+        assert!(
+            quick_body.contains("flex items-center gap-2"),
+            "快捷组必须横向排列"
+        );
+        assert!(
+            quick_body.contains("flex-col h-14 w-16"),
+            "每个快捷入口必须是上图标下文字的方块卡片"
+        );
+        assert!(quick_body.contains("\"消息\""), "专注模式文案应为「消息」");
+        assert!(quick_body.contains("title: \"进入专注模式（消息）\""));
+        assert!(
+            quick_body.contains("M21 15a2 2 0 0 1-2 2H7l-4 4V5"),
+            "快捷入口图标须与「消息」文案同为对话气泡语义"
+        );
+        assert!(
+            !quick_body.contains("M8 3H5a2 2 0 0 0-2 2v3"),
+            "快捷入口不得再用聚焦框图标"
+        );
+        for label in ["进入专注模式", "在详情页打开"] {
+            assert!(
+                !src.contains(&format!("\"{label} →\"")),
+                "{label} 不允许出现冗长按钮文案"
+            );
         }
     }
 }

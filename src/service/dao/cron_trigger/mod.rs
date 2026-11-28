@@ -20,6 +20,12 @@ pub struct CronTriggerQuery {
     pub is_enabled: Option<bool>,
     /// 多值状态过滤（管理端列表），优先于 `is_enabled`
     pub statuses: Vec<TriggerStatus>,
+    /// 仅返回 `next_run_at <= 该时刻` 的触发器（调度兜底刷新窗口）
+    pub next_run_before: Option<i64>,
+    /// 排除指定 id：已在内存派发队列中的不再重复查询 / 入队
+    pub exclude_ids: Vec<String>,
+    /// 按 `next_run_at ASC` 排序（调度兜底刷新优先最早到期）；默认 `created_at DESC`
+    pub order_by_due: bool,
     pub offset: Option<usize>,
     pub limit: Option<usize>,
 }
@@ -67,6 +73,21 @@ pub trait CronTriggerDao: Send + Sync + std::fmt::Debug {
         lease_until: i64,
         limit: i32,
     ) -> Result<Vec<CronTriggerPo>>;
+
+    /// 按 id 原子领取单条到期触发器（秒级派发的逐个领取路径）。
+    ///
+    /// 条件与 [`Self::claim_due`] 一致（到期 / 启用 / 生效窗口 / 租约空闲），
+    /// 但只针对指定 id —— 避免批量领取按全表时间排序取到别的条目、白占租约。
+    /// `UPDATE ... WHERE id = ? AND (lease_until IS NULL OR <= now)` 的
+    /// `rows_affected == 1` 才返回，多实例并发下同一时刻只有一个实例领到。
+    async fn claim_by_id(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        now: i64,
+        lease_owner: &str,
+        lease_until: i64,
+    ) -> Result<Option<CronTriggerPo>>;
 
     /// 更新下次执行时间 + 清租约 + 累计次数（成功收尾）
     async fn update_next_run_at(

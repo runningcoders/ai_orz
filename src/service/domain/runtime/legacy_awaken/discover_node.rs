@@ -10,11 +10,12 @@
 
 use super::super::compaction::context_capacity_of;
 use super::blueprint::{SIGNAL_NEW_FINDINGS, SIGNAL_NO_NEW_FINDINGS};
-use super::context::{AwakenDeps, DiscoveryOutcome, RetrievalPack, read_bus};
+use super::context::{AwakenDeps, DiscoveryOutcome, NodeBase, RetrievalPack, read_bus};
 use super::nodes::{Artifacts, BudgetState};
 use super::retrieve_node::diff_terms;
 use crate::models::agent::Agent;
 use crate::models::cortex_types::ChatMessage;
+use crate::models::message::Message;
 use crate::pkg::text_budget;
 use crate::pkg::think_path::{
     ContextKey, LoadDepth, NodeContract, NodeId, NodeOutcome, NodeSignal, PhaseId, ThinkBus,
@@ -151,14 +152,72 @@ fn try_lenient_parse(s: &str) -> Option<DiscoveryOutcome> {
     })
 }
 
+/// `DiscoverNode` 对图输入的能力声明（节点侧定义）
+#[async_trait]
+pub(crate) trait DiscoverNodeInput: NodeBase {
+    /// 入站消息（提取用户正文）
+    fn message(&self) -> &Message;
+    /// 主运行轨迹 id（子轨迹为 `discover-{trace_id}`）
+    fn trace_id(&self) -> &str;
+    /// 本场景允许的最大思考轮次（总轮次耗尽早退）
+    fn max_rounds(&self) -> usize;
+    /// 已执行的 discover 轮次（软预算判据）
+    fn discovery_rounds(&self) -> usize;
+    /// 已检索词快照（新词差集输入）
+    fn queried_terms(&self) -> Vec<String>;
+    /// 有新发现时递增软预算计数
+    fn note_discovery_round(&self);
+    /// 短聚焦单轮无工具模型调用
+    async fn discover(&self, trace_id: &str, prompt: String) -> Result<String>;
+}
+
+#[async_trait]
+impl DiscoverNodeInput for AwakenDeps {
+    fn message(&self) -> &Message {
+        &self.message
+    }
+
+    fn trace_id(&self) -> &str {
+        &self.trace_id
+    }
+
+    fn max_rounds(&self) -> usize {
+        self.options.effective_max_rounds()
+    }
+
+    fn discovery_rounds(&self) -> usize {
+        self.runtime.discovery_rounds()
+    }
+
+    fn queried_terms(&self) -> Vec<String> {
+        self.runtime.queried_terms()
+    }
+
+    fn note_discovery_round(&self) {
+        self.runtime.note_discovery_round();
+    }
+
+    async fn discover(&self, trace_id: &str, prompt: String) -> Result<String> {
+        self.backend
+            .discover(
+                self,
+                super::backend::DiscoverInput {
+                    trace_id: trace_id.to_string(),
+                    prompt,
+                },
+            )
+            .await
+    }
+}
+
 #[derive(Debug)]
 pub struct DiscoverNode {
-    deps: Arc<AwakenDeps>,
+    input: Arc<dyn DiscoverNodeInput>,
 }
 
 impl DiscoverNode {
-    pub fn new(deps: Arc<AwakenDeps>) -> Self {
-        Self { deps }
+    pub fn new(input: Arc<dyn DiscoverNodeInput>) -> Self {
+        Self { input }
     }
 }
 
@@ -191,26 +250,21 @@ impl ThinkNode for DiscoverNode {
     }
 
     async fn run(&self, bus: &mut ThinkBus) -> Result<NodeOutcome> {
-        let deps = &self.deps;
+        let input = &self.input;
         let no_exit = || NodeOutcome::new(NodeSignal::Yield(SIGNAL_NO_NEW_FINDINGS.to_string()));
 
-        // 1. 快照后立刻放锁：MutexGuard 不跨 await（防死锁，照 BusinessProvider 先例）
-        let state_snapshot = {
-            let state = match deps.retrieval.lock() {
-                Ok(guard) => guard,
-                Err(poisoned) => poisoned.into_inner(),
-            };
-            state.clone()
-        };
+        // 1. 从图级运行时取检索快照：轮次（软预算判据）+ 已查词（新词差集输入）
+        let discovery_rounds = input.discovery_rounds();
+        let queried_terms = input.queried_terms();
 
         // 2. 软预算尽 → 直接退出（省一次模型调用；蓝图硬预算兜底）
-        if state_snapshot.discovery_rounds >= MAX_DISCOVERY_ROUNDS {
+        if discovery_rounds >= MAX_DISCOVERY_ROUNDS {
             crate::log_info!(
-                &deps.ctx,
+                &input.ctx(),
                 "legacy_awaken",
                 "discover node budget exhausted, agent_id={}, discovery_rounds={}",
-                deps.agent.po.id,
-                state_snapshot.discovery_rounds
+                input.agent().po.id,
+                discovery_rounds
             );
             return Ok(no_exit());
         }
@@ -218,13 +272,13 @@ impl ThinkNode for DiscoverNode {
         // 2.5 唤醒总轮次已耗尽 → 回环没有意义：再检索也领不到思考预算，
         //     只会白打一次模型（轨迹里那条「第 11 轮」）。直接走退出压缩。
         let budget = read_bus::<BudgetState>(bus, ContextKey::Budget).unwrap_or_default();
-        let total_cap = deps.options.effective_max_rounds();
+        let total_cap = input.max_rounds();
         if budget.total_rounds >= total_cap {
             crate::log_info!(
-                &deps.ctx,
+                &input.ctx(),
                 "legacy_awaken",
                 "discover skipped: wake round budget exhausted, agent_id={}, used={}, cap={}",
-                deps.agent.po.id,
+                input.agent().po.id,
                 budget.total_rounds,
                 total_cap
             );
@@ -233,33 +287,19 @@ impl ThinkNode for DiscoverNode {
 
         // 3. 轨迹行 + 短聚焦 prompt（Artifacts 缺失 = 空轨迹，照常让模型判断）
         let artifacts = read_bus::<Artifacts>(bus, ContextKey::Artifacts).unwrap_or_default();
-        let trails = trail_lines(&artifacts, trail_summary_budget(&deps.agent));
-        let prompt = build_discover_prompt(
-            deps.message.content(),
-            &trails,
-            &state_snapshot.queried_terms,
-        );
+        let trails = trail_lines(&artifacts, trail_summary_budget(input.agent()));
+        let prompt = build_discover_prompt(input.message().content(), &trails, &queried_terms);
 
         // 4. 模型调用：失败降级退出（模型抖动不炸主流程）
-        let trace_id = format!("discover-{}", deps.trace_id);
-        let text = match deps
-            .backend
-            .discover(
-                deps,
-                super::backend::DiscoverInput {
-                    trace_id: trace_id.clone(),
-                    prompt,
-                },
-            )
-            .await
-        {
+        let trace_id = format!("discover-{}", input.trace_id());
+        let text = match input.discover(&trace_id, prompt).await {
             Ok(text) => text,
             Err(e) => {
                 crate::log_error!(
-                    &deps.ctx,
+                    &input.ctx(),
                     "legacy_awaken",
                     "discover degraded to exit: agent_id={}, trace_id={}, error={}",
-                    deps.agent.po.id,
+                    input.agent().po.id,
                     trace_id,
                     e
                 );
@@ -269,29 +309,23 @@ impl ThinkNode for DiscoverNode {
 
         // 5. 宽容解析 + visited 差集（新词与已查词重复 = 无新息）
         let outcome = parse_discovery_json(&text);
-        let new_terms = diff_terms(&outcome.new_key_terms, &state_snapshot.queried_terms);
+        let new_terms = diff_terms(&outcome.new_key_terms, &queried_terms);
 
         // 6. 无新词 → 退出；有新词 → 记轮次 + 写「新词 + 思考摘要」的过渡 pack
         //    （retrieve 会覆写成完整产物，见 RetrievalPack 契约）
         if new_terms.is_empty() {
             crate::log_info!(
-                &deps.ctx,
+                &input.ctx(),
                 "legacy_awaken",
                 "discover node no new findings, agent_id={}, trail_lines={}, outcome_terms={}",
-                deps.agent.po.id,
+                input.agent().po.id,
                 trails.len(),
                 outcome.new_key_terms.len()
             );
             return Ok(no_exit());
         }
 
-        {
-            let mut state = match deps.retrieval.lock() {
-                Ok(guard) => guard,
-                Err(poisoned) => poisoned.into_inner(),
-            };
-            state.discovery_rounds += 1;
-        }
+        input.note_discovery_round();
         let pack = RetrievalPack {
             query_terms: new_terms.clone(),
             knowledge_hits: Vec::new(),
@@ -303,10 +337,10 @@ impl ThinkNode for DiscoverNode {
         bus.insert(ContextKey::Knowledge, LoadDepth::Full, value);
 
         crate::log_info!(
-            &deps.ctx,
+            &input.ctx(),
             "legacy_awaken",
             "discover node new findings, agent_id={}, trail_lines={}, new_terms={}",
-            deps.agent.po.id,
+            input.agent().po.id,
             trails.len(),
             new_terms.len()
         );

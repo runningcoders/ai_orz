@@ -51,10 +51,11 @@ pub(crate) mod share {
     /// @200K ⇒ 2_000 token，对应改造前那句裸写 `truncate_chars(last, 2_000)`。
     pub(crate) const ABORT_LAST_OUTPUT_BP: u32 = 100;
 
-    /// 单批 inbox 注入预算（1%）
+    /// 单批 inbox 注入预算（5%）
     ///
-    /// @200K ⇒ 2_000 token，对应改造前 `MAX_INJECTED_CHARS = 2_000`。
-    pub(crate) const INBOX_BATCH_BP: u32 = 100;
+    /// @200K ⇒ 10_000 token。AMan 2026-11-28 指令：原 1%（2_000 token）偏小，
+    /// 有的补充消息体积较大，放宽到 5%；仍是**整个唤醒跨批累加**的总预算。
+    pub(crate) const INBOX_BATCH_BP: u32 = 500;
 
     /// 本体词表注入预算（1.5%）
     ///
@@ -141,15 +142,20 @@ mod tests {
             "中断前最后输出的裸 2_000"
         );
         assert_eq!(
-            tokens_of(cap, share::INBOX_BATCH_BP),
-            Some(2_000),
-            "MAX_INJECTED_CHARS 2_000"
-        );
-        assert_eq!(
             tokens_of(cap, share::QUICK_TURN_HARD_CAP_BP),
             Some(1_200),
             "QUICK_TURN_HARD_CAP_CHARS 1_200"
         );
+    }
+
+    /// inbox 预算已脱离「逐位复现旧字符上限」口径（1% → 5%）
+    #[test]
+    fn inbox_budget_is_five_percent_of_capacity() {
+        assert_eq!(
+            tokens_of(Some(200_000), share::INBOX_BATCH_BP),
+            Some(10_000)
+        );
+        assert_eq!(tokens_of(Some(64_000), share::INBOX_BATCH_BP), Some(3_200));
     }
 
     /// prompt 侧三项 + discover 轨迹行 @200K 的取值（口径对齐改造前字符值）

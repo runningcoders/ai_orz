@@ -60,10 +60,8 @@ pub(crate) struct RoundRun<'a> {
     pub usage: Arc<Mutex<WakeUsage>>,
     /// 进入本周期前的已用量（本次循环的计量起点）
     pub base: WakeUsage,
-    /// 唤醒级收件箱（仅 awaken 主链为 Some）
-    pub inbox: Option<Arc<Mutex<crate::service::domain::runtime::inbox::InboxState>>>,
-    /// 唤醒级业务产出收集器（dispatch 写入，随唤醒结果移交消费侧）
-    pub collected: Arc<Mutex<crate::service::domain::runtime::RoundCollected>>,
+    /// 图级运行总线实例（仅 awaken 主链为 Some）
+    pub runtime: Option<Arc<crate::service::domain::runtime::graph_runtime::GraphRuntime>>,
     /// 与 `run_think_loop` 共享的轨迹信封（收尾去重位同源）
     pub trace_sink: crate::service::domain::runtime::think_trace::TraceSink,
     /// 静默运行：不挂实时观测者（影子模式）
@@ -92,8 +90,7 @@ pub(crate) async fn run(domain: RuntimeDomainImpl, input: RoundRun<'_>) -> Resul
         loop_start,
         usage,
         base,
-        inbox,
-        collected,
+        runtime,
         trace_sink,
         silent,
     } = input;
@@ -141,12 +138,11 @@ pub(crate) async fn run(domain: RuntimeDomainImpl, input: RoundRun<'_>) -> Resul
         loop_start,
         usage,
         base,
-        inbox,
-        collected,
+        runtime,
         trace_sink,
     });
 
-    let poll_enabled = deps.inbox.is_some();
+    let poll_enabled = deps.runtime.is_some();
     let blueprint =
         blueprint::round_blueprint_with_poll(available_rounds, enable_reflect, poll_enabled)?;
     let path_id = blueprint.id.clone();

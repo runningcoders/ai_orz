@@ -83,6 +83,19 @@ fn append_filters<'a>(
             .push(" AND is_enabled = ")
             .push_bind(if is_enabled { 1 } else { 0 });
     }
+    if let Some(next_run_before) = query.next_run_before {
+        builder
+            .push(" AND next_run_at <= ")
+            .push_bind(next_run_before);
+    }
+    if !query.exclude_ids.is_empty() {
+        builder.push(" AND id NOT IN (");
+        let mut separated = builder.separated(", ");
+        for id in &query.exclude_ids {
+            separated.push_bind(id);
+        }
+        separated.push_unseparated(")");
+    }
 }
 
 #[async_trait::async_trait]
@@ -154,7 +167,12 @@ INSERT INTO cron_triggers (
         ));
         append_filters(&mut builder, &query);
 
-        builder.push(" ORDER BY created_at DESC");
+        if query.order_by_due {
+            // 调度兜底刷新优先补最早到期的条目，避免窗口内超 limit 时漏掉紧急项
+            builder.push(" ORDER BY next_run_at ASC");
+        } else {
+            builder.push(" ORDER BY created_at DESC");
+        }
         if let Some(limit) = query.limit {
             builder.push(" LIMIT ").push_bind(limit as i64);
         } else if query.offset.is_some_and(|offset| offset > 0) {
@@ -290,6 +308,61 @@ UPDATE cron_triggers SET is_enabled = 0, updated_at = ?, updated_by = ? WHERE id
 
         tx.commit().await?;
         Ok(claimed)
+    }
+
+    async fn claim_by_id(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        now: i64,
+        lease_owner: &str,
+        lease_until: i64,
+    ) -> Result<Option<CronTriggerPo>> {
+        let pool: &SqlitePool = ctx.db_pool();
+        let mut tx = pool.begin().await?;
+
+        // 候选只针对指定 id：到期 / 启用 / 生效窗口内 / 租约空闲。
+        let select_sql = format!(
+            "SELECT {TRIGGER_COLUMNS} FROM cron_triggers \
+             WHERE id = ? AND next_run_at <= ? AND is_enabled = 1 \
+             AND (start_at IS NULL OR start_at <= ?) \
+             AND (end_at IS NULL OR end_at >= ?) \
+             AND (lease_until IS NULL OR lease_until <= ?)"
+        );
+        let Some(trigger) = sqlx::query_as::<_, CronTriggerPo>(&select_sql)
+            .bind(id)
+            .bind(now)
+            .bind(now)
+            .bind(now)
+            .bind(now)
+            .fetch_optional(&mut *tx)
+            .await?
+        else {
+            return Ok(None);
+        };
+
+        // check-and-set：租约条件与查询一致，SQLite 单写者 + 事务保证原子性。
+        let result = sqlx::query(
+            r#"UPDATE cron_triggers SET lease_owner = ?, lease_until = ?, updated_at = ?
+               WHERE id = ? AND (lease_until IS NULL OR lease_until <= ?)"#,
+        )
+        .bind(lease_owner)
+        .bind(lease_until)
+        .bind(now)
+        .bind(id)
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
+
+        if result.rows_affected() != 1 {
+            return Ok(None);
+        }
+
+        tx.commit().await?;
+        let mut claimed = trigger;
+        claimed.lease_owner = Some(lease_owner.to_string());
+        claimed.lease_until = Some(lease_until);
+        Ok(Some(claimed))
     }
 
     async fn update_next_run_at(

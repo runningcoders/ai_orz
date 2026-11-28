@@ -61,15 +61,66 @@ scope:
 
 ---
 
+## 二·补：图级运行总线实例（`GraphRuntime`）
+
+跨节点共享状态由 `src/service/domain/runtime/graph_runtime.rs` 的 `GraphRuntime` 持有；
+它站在整张图的视角，把独立功能模块包装成自己的方法（首片是 inbox）：
+
+```text
+节点 → runtime.inbox_collect(ctx, judge_ctx, brain) → inbox::collect(共享参数自己取)
+节点 → runtime.inbox_record_judged(judged, used)   → 总账扣减
+节点 → runtime.inbox_advance_*(batch)              → 游标 / 吸收 / 修订 / 尾插
+```
+
+- **共享参数由总线取**：锚点、游标、已判定集合、剩余预算不出现在节点签名里；
+  节点只传本次任务参数（判定现场、brain）。这是「模块独立 + 传参解耦」的落点。
+- **两图共享同一实例**：`AwakenDeps.runtime` → `ThinkInput.runtime` →
+  `ThinkLoopParams.runtime` → `RoundRun.runtime` → `RoundDeps.runtime`，
+  全程 `Arc` 透传，不重建、不用进程级表。
+- **已迁入的五片（2026-11-28）**：`inbox` / `RoundCollected` / `RetrievalState`+
+  `retrieve_searches` / `CompactionSlot` / `intent_seed`。五者都是「跨节点可变状态」，
+  从 `AwakenDeps` 直连字段改为运行时持有、节点经方法读写；`AwakenDeps` 其余字段
+  暂不动，后续按同一判据逐片迁（下一个候选是 `trace`，但它是单写者、写完即落库，
+  属节点局部，暂不迁）。`RetrievalState` / `CompactionSlot` 的定义也从
+  `legacy_awaken::context` 下沉到 `graph_runtime.rs`，消除 runtime → legacy_awaken
+  的反向依赖。
+- **CompactionSlot / intent_seed 的读写口**：`compaction_slot()` / `set_compaction_slot()`
+  （CompactNode 写 → Prepare / Business 读）；`intent_seed_slot()`（执行缝写回句柄，
+  意图 domain 函数仍只认 `&Mutex`，保持通用）/ `take_intent_seed()`（Prepare 读走即清）
+  / `intent_seed_messages()`（poll 偷看副本，不清空）。⚠️ `intent_seed_slot` 暴露句柄
+  是执行缝回写口，不是节点直接读写共享数据，故不违反「节点不摸 Mutex」。
+- ⚠️ `inbox::collect` 仍是独立模块（收剩余、返实际用量）；运行时只做共享数据的
+  「取出来 → 传进去 → 收结果」，不把模块逻辑搬进图节点。
+- ⚠️ **小脑判定 DAL 可替换**：`inbox::collect` 收可选 `judge_dal`，生产走
+  `brain::dal()` 真实单例，集成测试经 `GraphRuntime.set_judge_dal` 注入脚本替身。
+  原因：相关性判定若走真实单例，测试靠 provider `base_url` 残缺才没打网络——
+  换配置就会等超时。替身无 weights 答案 ⇒ fail-open 放行全部候选。
+
+---
+
 ## 三、载体一：`RoundCollected`（业务产出，走返回值）
 
 ```rust
-// 图上下文：AwakenDeps.collected: Arc<Mutex<RoundCollected>>
-// 入口传递：ThinkLoopParams::with_collected(&deps.collected)
-// 节点写入：dispatch 成功后 record_resources(...)
-// 出口移交：LegacyAwakenOutcome.collected → AwakeningResult.collected
+// 图级运行时：GraphRuntime.collected: Arc<Mutex<RoundCollected>>
+// 节点写入：dispatch 成功后 runtime.record_resources(produced)
+//           （内部小循环无 runtime ⇒ 跳过写入，其产出本就不作交付物）
+// 出口移交：runtime.take_collected() → LegacyAwakenOutcome.collected → AwakeningResult.collected
 // 消费：consumer/message.rs 落库前查漏补缺
 ```
+
+载体二 —— `RetrievalState`（检索 visited / discover 软预算）：
+
+```text
+节点 → runtime.queried_terms()             → 差集输入（锁中毒取旧值）
+节点 → runtime.record_queried_terms(terms) → 真检索后追加新词
+节点 → runtime.discovery_rounds()          → 软预算判据
+节点 → runtime.note_discovery_round()      → discover 成功一轮后 +1
+节点 → runtime.note_retrieve_search()      → 真检索次数（短路不计，返回累计值）
+```
+
+⚠️ `queried_terms`（查过哪些词）与 `retrieve_searches`（查了几次库）分工不可混：
+「回环有没有真再查一遍」只能看次数——短路的空 pack 与「查了但零命中」形态相同，
+靠 pack 反推会假绿。
 
 - 与 `usage` / `progress` 同一范式：run 级、显式共享、跨周期累计。
 - 新增一类业务事实 = **加一个字段 + 一处写入 + 一处读取**，不需要穿结构体。

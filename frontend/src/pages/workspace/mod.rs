@@ -302,6 +302,14 @@ pub fn Workspace(view: Option<String>) -> Element {
         let mut chat_project_id = chat_project_id;
         let mut chat_task_id = chat_task_id;
         let mut chat_to_agent_id = chat_to_agent_id;
+        // 侧栏数据每 30s 被轮询整包重写（use_workspace_data），本 effect 为解析
+        // 项目 owner 订阅了它 ⇒ 每次轮询都会重跑。但对话上下文通常没变：若照旧
+        // `chat_messages.set(visible)`，会丢掉用户上拉加载的历史，专注态还会跟着
+        // `scroll_to_latest()`，表现为周期性「一抖、只剩最新几条」。
+        // 只有上下文真正变化（切会话 / owner 变更 / 任务锚点回填）才重载。
+        let last_chat_ctx =
+            use_signal(|| Option::<(Option<String>, Option<String>, Option<String>)>::None);
+        let mut last_chat_ctx = last_chat_ctx;
 
         use_effect(move || {
             let view = effective_view.read().clone();
@@ -315,6 +323,11 @@ pub fn Workspace(view: Option<String>) -> Element {
             } else {
                 (None, None, None)
             };
+            let ctx = (pid.clone(), tid.clone(), aid.clone());
+            if last_chat_ctx.peek().as_ref() == Some(&ctx) {
+                return;
+            }
+            last_chat_ctx.set(Some(ctx));
 
             // 任务视图的 project_id 依赖异步锚点：未就绪时先不拉消息，
             // 否则会先闪一次「全组织最近 20 条」再被项目会话覆盖。
@@ -392,13 +405,9 @@ pub fn Workspace(view: Option<String>) -> Element {
                 }
                 chat_messages.set(visible);
                 chat_has_more.set(full_page);
-                // 展开态或 Agent 专注下切换会话：等一帧让列表重排后回到最新
-                if *chat_focused.peek()
-                    || matches!(&*effective_view.peek(), WorkspaceView::AgentDetail(_))
-                {
-                    gloo_timers::future::TimeoutFuture::new(16).await;
-                    dock::scroll_to_latest();
-                }
+                // 滚底由 ChatMessageList 自己的 use_effect 在 DOM 提交后完成。
+                // ⚠️ 不要在这里 spawn + 固定延时调 scroll_to_latest：消息列表已是
+                // 独立组件，专注态几十上百条富消息 16ms 渲染不完，拿到中间高度。
             });
         });
     }

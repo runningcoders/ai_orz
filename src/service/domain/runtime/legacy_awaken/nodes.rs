@@ -6,25 +6,35 @@
 //!
 //! 节点间只通过总线通信，唯一的例外是 `AwakenDeps`（不可序列化的强类型依赖）。
 
-use super::context::{AwakenDeps, read_bus};
+use super::backend::{CompactInput, ThinkInput};
+use super::context::{AwakenDeps, NodeBase, read_bus};
 use super::summary_gate;
 use super::wake_gate;
-use crate::models::cortex_types::ChatMessage;
+use crate::models::cortex_types::{ChatMessage, ImagePart};
 use crate::models::memory::MemoryIndexPlan;
+use crate::models::memory::MemoryTrace;
+use crate::models::message::Message;
 use crate::pkg::stats::AgentAwakeEvent;
 use crate::pkg::think_path::{
     ContextKey, LoadDepth, NodeContract, NodeId, NodeOutcome, NodeSignal, PhaseId, ThinkBus,
     ThinkNode,
 };
+use crate::service::domain::runtime::RuntimeDomainImpl;
 use crate::service::domain::runtime::RuntimeMemory;
-use crate::service::domain::runtime::compaction::CompactMode;
+use crate::service::domain::runtime::compaction::{CompactMode, CompactOutcome};
+use crate::service::domain::runtime::graph_runtime::GraphRuntime;
 use crate::service::domain::runtime::think_loop::memory_index_budget_for;
-use crate::service::domain::runtime::types::{IntentAnalysis, ThinkLoopResult, WakeUsage};
+use crate::service::domain::runtime::think_trace::TraceSink;
+use crate::service::domain::runtime::types::{
+    IntentAnalysis, ThinkLoopProgress, ThinkLoopResult, ThinkingOptions, WakeUsage,
+};
 use async_trait::async_trait;
 use common::error::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 /// 收尾节点的 id
 ///
@@ -101,6 +111,8 @@ pub struct BusinessContext {
     pub message_thread: Vec<String>,
     pub resource_lines: Vec<String>,
     pub vision_parts: Vec<crate::models::cortex_types::ImagePart>,
+    /// 仅本批吸收消息贡献的图像：seed / 续跑追加时只补这些，避免重复注入
+    pub injected_vision_parts: Vec<crate::models::cortex_types::ImagePart>,
     pub past_memories: Vec<String>,
 }
 
@@ -176,6 +188,46 @@ fn resume_append_text(pending: &[String]) -> String {
     s
 }
 
+/// 把本批吸收消息的图片并入最后一条用户消息，保持「只有一条多模态用户消息」约束
+///
+/// 去重按 base64：Phase 1 修订阶段可能已经把同一批图片放进 seed；续跑追加时
+/// `existing.messages` 里也可能已有锚点图片。超 4 张的部分直接丢弃（资源行里
+/// 已有「未注入视觉输入」的占位说明），不新建第二条多模态消息。
+fn append_injected_images_to_last_user(messages: &mut [ChatMessage], new_images: &[ImagePart]) {
+    if new_images.is_empty() {
+        return;
+    }
+    let Some(index) = messages
+        .iter()
+        .rposition(|m| matches!(m, ChatMessage::UserMultimodal { .. }))
+        .or_else(|| {
+            messages
+                .iter()
+                .rposition(|m| matches!(m, ChatMessage::User { .. }))
+        })
+    else {
+        return;
+    };
+    let (text, mut images) = match &messages[index] {
+        ChatMessage::User { content } => (content.clone(), Vec::new()),
+        ChatMessage::UserMultimodal { text, images } => (text.clone(), images.clone()),
+        _ => return,
+    };
+    let mut existing: HashSet<String> = images.iter().map(|i| i.data_base64.clone()).collect();
+    for image in new_images {
+        if existing.contains(&image.data_base64)
+            || images.len() >= crate::service::domain::runtime::awakening::MAX_IMAGES_PER_MESSAGE
+        {
+            continue;
+        }
+        // 同步更新去重集合：`new_images` 内部若有同 base64 的不同附件，
+        // 只注入第一张，避免重复视觉 token。
+        existing.insert(image.data_base64.clone());
+        images.push(image.clone());
+    }
+    messages[index] = ChatMessage::user_multimodal(text, images);
+}
+
 /// 把最终初始消息拼成 Trace 用的扁平文本（仅用于 `trace.input`，不参与模型请求）
 fn render_seed_prompt(messages: &[ChatMessage]) -> String {
     let mut out = String::new();
@@ -206,6 +258,168 @@ pub(super) fn write_artifacts(bus: &mut ThinkBus, artifacts: &Artifacts) -> Resu
     Ok(())
 }
 
+// ==================== 节点输入契约（节点侧定义）====================
+//
+// 每个节点声明自己需要的图能力；图负责把自己的承载结构（如 `AwakenDeps`）
+// 适配成这些 trait 再交给节点。节点不再直接依赖 `AwakenDeps`，因此同一种
+// 节点只要换一份输入实现，就能挂到别的图上复用。
+
+/// `PrepareNode` 对图输入的能力声明
+#[async_trait]
+pub(crate) trait PrepareNodeInput: NodeBase {
+    fn message(&self) -> &Message;
+    fn options(&self) -> &ThinkingOptions;
+    fn trace_id(&self) -> &str;
+    fn runtime(&self) -> &GraphRuntime;
+    fn domain(&self) -> &RuntimeDomainImpl;
+}
+
+/// `DeliberateNode` 对图输入的能力声明
+#[async_trait]
+pub(crate) trait DeliberateNodeInput: NodeBase {
+    fn message(&self) -> &Message;
+    fn options(&self) -> &ThinkingOptions;
+    fn trace_sink(&self) -> TraceSink;
+    /// 图级运行时（`Some` 时轮级图启用 poll_round）
+    fn runtime(&self) -> Arc<GraphRuntime>;
+    /// 执行一轮完整思考（工具循环 + 退出策略裁决）
+    async fn think(&self, input: ThinkInput) -> Result<ThinkLoopResult>;
+}
+
+/// `CompactNode` 对图输入的能力声明
+#[async_trait]
+pub(crate) trait CompactNodeInput: NodeBase {
+    fn trace_id(&self) -> &str;
+    fn progress(&self) -> &ThinkLoopProgress;
+    fn runtime(&self) -> &GraphRuntime;
+    /// 把对话压成短期记忆
+    async fn compact(&self, input: CompactInput) -> Result<CompactOutcome>;
+}
+
+/// `ConsolidateNode` 对图输入的能力声明
+#[async_trait]
+pub(crate) trait ConsolidateNodeInput: NodeBase {
+    fn message(&self) -> &Message;
+    fn trace_id(&self) -> &str;
+    fn shadow(&self) -> bool;
+    fn started_at(&self) -> Instant;
+    fn trace_snapshot(&self) -> MemoryTrace;
+    fn progress(&self) -> &ThinkLoopProgress;
+    fn trace_sink(&self) -> TraceSink;
+    fn domain(&self) -> &RuntimeDomainImpl;
+    /// 完成后压缩（`TurnArchive`）
+    async fn compact(&self, input: CompactInput) -> Result<CompactOutcome>;
+}
+
+#[async_trait]
+impl PrepareNodeInput for AwakenDeps {
+    fn message(&self) -> &Message {
+        &self.message
+    }
+
+    fn options(&self) -> &ThinkingOptions {
+        &self.options
+    }
+
+    fn trace_id(&self) -> &str {
+        &self.trace_id
+    }
+
+    fn runtime(&self) -> &GraphRuntime {
+        &self.runtime
+    }
+
+    fn domain(&self) -> &RuntimeDomainImpl {
+        &self.domain
+    }
+}
+
+#[async_trait]
+impl DeliberateNodeInput for AwakenDeps {
+    fn message(&self) -> &Message {
+        &self.message
+    }
+
+    fn options(&self) -> &ThinkingOptions {
+        &self.options
+    }
+
+    fn trace_sink(&self) -> TraceSink {
+        AwakenDeps::trace_sink(self)
+    }
+
+    fn runtime(&self) -> Arc<GraphRuntime> {
+        Arc::clone(&self.runtime)
+    }
+
+    async fn think(&self, input: ThinkInput) -> Result<ThinkLoopResult> {
+        self.backend.think(self, input).await
+    }
+}
+
+#[async_trait]
+impl CompactNodeInput for AwakenDeps {
+    fn trace_id(&self) -> &str {
+        &self.trace_id
+    }
+
+    fn progress(&self) -> &ThinkLoopProgress {
+        &self.progress
+    }
+
+    fn runtime(&self) -> &GraphRuntime {
+        &self.runtime
+    }
+
+    async fn compact(&self, input: CompactInput) -> Result<CompactOutcome> {
+        self.backend.compact(self, input).await
+    }
+}
+
+#[async_trait]
+impl ConsolidateNodeInput for AwakenDeps {
+    fn message(&self) -> &Message {
+        &self.message
+    }
+
+    fn trace_id(&self) -> &str {
+        &self.trace_id
+    }
+
+    fn shadow(&self) -> bool {
+        self.shadow
+    }
+
+    fn started_at(&self) -> Instant {
+        self.started_at
+    }
+
+    fn trace_snapshot(&self) -> MemoryTrace {
+        // 锁中毒自愈：Mutex 里没有任何可 panic 代码，中毒只说明上一任持锁者
+        // panic 了，数据本身仍然可信（与迁移前的收尾口径一致）。
+        self.trace
+            .lock()
+            .map(|t| t.clone())
+            .unwrap_or_else(|poisoned| poisoned.into_inner().clone())
+    }
+
+    fn progress(&self) -> &ThinkLoopProgress {
+        &self.progress
+    }
+
+    fn trace_sink(&self) -> TraceSink {
+        AwakenDeps::trace_sink(self)
+    }
+
+    fn domain(&self) -> &RuntimeDomainImpl {
+        &self.domain
+    }
+
+    async fn compact(&self, input: CompactInput) -> Result<CompactOutcome> {
+        self.backend.compact(self, input).await
+    }
+}
+
 // ==================== Prepare：统一装配 ====================
 
 /// 装配节点：把散落在老 awaitaken 里的十余次查询收拢到一个地方
@@ -215,14 +429,14 @@ pub(super) fn write_artifacts(bus: &mut ThinkBus, artifacts: &Artifacts) -> Resu
 /// 而 Provider 的接口只负责「单一分区的取数」。跨分区合成是节点的活。
 #[derive(Debug)]
 pub struct PrepareNode {
-    deps: Arc<AwakenDeps>,
+    input: Arc<dyn PrepareNodeInput>,
     id: NodeId,
 }
 
 impl PrepareNode {
-    pub fn new(deps: Arc<AwakenDeps>) -> Self {
+    pub fn new(input: Arc<dyn PrepareNodeInput>) -> Self {
         Self {
-            deps,
+            input,
             id: NodeId::new("prepare"),
         }
     }
@@ -263,32 +477,29 @@ impl ThinkNode for PrepareNode {
     }
 
     async fn run(&self, bus: &mut ThinkBus) -> Result<NodeOutcome> {
-        let deps = &self.deps;
-        let ctx = &deps.ctx;
+        let input = &self.input;
+        let ctx = input.ctx();
 
         crate::log_info!(
             ctx,
             "legacy_awaken",
             "prepare node start, agent_id={}",
-            deps.agent.po.id
+            input.agent().po.id
         );
 
-        let slot = deps
-            .compaction
-            .lock()
-            .map(|s| s.clone())
-            .unwrap_or_default();
+        let slot = input.runtime().compaction_slot();
         // 唯二之一不能进总线的取数：短期记忆实体（`builder.history` 要 `&[Memory]`）
         let recent: Vec<crate::models::memory::Memory> = if slot.summary.is_some() {
             Vec::new()
         } else {
             // T0 = 入站消息时间：与 Phase 1 同源，分页窗口与索引计划都据此冻结
-            deps.domain
+            input
+                .domain()
                 .load_memory_index_window(
                     ctx.clone(),
-                    &deps.agent.po.id,
-                    deps.message.po.created_at,
-                    memory_index_budget_for(deps.agent.as_ref()),
+                    &input.agent().po.id,
+                    input.message().po.created_at,
+                    memory_index_budget_for(input.agent()),
                 )
                 .await?
         };
@@ -297,13 +508,29 @@ impl ThinkNode for PrepareNode {
             ctx,
             "legacy_awaken",
             "recent context loaded, agent_id={}, n={}",
-            deps.agent.po.id,
+            input.agent().po.id,
             recent.len()
         );
 
         let ws = read_bus::<WorkspacePaths>(bus, ContextKey::Runtime)?;
         let skills = read_bus::<Vec<crate::models::skill::SkillPo>>(bus, ContextKey::Skills)?;
-        let biz = read_bus::<BusinessContext>(bus, ContextKey::Business)?;
+        let mut biz = read_bus::<BusinessContext>(bus, ContextKey::Business)?;
+        // Business  provider 只在图首跑一次；poll_exit / poll_round 之后新增的
+        // 带图消息不在旧快照里。有吸收附件时按共享收件箱重新解析一次，让三条
+        // 装配路径（续跑追加 / seed 续接 / 重建）看到的都是同一份最新视觉输入。
+        let absorbed = input.runtime().inbox_absorbed_attachment_ids();
+        if !absorbed.is_empty() {
+            let fresh = super::super::awakening::fetch_message_business_blocks(
+                ctx,
+                input.message(),
+                &absorbed,
+            )
+            .await;
+            biz.message_thread = fresh.thread;
+            biz.resource_lines = fresh.resource_lines;
+            biz.vision_parts = fresh.vision_parts;
+            biz.injected_vision_parts = fresh.injected_vision_parts;
+        }
         // 思考图上游产物：分区缺失 = 空产物（intent 降级为空结构、首轮无 discover
         // 摘要都是合法路径），unwrap_or_default 吞错是有意的——图语义允许降级装配
         let intent = read_bus::<crate::service::domain::runtime::types::IntentAnalysis>(
@@ -317,30 +544,17 @@ impl ThinkNode for PrepareNode {
         // 三条装配路径的优先级：续跑追加（poll_exit）> 意图 seed 续接（首次装配）
         // > 重建（压缩回环 / 无 seed / 脚本后端）。
         // 新输入只允许在尾部追加：读取即清空，避免 compact→prepare / rethink 重复渲染。
-        let (resume_append, pending) = deps
-            .inbox
-            .lock()
-            .map(|mut state| {
-                let resume = state.take_resume_append();
-                let pending = state.pending_turn_texts();
-                state.clear_pending_turn();
-                (resume, pending)
-            })
-            .unwrap_or((false, Vec::new()));
+        let (resume_append, pending) = input.runtime().inbox_take_resume_append_and_pending();
 
         // 外部 Agent（Cli / Remote）走 `FlatPromptBuilder`：初始消息会被压成**单条**
         // user，而 `BrainDal::think` 的 Cli/Remote 分支只取最后一条 user
         // (`extract_last_user_prompt`)。追加 assistant + 执行段后，base 原文会落在
         // 倒数第二条 user 上、被整块丢弃（人设、当前消息、消息链全丢）。它们也没有
         // provider 级 prompt cache，追加化收益为零，因此统一退回重建，保持既有行为。
-        let append_ok = matches!(deps.agent.po.kind, common::enums::AgentKind::Local);
+        let append_ok = matches!(input.agent().po.kind, common::enums::AgentKind::Local);
         // seed 读取即清空：即使外部 Agent 不用，也必须消费掉，避免后续 rethink
         // 拿到与当前装配不一致的旧快照
-        let seed = deps
-            .intent_seed
-            .lock()
-            .ok()
-            .and_then(|mut seed_slot| seed_slot.take());
+        let seed = input.runtime().take_intent_seed();
 
         // A. 续跑追加：以 `Artifacts.messages` 为既有对话，只在尾部加一条 user 消息
         if append_ok
@@ -348,13 +562,15 @@ impl ThinkNode for PrepareNode {
             && let Some(existing) = read_artifacts(bus).ok().filter(|a| !a.messages.is_empty())
         {
             let mut messages = existing.messages;
+            // 补充消息的图片并入既有多模态消息（无则最后一条 user），不另起一条
+            append_injected_images_to_last_user(&mut messages, &biz.injected_vision_parts);
             let tail = resume_append_text(&pending);
             messages.push(ChatMessage::user(tail.clone()));
             crate::log_info!(
                 ctx,
                 "legacy_awaken",
                 "prepare resumed (append-only), agent_id={}, messages={}",
-                deps.agent.po.id,
+                input.agent().po.id,
                 messages.len()
             );
             write_prompt_pack(
@@ -375,7 +591,7 @@ impl ThinkNode for PrepareNode {
             && let Some(seed) = seed
             && slot.summary.is_none()
         {
-            let mut exec = deps.domain.prompt_builder(&deps.agent);
+            let mut exec = input.domain().prompt_builder(input.agent());
             if !pack.knowledge_hits.is_empty() {
                 exec.retrieved_knowledge(&pack.knowledge_hits);
             }
@@ -385,20 +601,22 @@ impl ThinkNode for PrepareNode {
             if let Some(summary) = &pack.prior_thinking_summary {
                 exec.prior_thinking_summary(summary);
             }
-            exec.current_message(&deps.message);
+            exec.current_message(input.message());
             if !pending.is_empty() {
                 exec.injected_inputs(&pending);
             }
             // Phase 2 是真正的执行段，决策点在它的收尾：把同一份指引行再挂一次，
             // 模型不必回头翻 Phase 1 的 base 才能看到「要不要回 / 已经多累」。
-            // 同源（`deps.options`）保证与 base 数值一致，不会出现两个口径。
-            if !deps.options.turn_guidance_lines.is_empty() {
-                exec.set_turn_guidance_lines(deps.options.turn_guidance_lines.clone());
+            // 同源（`input.options()`）保证与 base 数值一致，不会出现两个口径。
+            if !input.options().turn_guidance_lines.is_empty() {
+                exec.set_turn_guidance_lines(input.options().turn_guidance_lines.clone());
             }
             let intent_json = serde_json::to_string(&intent)
                 .map_err(|e| common::error::err!(Internal, "encode intent analysis failed: {e}"))?;
             let segment = exec.build_execution_segment();
             let mut messages = seed.clone();
+            // Phase 1 修订若已把图片放进 seed，这里按 base64 去重，不会重复注入
+            append_injected_images_to_last_user(&mut messages, &biz.injected_vision_parts);
             messages.push(ChatMessage::assistant(intent_json));
             messages.push(ChatMessage::user(segment));
             let prompt = render_seed_prompt(&messages);
@@ -406,7 +624,7 @@ impl ThinkNode for PrepareNode {
                 ctx,
                 "legacy_awaken",
                 "prepare seeded from intent, agent_id={}, seed_messages={}, final_messages={}",
-                deps.agent.po.id,
+                input.agent().po.id,
                 seed.len(),
                 messages.len()
             );
@@ -422,9 +640,9 @@ impl ThinkNode for PrepareNode {
         }
 
         // C. 重建（唯一允许重建的常规路径；压缩回环也走这里）
-        let mut builder = deps.domain.prompt_builder(&deps.agent);
-        builder.current_trace_id(&deps.trace_id);
-        builder.system_prompt(&deps.agent);
+        let mut builder = input.domain().prompt_builder(input.agent());
+        builder.current_trace_id(input.trace_id());
+        builder.system_prompt(input.agent());
         builder.skills(&skills);
         builder.workspace_context(
             ws.default,
@@ -434,13 +652,13 @@ impl ThinkNode for PrepareNode {
             ws.agent,
             ws.project,
         );
-        if let Some(project) = &deps.options.project {
+        if let Some(project) = &input.options().project {
             builder.project_context(project);
         }
-        if let Some(task) = &deps.options.task {
+        if let Some(task) = &input.options().task {
             builder.task_context(task);
         }
-        if let Some(user) = &deps.options.user_profile {
+        if let Some(user) = &input.options().user_profile {
             builder.user_profile(user);
         }
         super::super::awakening::mount_ontology_lexicon(ctx, builder.as_mut()).await;
@@ -448,8 +666,8 @@ impl ThinkNode for PrepareNode {
         // 否则会退回兜底预算与「无锚点」，与 Phase 1 的 seed 逐字节不一致。
         builder.set_memory_index_plan(MemoryIndexPlan::build(
             &recent,
-            Some(deps.message.po.created_at),
-            memory_index_budget_for(deps.agent.as_ref()),
+            Some(input.message().po.created_at),
+            memory_index_budget_for(input.agent()),
             crate::pkg::tokens::estimate_tokens,
         ));
         builder.history(&recent);
@@ -476,13 +694,13 @@ impl ThinkNode for PrepareNode {
         }
         // 重建路径与 fill_prompt_base 同口径：本轮指引独立尾部区块，
         // 值与 seed 相同（同一份 ThinkingOptions），不破坏两阶段前缀一致。
-        if !deps.options.turn_guidance_lines.is_empty() {
-            builder.set_turn_guidance_lines(deps.options.turn_guidance_lines.clone());
+        if !input.options().turn_guidance_lines.is_empty() {
+            builder.set_turn_guidance_lines(input.options().turn_guidance_lines.clone());
         }
         if !biz.vision_parts.is_empty() {
             builder.set_current_message_vision(biz.vision_parts);
         }
-        builder.current_message(&deps.message);
+        builder.current_message(input.message());
         builder.message_thread(&biz.message_thread);
         if !pending.is_empty() {
             builder.injected_inputs(&pending);
@@ -612,15 +830,15 @@ pub(crate) fn sample_results() -> Vec<ThinkLoopResult> {
 /// - 场景内部的固定开销（压缩 / 意图 / 收尾总结）各有独立小预算，不从这个池子里扣。
 #[derive(Debug)]
 pub struct DeliberateNode {
-    deps: Arc<AwakenDeps>,
+    input: Arc<dyn DeliberateNodeInput>,
     /// 唤醒级用量表（轮次 / token / 时长），跨周期唯一载体
     usage: Arc<Mutex<WakeUsage>>,
 }
 
 impl DeliberateNode {
-    pub fn new(deps: Arc<AwakenDeps>) -> Self {
+    pub fn new(input: Arc<dyn DeliberateNodeInput>) -> Self {
         Self {
-            deps,
+            input,
             usage: WakeUsage::shared(),
         }
     }
@@ -657,12 +875,12 @@ impl ThinkNode for DeliberateNode {
     }
 
     async fn run(&self, bus: &mut ThinkBus) -> Result<NodeOutcome> {
-        let deps = &self.deps;
+        let input = &self.input;
         let pack = read_bus::<PromptPack>(bus, ContextKey::Prompt)?;
         let tools =
             read_bus::<Vec<crate::models::cortex_types::ToolDescriptor>>(bus, ContextKey::Tools)?;
         let total_rounds = read_budget(bus).total_rounds;
-        let user_text = deps.message.content();
+        let user_text = input.message().content();
         // 唤醒门（P3-b）：整次唤醒只问一次小脑「这条要不要浅答」，判浅答则本轮
         // 轮次上限压到 1、思考强度强制 0（翻译全在 `wake_gate::apply`）。
         //
@@ -671,27 +889,27 @@ impl ThinkNode for DeliberateNode {
         // （周期内起始轮次）——`poll_exit` 续跑复用同一 run ⇒ 续跑轮 total_rounds > 0
         // ⇒ 天然不重走门、判决沿首轮结果。
         let shallow = wake_gate::maybe_shallow(
-            &deps.ctx,
+            input.ctx(),
             crate::service::dal::brain::dal(),
-            deps.agent.brain.as_ref(),
+            input.agent().brain.as_ref(),
             user_text,
-            &deps.trace_sink(),
+            &input.trace_sink(),
             total_rounds,
         )
         .await;
         // 唯一翻译点：本节点不得自行翻译判决（故此处不出现字面量 `1` / `Some(0)`）。
         let (max_rounds, force_intensity) =
-            wake_gate::apply(shallow, deps.options.effective_max_rounds());
+            wake_gate::apply(shallow, input.options().effective_max_rounds());
 
         // 意图阶段可能被跳过/降级：读不到就按默认空结构处理（偏移 0，即老口径）
         let intent = read_bus::<IntentAnalysis>(bus, ContextKey::Intent).unwrap_or_default();
         let thinking_intensity_offset = intent.thinking_intensity_offset();
 
         crate::log_info!(
-            &deps.ctx,
+            &input.ctx(),
             "legacy_awaken",
             "deliberate node start, agent_id={}, max_rounds={}, total_rounds={}, intent_type={}, confidence={}, intensity_offset={}",
-            deps.agent.po.id,
+            input.agent().po.id,
             max_rounds,
             total_rounds,
             intent.intent_type,
@@ -699,23 +917,19 @@ impl ThinkNode for DeliberateNode {
             thinking_intensity_offset,
         );
 
-        let result = deps
-            .backend
-            .think(
-                deps,
-                super::backend::ThinkInput {
-                    initial_messages: pack.initial_messages,
-                    tools,
-                    max_rounds,
-                    // 跨周期累计：上一周期吃到第几轮，这一周期就从第几轮接着算。
-                    // 可用量 = max_rounds - total_rounds，由 `run_think_loop` 自行折算。
-                    start_round: total_rounds,
-                    thinking_intensity_offset,
-                    force_intensity,
-                    usage: Arc::clone(&self.usage),
-                    inbox: Some(Arc::clone(&deps.inbox)),
-                },
-            )
+        let result = input
+            .think(ThinkInput {
+                initial_messages: pack.initial_messages,
+                tools,
+                max_rounds,
+                // 跨周期累计：上一周期吃到第几轮，这一周期就从第几轮接着算。
+                // 可用量 = max_rounds - total_rounds，由 `run_think_loop` 自行折算。
+                start_round: total_rounds,
+                thinking_intensity_offset,
+                force_intensity,
+                usage: Arc::clone(&self.usage),
+                runtime: Some(input.runtime()),
+            })
             .await;
 
         let ExitMapping {
@@ -736,10 +950,10 @@ impl ThinkNode for DeliberateNode {
         };
 
         crate::log_info!(
-            &deps.ctx,
+            &input.ctx(),
             "legacy_awaken",
             "deliberate node done, agent_id={}, exit={}, rounds={}, tokens={}, elapsed={}s",
-            deps.agent.po.id,
+            input.agent().po.id,
             exit,
             spent.rounds,
             spent.tokens,
@@ -776,25 +990,25 @@ impl ThinkNode for DeliberateNode {
 /// 后的存档总结。入口类型同时决定 trace 场景（溢出 = compact，其余 = summary）。
 #[derive(Debug)]
 pub struct CompactNode {
-    deps: Arc<AwakenDeps>,
+    input: Arc<dyn CompactNodeInput>,
     id: NodeId,
     mode: CompactMode,
 }
 
 impl CompactNode {
     /// 溢出压缩：压完回 `Prepare` 重开一轮
-    pub fn overflow(deps: Arc<AwakenDeps>) -> Self {
+    pub fn overflow(input: Arc<dyn CompactNodeInput>) -> Self {
         Self {
-            deps,
+            input,
             id: NodeId::new("compact"),
             mode: CompactMode::Overflow,
         }
     }
 
     /// 轮次耗尽退出：压缩的 Final 文本就是发给用户的内容
-    pub fn forced(deps: Arc<AwakenDeps>) -> Self {
+    pub fn forced(input: Arc<dyn CompactNodeInput>) -> Self {
         Self {
-            deps,
+            input,
             id: NodeId::new("force_compact"),
             mode: CompactMode::ForcedReply,
         }
@@ -824,29 +1038,25 @@ impl ThinkNode for CompactNode {
     }
 
     async fn run(&self, bus: &mut ThinkBus) -> Result<NodeOutcome> {
-        let deps = &self.deps;
+        let input = &self.input;
         crate::log_info!(
-            &deps.ctx,
+            &input.ctx(),
             "legacy_awaken",
             "compact node start, agent_id={}, mode={:?}, scene={}",
-            deps.agent.po.id,
+            input.agent().po.id,
             self.mode,
             self.mode.scene().as_str()
         );
         let mut artifacts = read_artifacts(bus)?;
-        let trace_ids = vec![deps.trace_id.clone()];
+        let trace_ids = vec![input.trace_id().to_string()];
 
         let mut pending_slot = None;
-        match deps
-            .backend
-            .compact(
-                deps,
-                super::backend::CompactInput {
-                    messages: artifacts.messages.clone(),
-                    trace_ids: trace_ids.clone(),
-                    mode: self.mode,
-                },
-            )
+        match input
+            .compact(CompactInput {
+                messages: artifacts.messages.clone(),
+                trace_ids: trace_ids.clone(),
+                mode: self.mode,
+            })
             .await
         {
             Ok(outcome) => {
@@ -860,8 +1070,8 @@ impl ThinkNode for CompactNode {
                             });
                     artifacts.exit = EXIT_MAX_ROUNDS.to_string();
                 } else {
-                    deps.progress.reset();
-                    pending_slot = Some(super::context::CompactionSlot {
+                    input.progress().reset();
+                    pending_slot = Some(super::super::graph_runtime::CompactionSlot {
                         summary: outcome.compacted_summary,
                         memory_id: outcome.compacted_memory_id,
                     });
@@ -869,7 +1079,7 @@ impl ThinkNode for CompactNode {
             }
             Err(e) => {
                 crate::log_warn!(
-                    &deps.ctx,
+                    &input.ctx(),
                     "legacy_awaken",
                     "compaction failed: {:?}, continuing",
                     e
@@ -877,20 +1087,18 @@ impl ThinkNode for CompactNode {
             }
         }
 
-        if let Some(slot) = pending_slot
-            && let Ok(mut guard) = deps.compaction.lock()
-        {
-            *guard = slot;
+        if let Some(slot) = pending_slot {
+            input.runtime().set_compaction_slot(slot);
             // 压缩产物会改变下一轮的取数结果：让 Business / Prompt 失效重算
             bus.invalidate(ContextKey::Business);
             bus.invalidate(ContextKey::Prompt);
         }
         write_artifacts(bus, &artifacts)?;
         crate::log_info!(
-            &deps.ctx,
+            &input.ctx(),
             "legacy_awaken",
             "compact node done, agent_id={}, with_user_reply={}",
-            deps.agent.po.id,
+            input.agent().po.id,
             self.mode.with_user_reply()
         );
         Ok(NodeOutcome::new(NodeSignal::Done))
@@ -905,12 +1113,12 @@ impl ThinkNode for CompactNode {
 /// 凭的是总线上的 `Artifacts.exit` —— 不再靠调用方的 Match 分支区分语义。
 #[derive(Debug)]
 pub struct ConsolidateNode {
-    deps: Arc<AwakenDeps>,
+    input: Arc<dyn ConsolidateNodeInput>,
 }
 
 impl ConsolidateNode {
-    pub fn new(deps: Arc<AwakenDeps>) -> Self {
-        Self { deps }
+    pub fn new(input: Arc<dyn ConsolidateNodeInput>) -> Self {
+        Self { input }
     }
 }
 
@@ -942,7 +1150,8 @@ impl ThinkNode for ConsolidateNode {
     }
 
     async fn run(&self, bus: &mut ThinkBus) -> Result<NodeOutcome> {
-        let deps = &self.deps;
+        let input = &self.input;
+        let trace_id = input.trace_id().to_string();
         let artifacts = read_artifacts(bus)?;
 
         // 意图阶段的直答 / 澄清短路（intent --direct|clarify--> poll_exit --> consolidate）
@@ -953,64 +1162,59 @@ impl ThinkNode for ConsolidateNode {
         // 在这里按 exit 补一行兜底 close（与 guard 同口径：`reason=short_circuit:<exit>`），
         // 仅限这两条短路出口；正常路径已由 persist_trace 写完整 close，不重复写。
         // ⚠️ 影子模式不落任何副作用（含 trace），与整图 shadow 契约保持一致。
-        if !deps.shadow && (artifacts.exit == EXIT_DIRECT || artifacts.exit == EXIT_CLARIFY) {
-            deps.trace_sink()
+        if !input.shadow() && (artifacts.exit == EXIT_DIRECT || artifacts.exit == EXIT_CLARIFY) {
+            input
+                .trace_sink()
                 .close_once(&format!("short_circuit:{}", artifacts.exit));
         }
 
         crate::log_info!(
-            &deps.ctx,
+            &input.ctx(),
             "legacy_awaken",
             "consolidate node start, agent_id={}, exit={}",
-            deps.agent.po.id,
+            input.agent().po.id,
             artifacts.exit
         );
         let pack = read_bus::<PromptPack>(bus, ContextKey::Prompt)?;
         let budget = read_budget(bus);
         // 意图分析可能被跳过（外部直调）或降级，读不到就按默认空结构处理
         let intent = read_bus::<IntentAnalysis>(bus, ContextKey::Intent).unwrap_or_default();
-        let duration_ms = deps.started_at.elapsed().as_millis() as u64;
+        let duration_ms = input.started_at().elapsed().as_millis() as u64;
 
         let mut artifacts = artifacts;
         if artifacts.exit == EXIT_CANCELLED {
-            if !deps.shadow {
-                let outcome = deps
-                    .domain
+            if !input.shadow() {
+                let outcome = input
+                    .domain()
                     .finalize_abort(super::super::abort_summary::AbortFinalizeParams {
-                        ctx: deps.ctx.clone(),
-                        agent: &deps.agent,
-                        trace: deps
-                            .trace
-                            .lock()
-                            .map(|t| t.clone())
-                            // 锁中毒自愈：Mutex 里没有任何可 panic 代码，
-                            // 中毒只说明上一任持锁者 panic 了，数据本身仍然可信
-                            .unwrap_or_else(|poisoned| poisoned.into_inner().clone()),
+                        ctx: input.ctx().clone(),
+                        agent: input.agent(),
+                        trace: input.trace_snapshot(),
                         prompt: &pack.prompt,
-                        user_message: deps.message.content(),
-                        message_id: &deps.message.po.id,
-                        progress: &deps.progress,
+                        user_message: input.message().content(),
+                        message_id: &input.message().po.id,
+                        progress: input.progress(),
                         total_rounds: budget.total_rounds,
-                        trace_ids: std::slice::from_ref(&deps.trace_id),
+                        trace_ids: std::slice::from_ref(&trace_id),
                         kind: super::super::abort_summary::AbortKind::Cancelled,
                         error: None,
                     })
                     .await;
                 crate::log_info!(
-                    &deps.ctx,
+                    &input.ctx(),
                     "legacy_awaken",
                     "cancelled abort-summary persisted: memory_id={:?}",
                     outcome.memory_id
                 );
                 let _ = crate::record_event!(
-                    deps.ctx,
+                    input.ctx(),
                     AgentAwakeEvent {
-                        agent_id: deps.agent.po.id.clone(),
-                        project_id: deps.ctx.project_id().cloned(),
-                        task_id: deps.ctx.task_id().cloned(),
-                        organization_id: deps.ctx.organization_id.clone(),
-                        user_id: Some(deps.ctx.uid()),
-                        message_id: Some(deps.message.po.id.clone()),
+                        agent_id: input.agent().po.id.clone(),
+                        project_id: input.ctx().project_id().cloned(),
+                        task_id: input.ctx().task_id().cloned(),
+                        organization_id: input.ctx().organization_id.clone(),
+                        user_id: Some(input.ctx().uid()),
+                        message_id: Some(input.message().po.id.clone()),
                         call_count: 1,
                         duration_ms: duration_ms,
                         status: "cancelled".to_string(),
@@ -1018,14 +1222,14 @@ impl ThinkNode for ConsolidateNode {
                     }
                 );
                 let _ = crate::pkg::aop::publish(
-                    &deps.ctx,
+                    input.ctx(),
                     crate::models::events::AgentLoopEvent::finished(
-                        &deps.agent.po.id,
-                        &deps.trace_id,
+                        &input.agent().po.id,
+                        &trace_id,
                         "awaken",
                         "cancelled",
                         duration_ms,
-                        Some(&deps.message.po.id),
+                        Some(&input.message().po.id),
                     ),
                 )
                 .await;
@@ -1038,42 +1242,39 @@ impl ThinkNode for ConsolidateNode {
             artifacts.content = "任务因思考轮次耗尽而终止，已执行上下文压缩退出流程。".to_string();
         }
 
-        if !deps.shadow {
-            // ⚠️ 用 `match` 而不是 `if let`：if-let 的 scrutinee 临时值会活到块结束，
-            // 把 `MutexGuard` 拖到 await 上（future 丢 Send）。这里显式拿到 guard、
-            // 改完立刻 drop，后面的 await 与锁无关。
+        if !input.shadow() {
+            // Trace 快照是克隆：锁内没有任何可 panic 代码，中毒只说明上一任持锁者
+            // panic 了，数据本身仍然可信（与迁移前收尾口径一致）。
             let snapshot = {
-                let mut trace = match deps.trace.lock() {
-                    Ok(guard) => guard,
-                    Err(poisoned) => poisoned.into_inner(),
-                };
+                let mut trace = input.trace_snapshot();
                 trace.input = pack.prompt.clone();
                 trace.complete(artifacts.content.clone());
                 trace.metadata.insert("scene".into(), "awaken".into());
                 trace
                     .metadata
-                    .insert("message_id".into(), deps.message.po.id.clone());
+                    .insert("message_id".into(), input.message().po.id.clone());
                 trace
                     .metadata
                     .insert("exit_reason".into(), artifacts.exit.clone());
                 trace
                     .metadata
                     .insert("rounds_used".into(), budget.total_rounds.to_string());
-                if let Some(task_id) = deps.ctx.task_id() {
+                if let Some(task_id) = input.ctx().task_id() {
                     trace.metadata.insert("task_id".into(), task_id.clone());
                 }
-                if let Some(project_id) = deps.ctx.project_id() {
+                if let Some(project_id) = input.ctx().project_id() {
                     trace
                         .metadata
                         .insert("project_id".into(), project_id.clone());
                 }
-                trace.clone()
+                trace
             };
             // ⚠️ 与老 `awaken` 同口径：Trace 落库失败要 `?` 传播。
             // 用 `let _ =` 吞掉会把「工作做完了但没留痕」变成一次**假装成功**的
             // 正常返回 —— 用户拿到了回复，运维却查不到任何 trace。
-            deps.domain
-                .write_thinking_trace(deps.ctx.clone(), snapshot)
+            input
+                .domain()
+                .write_thinking_trace(input.ctx().clone(), snapshot)
                 .await?;
 
             // 正常完成后按「实际链路规模」分流记忆：简单轮次原文记账，
@@ -1089,10 +1290,11 @@ impl ThinkNode for ConsolidateNode {
             let chain = super::super::compaction::measure_turn_chain(
                 &artifacts.messages,
                 budget.total_rounds,
-                deps.message.content(),
+                input.message().content(),
                 &artifacts.content,
             );
-            let compaction_policy = super::super::compaction::build_compaction_policy(&deps.agent);
+            let compaction_policy =
+                super::super::compaction::build_compaction_policy(input.agent());
             let hits = compaction_policy.evaluate(&chain.into_policy_metrics());
             let would_compress = !hits.is_empty();
             // 总结门（P3-c / K6）：优先级 = 阈值策略先判、小脑只做减法。
@@ -1101,11 +1303,11 @@ impl ThinkNode for ConsolidateNode {
             // 不问时零调用、零配额、零轨迹（门内的 ⓪ 本地判据与本处的短路同义）。
             let skip_summary = if would_compress && artifacts.exit != EXIT_MAX_ROUNDS {
                 summary_gate::maybe_skip(
-                    &deps.ctx,
+                    input.ctx(),
                     crate::service::dal::brain::dal(),
-                    deps.agent.brain.as_ref(),
-                    deps.message.content(),
-                    &deps.trace_sink(),
+                    input.agent().brain.as_ref(),
+                    input.message().content(),
+                    &input.trace_sink(),
                     would_compress,
                 )
                 .await
@@ -1116,7 +1318,7 @@ impl ThinkNode for ConsolidateNode {
             // 分支；`apply` 的 `None` 分支逐字节等价于改造前）。
             let should_compress = summary_gate::apply(skip_summary, would_compress);
             crate::log_info!(
-                &deps.ctx,
+                &input.ctx(),
                 "legacy_awaken",
                 "post-completion compaction decision: should_compress={}, hits={:?}, chain={:?}, condition={}, exit={}, intent_type={}",
                 should_compress,
@@ -1128,22 +1330,22 @@ impl ThinkNode for ConsolidateNode {
             );
 
             if !should_compress {
-                let quick_memory_id = deps
-                    .domain
+                let quick_memory_id = input
+                    .domain()
                     .persist_turn_memory(
-                        deps.ctx.clone(),
-                        &deps.agent.po.id,
-                        deps.message.content(),
+                        input.ctx().clone(),
+                        &input.agent().po.id,
+                        input.message().content(),
                         &artifacts.content,
-                        &deps.trace_id,
+                        &trace_id,
                         // 原文记账硬上限按模型容量的占比派生（未配置 ⇒ 不裁）
                         super::super::compaction::quick_turn_hard_cap_tokens(
-                            super::super::compaction::context_capacity_of(&deps.agent),
+                            super::super::compaction::context_capacity_of(input.agent()),
                         ),
                     )
                     .await;
                 crate::log_info!(
-                    &deps.ctx,
+                    &input.ctx(),
                     "legacy_awaken",
                     "quick-store turn memory (no compaction dimension hit), exit={}, chain={:?}, quick_memory_id={:?}",
                     artifacts.exit,
@@ -1158,7 +1360,7 @@ impl ThinkNode for ConsolidateNode {
                 // 会要求排除人设/技能/历史等每轮重拼的样板）。
                 let messages = if artifacts.messages.is_empty() {
                     vec![
-                        ChatMessage::user(deps.message.content()),
+                        ChatMessage::user(input.message().content()),
                         ChatMessage::Assistant {
                             content: Some(artifacts.content.clone()),
                             tool_calls: None,
@@ -1167,22 +1369,17 @@ impl ThinkNode for ConsolidateNode {
                 } else {
                     artifacts.messages.clone()
                 };
-                let trace_ids = vec![deps.trace_id.clone()];
-                let _ = deps
-                    .backend
-                    .compact(
-                        deps,
-                        super::backend::CompactInput {
-                            messages,
-                            trace_ids: trace_ids.clone(),
-                            // 正常结束后的存档是「总结本轮工作」，不是上下文溢出压缩
-                            mode: CompactMode::TurnArchive,
-                        },
-                    )
+                let _ = input
+                    .compact(CompactInput {
+                        messages,
+                        trace_ids: vec![trace_id.clone()],
+                        // 正常结束后的存档是「总结本轮工作」，不是上下文溢出压缩
+                        mode: CompactMode::TurnArchive,
+                    })
                     .await
                     .map_err(|e| {
                         crate::log_warn!(
-                            &deps.ctx,
+                            &input.ctx(),
                             "legacy_awaken",
                             "post-completion compaction failed: {:?}, continuing (non-fatal)",
                             e
@@ -1191,14 +1388,14 @@ impl ThinkNode for ConsolidateNode {
             }
 
             let _ = crate::record_event!(
-                deps.ctx,
+                input.ctx(),
                 AgentAwakeEvent {
-                    agent_id: deps.agent.po.id.clone(),
-                    project_id: deps.ctx.project_id().cloned(),
-                    task_id: deps.ctx.task_id().cloned(),
-                    organization_id: deps.ctx.organization_id.clone(),
-                    user_id: Some(deps.ctx.uid()),
-                    message_id: Some(deps.message.po.id.clone()),
+                    agent_id: input.agent().po.id.clone(),
+                    project_id: input.ctx().project_id().cloned(),
+                    task_id: input.ctx().task_id().cloned(),
+                    organization_id: input.ctx().organization_id.clone(),
+                    user_id: Some(input.ctx().uid()),
+                    message_id: Some(input.message().po.id.clone()),
                     call_count: 1,
                     duration_ms: duration_ms,
                     status: "success".to_string(),
@@ -1207,14 +1404,14 @@ impl ThinkNode for ConsolidateNode {
                 }
             );
             let _ = crate::pkg::aop::publish(
-                &deps.ctx,
+                input.ctx(),
                 crate::models::events::AgentLoopEvent::finished(
-                    &deps.agent.po.id,
-                    &deps.trace_id,
+                    &input.agent().po.id,
+                    &trace_id,
                     "awaken",
                     "success",
                     duration_ms,
-                    Some(&deps.message.po.id),
+                    Some(&input.message().po.id),
                 ),
             )
             .await;
@@ -1222,5 +1419,91 @@ impl ThinkNode for ConsolidateNode {
 
         write_artifacts(bus, &artifacts)?;
         Ok(NodeOutcome::new(NodeSignal::Done))
+    }
+}
+
+#[cfg(test)]
+mod image_merge_tests {
+    use super::*;
+
+    fn image(id: &str) -> ImagePart {
+        ImagePart {
+            mime_type: "image/png".to_string(),
+            data_base64: id.to_string(),
+        }
+    }
+
+    #[test]
+    fn merges_into_existing_multimodal_and_dedups() {
+        let mut messages = vec![
+            ChatMessage::system("sys"),
+            ChatMessage::user_multimodal("base", vec![image("anchor")]),
+            ChatMessage::assistant("intent"),
+        ];
+        append_injected_images_to_last_user(
+            &mut messages,
+            &[image("anchor"), image("injected-1"), image("injected-2")],
+        );
+        match &messages[1] {
+            ChatMessage::UserMultimodal { text, images } => {
+                assert_eq!(text, "base");
+                assert_eq!(
+                    images
+                        .iter()
+                        .map(|i| i.data_base64.as_str())
+                        .collect::<Vec<_>>(),
+                    vec!["anchor", "injected-1", "injected-2"],
+                    "同一张图只注入一次，两条消息的图片合并进同一条多模态消息"
+                );
+            }
+            other => panic!("期望仍是多模态用户消息，实际 {other:?}"),
+        }
+        assert!(matches!(messages[2], ChatMessage::Assistant { .. }));
+    }
+
+    #[test]
+    fn upgrades_plain_user_and_caps_at_four_images() {
+        let mut messages = vec![ChatMessage::user("补充输入")];
+        let six: Vec<ImagePart> = (1..=6).map(|i| image(&format!("img-{i}"))).collect();
+        append_injected_images_to_last_user(&mut messages, &six);
+        match &messages[0] {
+            ChatMessage::UserMultimodal { text, images } => {
+                assert_eq!(text, "补充输入");
+                assert_eq!(images.len(), 4, "总张数仍受单条 4 张上限约束");
+            }
+            other => panic!("期望升级为多模态用户消息，实际 {other:?}"),
+        }
+    }
+
+    #[test]
+    fn two_supplement_images_merge_into_one_multimodal_message() {
+        // 场景：本批两条各带一张图的补充消息 → 两张图都进同一条 UserMultimodal
+        let mut messages = vec![ChatMessage::user("锚点问题")];
+        append_injected_images_to_last_user(
+            &mut messages,
+            &[image("supplement-1"), image("supplement-2")],
+        );
+        match &messages[0] {
+            ChatMessage::UserMultimodal { images, .. } => {
+                assert_eq!(images.len(), 2, "两张补充图都进同一条多模态消息");
+            }
+            other => panic!("期望升级为多模态用户消息，实际 {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dedups_within_new_images_by_base64() {
+        // 两条不同附件 ID 指向同一张图（同 base64）时只注入一次
+        let mut messages = vec![ChatMessage::user("补充输入")];
+        append_injected_images_to_last_user(
+            &mut messages,
+            &[image("same"), image("same"), image("other")],
+        );
+        match &messages[0] {
+            ChatMessage::UserMultimodal { images, .. } => {
+                assert_eq!(images.len(), 2, "同 base64 的重复图只保留一张");
+            }
+            other => panic!("期望升级为多模态用户消息，实际 {other:?}"),
+        }
     }
 }

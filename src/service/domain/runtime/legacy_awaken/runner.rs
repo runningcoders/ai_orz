@@ -40,7 +40,7 @@ pub struct LegacyAwakenOutcome {
     pub injected_ids: Vec<String>,
     /// run 级业务产出（附件 / 产物）：随结果移交给消费侧做 final 正文查漏补缺
     ///
-    /// 备份在图上下文（`AwakenDeps.collected`）上收集，这里只是把它取出来；
+    /// 备份在图级运行时（`GraphRuntime`）上收集，这里只是把它取出来；
     /// 图已经结束，此后不再有写入者。
     pub collected: crate::service::domain::runtime::RoundCollected,
 }
@@ -89,16 +89,38 @@ pub async fn run_legacy_awaken(deps: Arc<AwakenDeps>) -> Result<LegacyAwakenOutc
 
     let blueprint = legacy_awaken_blueprint()?;
     let nodes: Vec<Arc<dyn ThinkNode>> = vec![
-        Arc::new(IntentNode::new(Arc::clone(&deps))),
-        Arc::new(RetrieveNode::new(Arc::clone(&deps))),
-        Arc::new(PrepareNode::new(Arc::clone(&deps))),
-        Arc::new(DeliberateNode::new(Arc::clone(&deps))),
-        Arc::new(CompactNode::overflow(Arc::clone(&deps))),
-        Arc::new(CompactNode::forced(Arc::clone(&deps))),
-        Arc::new(DiscoverNode::new(Arc::clone(&deps))),
-        Arc::new(PollNode::new(Arc::clone(&deps), PollKind::Front)),
-        Arc::new(PollNode::new(Arc::clone(&deps), PollKind::Exit)),
-        Arc::new(ConsolidateNode::new(Arc::clone(&deps))),
+        Arc::new(IntentNode::new(
+            Arc::clone(&deps) as Arc<dyn super::intent_node::IntentNodeInput>
+        )),
+        Arc::new(RetrieveNode::new(
+            Arc::clone(&deps) as Arc<dyn super::retrieve_node::RetrieveNodeInput>
+        )),
+        Arc::new(PrepareNode::new(
+            Arc::clone(&deps) as Arc<dyn super::nodes::PrepareNodeInput>
+        )),
+        Arc::new(DeliberateNode::new(
+            Arc::clone(&deps) as Arc<dyn super::nodes::DeliberateNodeInput>
+        )),
+        Arc::new(CompactNode::overflow(
+            Arc::clone(&deps) as Arc<dyn super::nodes::CompactNodeInput>
+        )),
+        Arc::new(CompactNode::forced(
+            Arc::clone(&deps) as Arc<dyn super::nodes::CompactNodeInput>
+        )),
+        Arc::new(DiscoverNode::new(
+            Arc::clone(&deps) as Arc<dyn super::discover_node::DiscoverNodeInput>
+        )),
+        Arc::new(PollNode::new(
+            Arc::clone(&deps) as Arc<dyn super::poll_node::PollNodeInput>,
+            PollKind::Front,
+        )),
+        Arc::new(PollNode::new(
+            Arc::clone(&deps) as Arc<dyn super::poll_node::PollNodeInput>,
+            PollKind::Exit,
+        )),
+        Arc::new(ConsolidateNode::new(
+            Arc::clone(&deps) as Arc<dyn super::nodes::ConsolidateNodeInput>
+        )),
     ];
     let mut engine = ThinkPathEngine::new(
         blueprint,
@@ -270,17 +292,9 @@ fn collect(deps: Arc<AwakenDeps>, run: &ThinkRun) -> LegacyAwakenOutcome {
         .map(|p| p.prompt)
         .unwrap_or_default();
     let artifacts = read_bus::<Artifacts>(&run.bus, ContextKey::Artifacts).unwrap_or_default();
-    let injected_ids = deps
-        .inbox
-        .lock()
-        .map(|state| state.injected_ids().to_vec())
-        .unwrap_or_default();
-    // 业务产出：图已结束，此后不再有写入者，取一份副本随结果交给消费侧
-    let collected = match deps.collected.lock() {
-        Ok(collected) => collected.clone(),
-        // 锁中毒时仍尽量带走已收集的部分：缺一条总比整份丢掉好
-        Err(poisoned) => poisoned.into_inner().clone(),
-    };
+    let injected_ids = deps.runtime.inbox_injected_ids();
+    // 业务产出：图已结束，此后不再有写入者，由运行总线交出一份副本
+    let collected = deps.runtime.take_collected();
     LegacyAwakenOutcome {
         agent_id: deps.agent.po.id.clone(),
         trace_ids: vec![deps.trace_id.clone()],

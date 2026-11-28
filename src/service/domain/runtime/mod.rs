@@ -478,7 +478,10 @@ pub(crate) mod chain_reply;
 // `pkg::tokens`（estimate_tokens / truncate_to_tokens）、`pkg::text_budget`（份额表）。
 // 本模块只保留压缩流程本身（拆分点、分流策略），不再自持算法。
 pub(crate) mod compaction;
+mod graph_runtime;
 mod inbox;
+mod inbox_intent_shift;
+mod inbox_relevance;
 mod intent_analyze;
 mod intent_gate;
 mod thinking_strength;
@@ -882,7 +885,7 @@ pub struct AwakeningResult {
     pub injected_ids: Vec<String>,
     /// run 级业务产出（附件 / 产物）
     ///
-    /// 来源是图上下文（`AwakenDeps.collected`），随结果交给消费侧做 final 正文
+    /// 来源是图级运行时（`GraphRuntime::take_collected`），随结果交给消费侧做 final 正文
     /// 查漏补缺。**不再按 trace_id 反查进程内表**：收集器的所有权从图上下文
     /// 一路显式交接到这里，图结束即回收。
     pub collected: RoundCollected,
